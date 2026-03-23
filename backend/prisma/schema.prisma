@@ -1,0 +1,32 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum TradeStatus {
+  Created
+  Funded
+  Delivered
+  Completed
+  Disputed
+  Cancelled
+}
+
+model Trade {
+  id         Int         @id @default(autoincrement())
+  trade_id   BigInt      @unique
+  buyer      String
+  seller     String
+  amount_usdc Decimal    @db.Decimal(38, 18)
+  status     TradeStatus @default(Created)
+  created_at DateTime    @default(now())
+  updated_at DateTime    @updatedAt
+
+  @@index([buyer])
+  @@index([seller])
+  @@index([status])
+}
