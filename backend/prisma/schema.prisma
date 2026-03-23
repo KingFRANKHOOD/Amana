@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TradeStatus {
+  CREATED
+  FUNDED
+  DELIVERED
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+model Trade {
+  id        Int         @id @default(autoincrement())
+  tradeId   String      @unique
+  buyer     String
+  seller    String
+  amountUsdc String     @default("0")
+  status    TradeStatus @default(CREATED)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([tradeId])
+}
+
+model ProcessedLedger {
+  ledgerSequence Int      @id
+  processedAt    DateTime @default(now())
+}
