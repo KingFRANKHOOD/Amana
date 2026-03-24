@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { EventListenerService } from "./services/eventListener.service";
+import { createTradeRouter } from "./routes/trade.routes";
 
 dotenv.config();
 
@@ -12,6 +13,7 @@ const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
+app.use("/trades", createTradeRouter(prisma));
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
