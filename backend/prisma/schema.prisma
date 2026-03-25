@@ -5,6 +5,11 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Connection pooling is configured via the DATABASE_URL connection string
+  // Example with PgBouncer: postgresql://user:password@localhost:5432/amana?pgbouncer=true
+  // For production, ensure the connection pool size is appropriate for your workload:
+  // - connection_limit: typically 20-100 connections
+  // - pool_mode: use 'transaction' or 'session' mode based on your needs
 }
 
 enum TradeStatus {
@@ -16,19 +21,88 @@ enum TradeStatus {
   CANCELLED
 }
 
-model Trade {
-  id        Int         @id @default(autoincrement())
-  tradeId   String      @unique
-  buyer     String
-  seller    String
-  amountUsdc String     @default("0")
-  status    TradeStatus @default(CREATED)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-
-  @@index([tradeId])
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  CLOSED
 }
 
+/// User model representing a participant in the Amana platform
+/// - walletAddress: Stellar wallet address (stored as lowercase for consistency)
+/// - displayName: User's display name
+/// - createdAt: Timestamp of account creation
+model User {
+  id              Int              @id @default(autoincrement())
+  /// Unique wallet address (always stored as lowercase)
+  walletAddress   String           @unique @db.VarChar(255)
+  displayName     String           @db.VarChar(255)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  tradesBought    Trade[]          @relation("buyer")
+  tradesSold      Trade[]          @relation("seller")
+  initiatedDisputes Dispute[]      @relation("initiator")
+
+  @@index([walletAddress])
+}
+
+/// Trade model representing a transaction on the Amana platform
+/// - tradeId: Unique identifier for the trade (from blockchain)
+/// - buyerAddress: Wallet address of the buyer (stored as lowercase)
+/// - sellerAddress: Wallet address of the seller (stored as lowercase)
+/// - amountUsdc: Amount in USDC (stored as string to preserve precision)
+/// - status: Current status of the trade
+model Trade {
+  id            Int         @id @default(autoincrement())
+  tradeId       String      @unique @db.VarChar(255)
+  buyerAddress  String      @db.VarChar(255)
+  sellerAddress String      @db.VarChar(255)
+  amountUsdc    String      @default("0") @db.VarChar(100)
+  status        TradeStatus @default(CREATED)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  buyer         User        @relation("buyer", fields: [buyerAddress], references: [walletAddress])
+  seller        User        @relation("seller", fields: [sellerAddress], references: [walletAddress])
+  dispute       Dispute?
+
+  @@index([tradeId])
+  @@index([buyerAddress])
+  @@index([sellerAddress])
+  @@index([status])
+}
+
+/// Dispute model representing a dispute on a trade
+/// - tradeId: Reference to the associated trade
+/// - initiator: Wallet address of the user initiating the dispute (stored as lowercase)
+/// - reason: Reason for the dispute
+/// - status: Current status of the dispute
+/// - resolvedAt: Timestamp when the dispute was resolved
+model Dispute {
+  id           Int           @id @default(autoincrement())
+  tradeId      String        @unique @db.VarChar(255)
+  initiator    String        @db.VarChar(255)
+  reason       String        @db.Text
+  status       DisputeStatus @default(OPEN)
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  trade        Trade         @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
+  initiatorUser User         @relation("initiator", fields: [initiator], references: [walletAddress])
+
+  @@index([tradeId])
+  @@index([initiator])
+  @@index([status])
+}
+
+/// ProcessedLedger model for tracking the latest processed Stellar ledger
+/// - ledgerSequence: The sequence number of the processed ledger
+/// - processedAt: Timestamp of when the ledger was processed
 model ProcessedLedger {
   ledgerSequence Int      @id
   processedAt    DateTime @default(now())
