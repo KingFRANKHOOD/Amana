@@ -253,6 +253,14 @@
                   },
                   {
                     "key": {
+                      "symbol": "buyer_loss_bps"
+                    },
+                    "val": {
+                      "u32": 5000
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "created_at"
                     },
                     "val": {
@@ -279,6 +287,14 @@
                     },
                     "val": {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "seller_loss_bps"
+                    },
+                    "val": {
+                      "u32": 5000
                     }
                   },
                   {
