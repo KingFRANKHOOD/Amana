@@ -1,10 +1,14 @@
-import { TradeStatus, PrismaClient } from "@prisma/client";
+import { PrismaClient, TradeStatus } from "@prisma/client";
 import { Request, Response, Router } from "express";
+import { TradeController } from "../controllers/trade.controller";
+import { prisma as defaultPrisma } from "../lib/db";
+import { authMiddleware } from "../middleware/auth.middleware";
 import { TradeAccessDeniedError, TradeService } from "../services/trade.service";
 
-export function createTradeRouter(prisma: PrismaClient) {
+export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
   const router = Router();
   const tradeService = new TradeService(prisma);
+  const tradeController = new TradeController(tradeService);
 
   const getCallerAddress = (req: Request): string | null => {
     const headerAddress = req.header("x-wallet-address") || req.header("x-address");
@@ -14,7 +18,7 @@ export function createTradeRouter(prisma: PrismaClient) {
     return headerAddress.trim();
   };
 
-  const requireAuth = (req: Request, res: Response): string | null => {
+  const requireHeaderAuth = (req: Request, res: Response): string | null => {
     const callerAddress = getCallerAddress(req);
     if (!callerAddress) {
       res.status(401).json({ error: "Unauthorized" });
@@ -23,8 +27,11 @@ export function createTradeRouter(prisma: PrismaClient) {
     return callerAddress;
   };
 
+  router.post("/", authMiddleware, tradeController.createTrade);
+  router.post("/:id/deposit", authMiddleware, tradeController.buildDepositTx);
+
   router.get("/", async (req, res) => {
-    const callerAddress = requireAuth(req, res);
+    const callerAddress = requireHeaderAuth(req, res);
     if (!callerAddress) {
       return;
     }
@@ -61,7 +68,7 @@ export function createTradeRouter(prisma: PrismaClient) {
   });
 
   router.get("/stats", async (req, res) => {
-    const callerAddress = requireAuth(req, res);
+    const callerAddress = requireHeaderAuth(req, res);
     if (!callerAddress) {
       return;
     }
@@ -71,7 +78,7 @@ export function createTradeRouter(prisma: PrismaClient) {
   });
 
   router.get("/:id", async (req, res) => {
-    const callerAddress = requireAuth(req, res);
+    const callerAddress = requireHeaderAuth(req, res);
     if (!callerAddress) {
       return;
     }
@@ -95,3 +102,5 @@ export function createTradeRouter(prisma: PrismaClient) {
 
   return router;
 }
+
+export const tradeRoutes = createTradeRouter();
