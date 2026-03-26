@@ -25,3 +25,22 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif;
 }
+
+
+@layer base {
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0B1A14;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(139, 168, 154, 0.2);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 168, 154, 0.4);
+  }
+}
