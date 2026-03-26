@@ -11,7 +11,7 @@ export interface FormFieldProps {
   hint?: string;
   error?: string;
   className?: string;
-  children: React.ReactElement;
+  children: React.ReactElement<Record<string, unknown>>;
 }
 
 export function FormField({
