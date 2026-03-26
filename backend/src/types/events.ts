@@ -2,6 +2,9 @@
  * Type definitions for Soroban contract event processing.
  * Maps to the on-chain TradeStatus enum defined in contracts/amana_escrow/src/lib.rs.
  */
+import { TradeStatus } from "@prisma/client";
+
+export { TradeStatus };
 
 export enum EventType {
   TradeCreated = "TradeCreated",
@@ -10,15 +13,6 @@ export enum EventType {
   FundsReleased = "FundsReleased",
   DisputeInitiated = "DisputeInitiated",
   DisputeResolved = "DisputeResolved",
-}
-
-export enum TradeStatus {
-  CREATED = "CREATED",
-  FUNDED = "FUNDED",
-  DELIVERED = "DELIVERED",
-  COMPLETED = "COMPLETED",
-  DISPUTED = "DISPUTED",
-  CANCELLED = "CANCELLED",
 }
 
 /** Mapping from EventType to the resulting TradeStatus */

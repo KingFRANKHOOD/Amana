@@ -13,6 +13,7 @@ datasource db {
 }
 
 enum TradeStatus {
+  PENDING_SIGNATURE
   CREATED
   FUNDED
   DELIVERED
@@ -65,9 +66,11 @@ model Trade {
   updatedAt     DateTime    @updatedAt
 
   // Relations
-  buyer         User        @relation("buyer", fields: [buyerAddress], references: [walletAddress])
-  seller        User        @relation("seller", fields: [sellerAddress], references: [walletAddress])
+  buyer         User             @relation("buyer", fields: [buyerAddress], references: [walletAddress])
+  seller        User             @relation("seller", fields: [sellerAddress], references: [walletAddress])
   dispute       Dispute?
+  manifest      DeliveryManifest?
+  evidence      TradeEvidence[]
 
   @@index([tradeId])
   @@index([buyerAddress])
@@ -98,6 +101,46 @@ model Dispute {
   @@index([tradeId])
   @@index([initiator])
   @@index([status])
+}
+
+/// DeliveryManifest — submitted by the seller before shipping.
+/// Sensitive fields (driverName, driverIdNumber) are hashed with SHA-256 before
+/// being sent on-chain; raw values are stored here for mediator review.
+model DeliveryManifest {
+  id                      Int      @id @default(autoincrement())
+  tradeId                 String   @unique @db.VarChar(255)
+  /// Raw (plaintext) driver name — mediator-only access
+  driverName              String   @db.VarChar(255)
+  /// Raw driver ID number
+  driverIdNumber          String   @db.VarChar(255)
+  vehicleRegistration     String   @db.VarChar(100)
+  routeDescription        String   @db.Text
+  expectedDeliveryAt      DateTime
+  /// SHA-256 hash of driverName — stored on-chain
+  driverNameHash          String   @db.VarChar(64)
+  /// SHA-256 hash of driverIdNumber — stored on-chain
+  driverIdHash            String   @db.VarChar(64)
+  createdAt               DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
+
+  @@index([tradeId])
+}
+
+/// TradeEvidence — IPFS-pinned files submitted as delivery evidence
+model TradeEvidence {
+  id          Int      @id @default(autoincrement())
+  tradeId     String   @db.VarChar(255)
+  cid         String   @db.VarChar(255)
+  filename    String   @db.VarChar(255)
+  mimeType    String   @db.VarChar(100)
+  uploadedBy  String   @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
+
+  @@index([tradeId])
+  @@index([cid])
 }
 
 /// ProcessedLedger model for tracking the latest processed Stellar ledger

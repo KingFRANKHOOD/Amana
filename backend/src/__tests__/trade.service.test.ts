@@ -4,6 +4,7 @@ import { TradeAccessDeniedError, TradeService } from "../services/trade.service"
 function createMockPrisma() {
   return {
     trade: {
+      create: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
       findFirst: jest.fn(),
@@ -18,6 +19,27 @@ describe("TradeService", () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     service = new TradeService(prisma);
+  });
+
+  it("stores a pending trade with PENDING_SIGNATURE status", async () => {
+    prisma.trade.create = jest.fn().mockResolvedValue({});
+
+    await service.createPendingTrade({
+      tradeId: "4294967297",
+      buyer: "buyer-address",
+      seller: "seller-address",
+      amountUsdc: "15.5000000",
+    });
+
+    expect(prisma.trade.create).toHaveBeenCalledWith({
+      data: {
+        tradeId: "4294967297",
+        buyer: "buyer-address",
+        seller: "seller-address",
+        amountUsdc: "15.5000000",
+        status: TradeStatus.PENDING_SIGNATURE,
+      },
+    });
   });
 
   it("GET /trades returns only caller's trades", async () => {
@@ -97,7 +119,7 @@ describe("TradeService", () => {
 
   it("GET /trades/stats returns correct counts and volume", async () => {
     prisma.trade.findMany = jest.fn().mockResolvedValue([
-      { amountUsdc: "100", status: TradeStatus.CREATED },
+      { amountUsdc: "100", status: TradeStatus.PENDING_SIGNATURE },
       { amountUsdc: "25.5", status: TradeStatus.FUNDED },
       { amountUsdc: "50", status: TradeStatus.COMPLETED },
     ]);

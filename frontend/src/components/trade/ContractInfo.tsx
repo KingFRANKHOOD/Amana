@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { TradeDetail } from "@/types/trade";
+import { WalletAddressBadge } from "@/components/ui/WalletAddressBadge";
 
 interface ContractInfoProps {
   trade: TradeDetail;
@@ -60,6 +61,29 @@ export function ContractInfo({ trade }: ContractInfoProps) {
             </p>
           </div>
         ))}
+      </div>
+
+      <div className="mb-5 grid grid-cols-1 gap-3">
+        <div>
+          <p className="text-xs text-text-muted mb-1">Buyer Wallet</p>
+          <WalletAddressBadge
+            address={trade.buyer.walletAddress}
+            truncate="middle"
+            showCopy
+            showExplorer
+            className="w-full justify-between"
+          />
+        </div>
+        <div>
+          <p className="text-xs text-text-muted mb-1">Seller Wallet</p>
+          <WalletAddressBadge
+            address={trade.seller.walletAddress}
+            truncate="middle"
+            showCopy
+            showExplorer
+            className="w-full justify-between"
+          />
+        </div>
       </div>
 
       {/* Loss Ratios */}

@@ -16,26 +16,31 @@
   "license": "ISC",
   "description": "Amana backend service",
   "dependencies": {
+    "@pinata/sdk": "^2.1.0",
     "@prisma/client": "^5.22.0",
     "@stellar/stellar-sdk": "^12.3.0",
+    "axios": "^1.13.6",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-rate-limit": "^7.5.0",
-    "jsonwebtoken": "^9.0.2",
-    "zod": "^3.24.0"
+    "json2csv": "^6.0.0-alpha.2",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.1.1",
     "swagger-ui-express": "^5.0.1",
-    "yamljs": "^0.3.0"
-    "jsonwebtoken": "^9.0.3"
+    "yamljs": "^0.3.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
+    "@types/json2csv": "^5.0.7",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.1.0",
     "@types/node": "^25.5.0",
-    "@types/swagger-ui-express": "^4.1.8",
     "@types/supertest": "^7.2.0",
+    "@types/swagger-ui-express": "^4.1.8",
     "jest": "^30.3.0",
     "prisma": "^5.22.0",
     "supertest": "^7.2.2",

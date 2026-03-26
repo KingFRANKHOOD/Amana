@@ -10,30 +10,35 @@ const prismaClientSingleton = () => {
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
-  // Middleware to ensure all walletAddress values are stored as lowercase
   client.$use(async (params, next) => {
-    // Convert walletAddress to lowercase for User model operations
-    if (params.model === 'User' && params.args.data) {
-      if (typeof params.args.data.walletAddress === 'string') {
-        params.args.data.walletAddress = params.args.data.walletAddress.toLowerCase();
+    const model = String(params.model ?? "");
+    const data = params.args?.data as Record<string, unknown> | undefined;
+
+    if (!data) {
+      return next(params);
+    }
+
+    if (model === 'User' && typeof data.walletAddress === 'string') {
+      data.walletAddress = data.walletAddress.toLowerCase();
+    }
+
+    if (model === 'Trade') {
+      if (typeof data.buyer === 'string') {
+        data.buyer = data.buyer.toLowerCase();
+      }
+      if (typeof data.seller === 'string') {
+        data.seller = data.seller.toLowerCase();
+      }
+      if (typeof data.buyerAddress === 'string') {
+        data.buyerAddress = data.buyerAddress.toLowerCase();
+      }
+      if (typeof data.sellerAddress === 'string') {
+        data.sellerAddress = data.sellerAddress.toLowerCase();
       }
     }
 
-    // Convert walletAddress to lowercase for Trade model operations
-    if (params.model === 'Trade' && params.args.data) {
-      if (typeof params.args.data.buyerAddress === 'string') {
-        params.args.data.buyerAddress = params.args.data.buyerAddress.toLowerCase();
-      }
-      if (typeof params.args.data.sellerAddress === 'string') {
-        params.args.data.sellerAddress = params.args.data.sellerAddress.toLowerCase();
-      }
-    }
-
-    // Convert walletAddress to lowercase for Dispute model operations
-    if (params.model === 'Dispute' && params.args.data) {
-      if (typeof params.args.data.initiator === 'string') {
-        params.args.data.initiator = params.args.data.initiator.toLowerCase();
-      }
+    if (model === 'Dispute' && typeof data.initiator === 'string') {
+      data.initiator = data.initiator.toLowerCase();
     }
 
     return next(params);

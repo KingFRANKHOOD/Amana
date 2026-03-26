@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { TradeDetail } from "@/types/trade";
+import { TradeAmountRow } from "./TradeAmountRow";
 
 interface FinancialSummaryProps {
   trade: TradeDetail;
@@ -37,25 +38,24 @@ function FinancialRow({
 }
 
 export function FinancialSummary({ trade }: FinancialSummaryProps) {
+  const ngnEquivalent = Math.round(trade.vaultAmountLocked * 1600);
+
   return (
     <div className="bg-card rounded-xl border border-border-default p-6 shadow-card">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold text-text-secondary tracking-wide uppercase">
           Financial Summary
         </h2>
-        <span className="text-xs text-text-muted">
-          All amounts in USDC
-        </span>
+        <span className="text-xs text-text-muted">All amounts in USDC</span>
       </div>
 
-      {/* Main escrow amount */}
-      <div className="bg-elevated rounded-lg p-4 mb-4 border border-border-default">
-        <p className="text-xs text-text-muted mb-1">Vault Amount Locked</p>
-        <p className="text-3xl font-bold text-gold">
-          {trade.vaultAmountLocked.toLocaleString()}{" "}
-          <span className="text-lg font-semibold text-text-muted">USDC</span>
-        </p>
-      </div>
+      <TradeAmountRow
+        amountUsdc={trade.vaultAmountLocked}
+        amountLocal={ngnEquivalent}
+        currencyLocal="NGN"
+        label="Vault Amount Locked"
+        highlighted
+      />
 
       {/* Line items */}
       <div>

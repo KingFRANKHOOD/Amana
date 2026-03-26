@@ -1,4 +1,12 @@
-import { Prisma, PrismaClient, TradeStatus } from "@prisma/client";
+import { Prisma, PrismaClient, Trade, TradeStatus } from "@prisma/client";
+import { prisma as defaultPrisma } from "../lib/db";
+
+export interface CreatePendingTradeInput {
+  tradeId: string;
+  buyer: string;
+  seller: string;
+  amountUsdc: string;
+}
 
 export type TradeListFilters = {
   status?: TradeStatus;
@@ -6,6 +14,8 @@ export type TradeListFilters = {
   limit?: number;
   sort?: string;
 };
+
+type TradeDatabase = Pick<PrismaClient, "trade">;
 
 export class TradeAccessDeniedError extends Error {
   constructor() {
@@ -15,7 +25,16 @@ export class TradeAccessDeniedError extends Error {
 }
 
 export class TradeService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: TradeDatabase = defaultPrisma) {}
+
+  async createPendingTrade(input: CreatePendingTradeInput): Promise<Trade> {
+    return this.prisma.trade.create({
+      data: {
+        ...input,
+        status: TradeStatus.PENDING_SIGNATURE,
+      },
+    });
+  }
 
   async listUserTrades(address: string, filters: TradeListFilters) {
     const page = Math.max(1, filters.page ?? 1);
@@ -86,6 +105,7 @@ export class TradeService {
     });
 
     const openStatuses = new Set<TradeStatus>([
+      TradeStatus.PENDING_SIGNATURE,
       TradeStatus.CREATED,
       TradeStatus.FUNDED,
       TradeStatus.DELIVERED,

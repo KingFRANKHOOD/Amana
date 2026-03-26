@@ -3,6 +3,7 @@
 import React from "react";
 import { Star } from "lucide-react";
 import type { TradeParty } from "@/types/trade";
+import { WalletAddressBadge } from "@/components/ui/WalletAddressBadge";
 
 interface PartiesPanelProps {
   buyer: TradeParty;
@@ -16,9 +17,6 @@ function PartyCard({
   party: TradeParty;
   role: "BUYER" | "SELLER";
 }) {
-  const truncateWallet = (addr: string) =>
-    addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
-
   return (
     <div className="flex-1 bg-elevated rounded-lg p-4 border border-border-default">
       <p className="text-xs font-semibold tracking-widest text-text-muted mb-3">
@@ -42,9 +40,14 @@ function PartyCard({
           <p className="text-text-primary font-semibold text-sm truncate">
             {party.name}
           </p>
-          <p className="text-text-muted text-xs font-mono mt-0.5">
-            {truncateWallet(party.walletAddress)}
-          </p>
+          <div className="mt-1">
+            <WalletAddressBadge
+              address={party.walletAddress}
+              truncate="middle"
+              showCopy
+              showExplorer
+            />
+          </div>
         </div>
       </div>
 
