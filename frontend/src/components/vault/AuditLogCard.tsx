@@ -1,5 +1,5 @@
 import { BentoCard } from "@/components/ui/BentoCard";
-import { Shield, Fingerprint, Radio, Database } from "lucide-react";
+import { Shield, Fingerprint, Database } from "lucide-react";
 import type { ReactNode } from "react";
 import Image from "next/image";
 import RequestIcon from "@/app/assets/RequestIcon.png";
