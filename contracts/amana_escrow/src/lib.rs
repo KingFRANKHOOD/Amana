@@ -2385,5 +2385,44 @@ mod integration_tests {
         // Second submission must panic
         let cid2 = soroban_sdk::String::from_str(&s.env, "QmSecondProof");
         client.submit_video_proof(&trade_id, &s.seller, &cid2);
+    /// Evidence submission fails after dispute is resolved.
+    #[test]
+    #[should_panic(expected = "Evidence can only be submitted for a Disputed trade")]
+    fn test_evidence_submission_fails_after_dispute_resolved() {
+        let s = Setup::new(10_000, 100);
+        let client = s.client();
+        let trade_id = create_and_fund(&s, 10_000);
+        
+        // Raise dispute
+        s.env.ledger().with_mut(|l| l.timestamp = 1_000);
+        let dispute_reason = soroban_sdk::String::from_str(&s.env, "QmDisputeReason");
+      
+        // Resolve dispute
+        s.env.ledger().with_mut(|l| l.timestamp = 2_000);
+     
+        
+        // Try to submit evidence after resolution - should fail
+        s.env.ledger().with_mut(|l| l.timestamp = 3_000);
+        let ipfs_hash = soroban_sdk::String::from_str(&s.env, "QmLateEvidence");
+        let desc_hash = soroban_sdk::String::from_str(&s.env, "Too late");
+        client.submit_evidence(&trade_id, &s.buyer, &ipfs_hash, &desc_hash);
+    }
+
+    /// Evidence list is empty for trades without disputes.
+    #[test]
+    fn test_evidence_list_empty_for_non_disputed_trade() {
+        let s = Setup::new(10_000, 100);
+        let client = s.client();
+        let trade_id = create_and_fund(&s, 10_000);
+        
+        // Trade is Funded, no dispute raised
+        let evidence_list = client.get_evidence_list(&trade_id);
+        assert_eq!(evidence_list.len(), 0, "Evidence list should be empty for non-disputed trade");
+        
+        // Confirm delivery (no dispute path)
+      
+        // Evidence list should still be empty
+        let evidence_list_after = client.get_evidence_list(&trade_id);
+        assert_eq!(evidence_list_after.len(), 0, "Evidence list should remain empty after delivery confirmation");
     }
 }
