@@ -1,6 +1,7 @@
 import { Trade } from "@prisma/client";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import type { TradeRecord } from "../types/trade";
+import { env } from "../config/env";
 
 const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
 const DEFAULT_TIMEOUT_SECONDS = 300;
@@ -16,6 +17,8 @@ export interface BuildCreateTradeTxInput {
   buyerAddress: string;
   sellerAddress: string;
   amountUsdc: string;
+  buyerLossBps: number;
+  sellerLossBps: number;
 }
 
 export interface BuildCreateTradeTxResult {
@@ -67,7 +70,7 @@ function getRpcServer(rpcUrl: string): StellarSdk.rpc.Server {
 }
 
 function getEscrowContractId(): string {
-  return requireEnv("AMANA_ESCROW_CONTRACT_ID", process.env.CONTRACT_ID || "");
+  return env.AMANA_ESCROW_CONTRACT_ID;
 }
 
 function getRpcUrl(): string {
@@ -191,7 +194,7 @@ export class ContractService {
   constructor(
     rpcUrl: string = getRpcUrl(),
     contractId: string = getEscrowContractId(),
-    usdcContractId: string = process.env.USDC_CONTRACT_ID || "",
+    usdcContractId: string = env.USDC_CONTRACT_ID,
     networkPassphrase: string = getNetworkPassphrase(),
   ) {
     this.rpcServer = getRpcServer(rpcUrl);
@@ -221,6 +224,8 @@ export class ContractService {
           StellarSdk.Address.fromString(input.buyerAddress).toScVal(),
           StellarSdk.Address.fromString(input.sellerAddress).toScVal(),
           StellarSdk.nativeToScVal(amount, { type: "i128" }),
+          StellarSdk.nativeToScVal(input.buyerLossBps, { type: "u32" }),
+          StellarSdk.nativeToScVal(input.sellerLossBps, { type: "u32" }),
         ),
       )
       .setTimeout(DEFAULT_TIMEOUT_SECONDS)

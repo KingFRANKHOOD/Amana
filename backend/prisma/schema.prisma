@@ -61,6 +61,8 @@ model Trade {
   buyerAddress  String      @db.VarChar(255)
   sellerAddress String      @db.VarChar(255)
   amountUsdc    String      @default("0") @db.VarChar(100)
+  buyerLossBps  Int         @default(5000)
+  sellerLossBps Int         @default(5000)
   status        TradeStatus @default(CREATED)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt

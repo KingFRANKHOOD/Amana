@@ -100,6 +100,15 @@ pub struct DisputeInitiatedEvent {
     pub reason_hash: String,
 }
 
+/// Emitted when a video proof is submitted for a trade.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VideoProofSubmittedEvent {
+    pub trade_id: u64,
+    pub submitter: Address,
+    pub ipfs_cid: String,
+}
+
 /// Emitted when a mediator address is added to the registry by the admin.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,6 +167,19 @@ pub struct DisputeRecord {
     pub disputed_at: u64,
 }
 
+/// Record of a video proof submitted for a trade.
+/// Only one video proof is allowed per trade (stored under DataKey::VideoProof).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VideoProofRecord {
+    /// Address of the party who submitted the video proof.
+    pub submitter: Address,
+    /// IPFS CID of the video content.
+    pub ipfs_cid: String,
+    /// Ledger timestamp when the proof was submitted.
+    pub submitted_at: u64,
+}
+
 /// Record of a single piece of evidence submitted during a dispute.
 /// Multiple evidence records can be submitted by any party or mediator.
 #[contracttype]
@@ -194,6 +216,8 @@ pub enum DataKey {
     DisputeData(u64),
     /// Stores the list of all evidence records submitted for a trade.
     EvidenceList(u64),
+    /// Stores the single VideoProofRecord for a trade (one per trade, immutable once set).
+    VideoProof(u64),
 }
 
 // ---------------------------------------------------------------------------
@@ -724,6 +748,63 @@ impl EscrowContract {
         env.storage()
             .persistent()
             .get(&DataKey::Evidence(trade_id, submitter))
+    }
+
+    // -----------------------------------------------------------------------
+    // Video proof
+    // -----------------------------------------------------------------------
+
+    /// Anchor a delivery video's IPFS CID on-chain for a specific trade.
+    ///
+    /// Either the buyer or the seller may submit video proof.
+    /// The trade must be in `Funded` or `Disputed` status.
+    /// Only one video proof is allowed per trade — attempting to overwrite panics.
+    ///
+    /// `ipfs_cid` must be a non-empty IPFS content identifier.
+    pub fn submit_video_proof(env: Env, trade_id: u64, submitter: Address, ipfs_cid: String) {
+        submitter.require_auth();
+
+        assert!(ipfs_cid.len() > 0, "ipfs_cid must not be empty");
+
+        let key = DataKey::Trade(trade_id);
+        let trade: Trade = env.storage().persistent().get(&key).expect("Trade not found");
+
+        assert!(
+            matches!(trade.status, TradeStatus::Funded | TradeStatus::Disputed),
+            "Video proof can only be submitted for a Funded or Disputed trade"
+        );
+
+        assert!(
+            submitter == trade.buyer || submitter == trade.seller,
+            "Only the buyer or seller can submit video proof"
+        );
+
+        let proof_key = DataKey::VideoProof(trade_id);
+        assert!(
+            !env.storage().persistent().has(&proof_key),
+            "Video proof already submitted for this trade"
+        );
+
+        let now = env.ledger().timestamp();
+        let record = VideoProofRecord {
+            submitter: submitter.clone(),
+            ipfs_cid: ipfs_cid.clone(),
+            submitted_at: now,
+        };
+
+        env.storage().persistent().set(&proof_key, &record);
+
+        env.events().publish(
+            (symbol_short!("VIDPRF"), trade_id),
+            VideoProofSubmittedEvent { trade_id, submitter, ipfs_cid },
+        );
+    }
+
+    /// Retrieve the video proof record for a trade, if any.
+    pub fn get_video_proof(env: Env, trade_id: u64) -> Option<VideoProofRecord> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::VideoProof(trade_id))
     }
 
     // -----------------------------------------------------------------------
@@ -2248,10 +2329,61 @@ mod integration_tests {
         let s = Setup::new(10_000, 100);
         let client = s.client();
         let trade_id = create_and_fund(&s, 10_000);
-        
+
         // Trade is Funded, not Disputed
         let ipfs_hash = soroban_sdk::String::from_str(&s.env, "QmEarlyEvidence");
         let desc_hash = soroban_sdk::String::from_str(&s.env, "Too early");
         client.submit_evidence(&trade_id, &s.buyer, &ipfs_hash, &desc_hash);
+    }
+
+    // -----------------------------------------------------------------------
+    // Video proof tests
+    // -----------------------------------------------------------------------
+
+    /// Buyer can submit video proof for a funded trade; record is stored correctly.
+    #[test]
+    fn test_video_proof_stored_correctly() {
+        let s = Setup::new(10_000, 100);
+        let client = s.client();
+        let trade_id = create_and_fund(&s, 10_000);
+
+        s.env.ledger().with_mut(|l| l.timestamp = 5_000);
+        let cid = soroban_sdk::String::from_str(&s.env, "QmVideoProofCID123");
+        client.submit_video_proof(&trade_id, &s.buyer, &cid);
+
+        let proof = client.get_video_proof(&trade_id).expect("proof must exist");
+        assert_eq!(proof.submitter, s.buyer);
+        assert_eq!(proof.ipfs_cid, cid);
+        assert_eq!(proof.submitted_at, 5_000);
+    }
+
+    /// Video proof submission fails when the trade is not Funded or Disputed.
+    #[test]
+    #[should_panic(expected = "Video proof can only be submitted for a Funded or Disputed trade")]
+    fn test_video_proof_fails_on_wrong_status() {
+        let s = Setup::new(10_000, 100);
+        let client = s.client();
+
+        // Trade is Created (not yet funded)
+        let trade_id = client.create_trade(&s.buyer, &s.seller, &10_000_i128, &5000_u32, &5000_u32);
+
+        let cid = soroban_sdk::String::from_str(&s.env, "QmTooEarlyCID");
+        client.submit_video_proof(&trade_id, &s.buyer, &cid);
+    }
+
+    /// A second call to submit_video_proof for the same trade must panic.
+    #[test]
+    #[should_panic(expected = "Video proof already submitted for this trade")]
+    fn test_video_proof_cannot_be_overwritten() {
+        let s = Setup::new(10_000, 100);
+        let client = s.client();
+        let trade_id = create_and_fund(&s, 10_000);
+
+        let cid1 = soroban_sdk::String::from_str(&s.env, "QmFirstProof");
+        client.submit_video_proof(&trade_id, &s.buyer, &cid1);
+
+        // Second submission must panic
+        let cid2 = soroban_sdk::String::from_str(&s.env, "QmSecondProof");
+        client.submit_video_proof(&trade_id, &s.seller, &cid2);
     }
 }

@@ -10,6 +10,8 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   STELLAR_RPC_URL: z.string().optional(),
+  AMANA_ESCROW_CONTRACT_ID: z.string().min(1),
+  USDC_CONTRACT_ID: z.string().min(1),
 });
 
 export const env = envSchema.parse(process.env);

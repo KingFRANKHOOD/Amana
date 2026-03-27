@@ -16,6 +16,8 @@ const AMOUNT_USDC_PATTERN = /^\d+(?:\.\d{1,7})?$/;
 interface CreateTradeBody {
   sellerAddress?: unknown;
   amountUsdc?: unknown;
+  buyerLossBps?: unknown;
+  sellerLossBps?: unknown;
 }
 
 export function getCallerStellarAddress(req: Request): string | undefined {
@@ -78,7 +80,7 @@ export class TradeController {
         return res.status(400).json({ error: "Invalid buyer wallet address" });
       }
 
-      const { sellerAddress, amountUsdc } = req.body as CreateTradeBody;
+      const { sellerAddress, amountUsdc, buyerLossBps, sellerLossBps } = req.body as CreateTradeBody;
       if (!this.isValidPublicKey(sellerAddress)) {
         return res.status(400).json({ error: "Invalid sellerAddress" });
       }
@@ -88,11 +90,23 @@ export class TradeController {
         return res.status(400).json({ error: "Invalid amountUsdc" });
       }
 
+      if (!this.isValidLossBps(buyerLossBps)) {
+        return res.status(400).json({ error: "buyerLossBps must be an integer between 0 and 10000" });
+      }
+      if (!this.isValidLossBps(sellerLossBps)) {
+        return res.status(400).json({ error: "sellerLossBps must be an integer between 0 and 10000" });
+      }
+      if ((buyerLossBps as number) + (sellerLossBps as number) !== 10000) {
+        return res.status(400).json({ error: "buyerLossBps and sellerLossBps must sum to 10000" });
+      }
+
       const { tradeId, unsignedXdr } =
         await this.contractService.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
           amountUsdc: normalizedAmountUsdc,
+          buyerLossBps: buyerLossBps as number,
+          sellerLossBps: sellerLossBps as number,
         });
 
       await this.tradeService.createPendingTrade({
@@ -100,6 +114,8 @@ export class TradeController {
         buyerAddress,
         sellerAddress,
         amountUsdc: normalizedAmountUsdc,
+        buyerLossBps: buyerLossBps as number,
+        sellerLossBps: sellerLossBps as number,
       });
 
       return res.status(201).json({ tradeId, unsignedXdr });
@@ -296,6 +312,10 @@ export class TradeController {
       typeof value === "string" &&
       StellarSdk.StrKey.isValidEd25519PublicKey(value)
     );
+  }
+
+  private isValidLossBps(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10000;
   }
 
   private normalizeAmountUsdc(value: unknown): string | null {

@@ -12,6 +12,8 @@ export interface CreatePendingTradeInput {
   buyerAddress: string;
   sellerAddress: string;
   amountUsdc: string;
+  buyerLossBps: number;
+  sellerLossBps: number;
 }
 
 export type TradeListFilters = {
