@@ -1751,6 +1751,65 @@ mod test {
             }])
             .remove_mediator(&mediator);
     }
+
+    // -----------------------------------------------------------------------
+    // Query function tests
+    // -----------------------------------------------------------------------
+
+    /// get_trade returns correct trade data for an existing trade.
+    #[test]
+    fn test_get_trade_returns_correct_data() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _admin, _usdc) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000, &5000);
+        let trade = client.get_trade(&trade_id);
+
+        assert_eq!(trade.buyer, buyer);
+        assert_eq!(trade.seller, seller);
+        assert_eq!(trade.amount, amount);
+        assert_eq!(trade.buyer_loss_bps, 5000);
+        assert_eq!(trade.seller_loss_bps, 5000);
+        assert!(matches!(trade.status, TradeStatus::Created));
+    }
+
+    /// get_trade panics when querying a non-existent trade ID.
+    #[test]
+    #[should_panic(expected = "Trade not found")]
+    fn test_get_trade_panics_on_unknown_id() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _admin, _usdc) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Query a trade ID that doesn't exist
+        client.get_trade(&999);
+    }
+
+    /// get_evidence_list returns empty vec if no evidence has been submitted.
+    #[test]
+    fn test_get_evidence_list_returns_empty_vec_if_no_evidence() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _admin, _usdc) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000, &5000);
+        let evidence_list = client.get_evidence_list(&trade_id);
+
+        assert_eq!(evidence_list.len(), 0, "Evidence list should be empty");
+    }
+
 }
 
 // ---------------------------------------------------------------------------
