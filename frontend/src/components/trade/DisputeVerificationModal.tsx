@@ -2,7 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, CheckCircle, X, Upload, ExternalLink } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle,
+  X,
+  Upload,
+  ExternalLink,
+} from "lucide-react";
 import { signTransaction } from "@stellar/freighter-api";
 import { VideoUploadCard } from "@/components/ui/VideoUploadCard";
 
@@ -19,7 +25,14 @@ export interface DisputeVerificationModalProps {
   networkPassphrase?: string;
 }
 
-type Step = "upload" | "confirm-accept" | "confirm-dispute" | "signing" | "done-accept" | "done-dispute" | "error";
+type Step =
+  | "upload"
+  | "confirm-accept"
+  | "confirm-dispute"
+  | "signing"
+  | "done-accept"
+  | "done-dispute"
+  | "error";
 
 export function DisputeVerificationModal({
   isOpen,
@@ -49,7 +62,9 @@ export function DisputeVerificationModal({
   // Lock body scroll when open
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "unset";
-    return () => { document.body.style.overflow = "unset"; };
+    return () => {
+      document.body.style.overflow = "unset";
+    };
   }, [isOpen]);
 
   const signAndSubmit = async (xdr: string, actionLabel: string) => {
@@ -59,7 +74,7 @@ export function DisputeVerificationModal({
     try {
       const result = await signTransaction(xdr, {
         networkPassphrase,
-        accountToSign: walletAddress,
+        address: walletAddress,
       });
 
       if (result.error) {
@@ -67,10 +82,9 @@ export function DisputeVerificationModal({
       }
 
       // Submit signed XDR to Horizon
-      const horizonUrl =
-        networkPassphrase.includes("Test")
-          ? "https://horizon-testnet.stellar.org"
-          : "https://horizon.stellar.org";
+      const horizonUrl = networkPassphrase.includes("Test")
+        ? "https://horizon-testnet.stellar.org"
+        : "https://horizon.stellar.org";
 
       const submitRes = await fetch(`${horizonUrl}/transactions`, {
         method: "POST",
@@ -80,7 +94,10 @@ export function DisputeVerificationModal({
 
       if (!submitRes.ok) {
         const body = await submitRes.json().catch(() => ({}));
-        throw new Error(body?.extras?.result_codes?.transaction ?? "Transaction submission failed");
+        throw new Error(
+          body?.extras?.result_codes?.transaction ??
+            "Transaction submission failed",
+        );
       }
 
       const data = await submitRes.json();
@@ -130,13 +147,20 @@ export function DisputeVerificationModal({
               </Dialog.Close>
             </div>
 
-            <div id="dispute-modal-description" className="px-6 py-6 flex flex-col gap-6">
+            <div
+              id="dispute-modal-description"
+              className="px-6 py-6 flex flex-col gap-6"
+            >
               {/* Trade context */}
               <div className="bg-bg-elevated rounded-xl px-4 py-3 flex flex-col gap-1">
                 <p className="text-xs text-text-muted">Trade ID</p>
-                <p className="text-sm font-mono text-text-primary truncate">{tradeId}</p>
+                <p className="text-sm font-mono text-text-primary truncate">
+                  {tradeId}
+                </p>
                 <p className="text-xs text-text-muted mt-1">Contract</p>
-                <p className="text-sm font-mono text-text-secondary truncate">{contractId}</p>
+                <p className="text-sm font-mono text-text-secondary truncate">
+                  {contractId}
+                </p>
               </div>
 
               {/* Step: Upload */}
@@ -188,16 +212,27 @@ export function DisputeVerificationModal({
               {step === "confirm-accept" && (
                 <div className="flex flex-col gap-5">
                   <div className="bg-gold-muted border border-[rgba(212,168,83,0.3)] rounded-xl p-4 text-sm text-text-primary">
-                    <p className="font-semibold mb-1 text-gold">Confirm Goods Acceptance</p>
+                    <p className="font-semibold mb-1 text-gold">
+                      Confirm Goods Acceptance
+                    </p>
                     <p className="text-text-secondary">
-                      Signing this transaction will call <code className="font-mono text-gold">release()</code> on the Amana escrow contract,
-                      releasing locked funds to the seller. This action is <strong>irreversible</strong>.
+                      Signing this transaction will call{" "}
+                      <code className="font-mono text-gold">release()</code> on
+                      the Amana escrow contract, releasing locked funds to the
+                      seller. This action is <strong>irreversible</strong>.
                     </p>
                   </div>
                   {ipfsHash && (
                     <div className="text-xs text-text-muted bg-bg-elevated rounded-lg px-3 py-2 flex items-center gap-2">
-                      <span className="truncate flex-1 font-mono">IPFS: {ipfsHash}</span>
-                      <a href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`} target="_blank" rel="noopener noreferrer" className="text-gold">
+                      <span className="truncate flex-1 font-mono">
+                        IPFS: {ipfsHash}
+                      </span>
+                      <a
+                        href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gold"
+                      >
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
@@ -223,16 +258,29 @@ export function DisputeVerificationModal({
               {step === "confirm-dispute" && (
                 <div className="flex flex-col gap-5">
                   <div className="bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] rounded-xl p-4 text-sm text-text-primary">
-                    <p className="font-semibold mb-1 text-status-danger">Confirm Dispute</p>
+                    <p className="font-semibold mb-1 text-status-danger">
+                      Confirm Dispute
+                    </p>
                     <p className="text-text-secondary">
-                      Signing this transaction will call <code className="font-mono text-status-danger">raise_dispute()</code>,
-                      routing the trade to a mediator. Funds remain locked until resolution.
+                      Signing this transaction will call{" "}
+                      <code className="font-mono text-status-danger">
+                        raise_dispute()
+                      </code>
+                      , routing the trade to a mediator. Funds remain locked
+                      until resolution.
                     </p>
                   </div>
                   {ipfsHash && (
                     <div className="text-xs text-text-muted bg-bg-elevated rounded-lg px-3 py-2 flex items-center gap-2">
-                      <span className="truncate flex-1 font-mono">IPFS: {ipfsHash}</span>
-                      <a href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`} target="_blank" rel="noopener noreferrer" className="text-gold">
+                      <span className="truncate flex-1 font-mono">
+                        IPFS: {ipfsHash}
+                      </span>
+                      <a
+                        href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gold"
+                      >
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
@@ -268,9 +316,12 @@ export function DisputeVerificationModal({
               {step === "done-accept" && (
                 <div className="flex flex-col items-center gap-4 py-6 text-center">
                   <CheckCircle className="w-12 h-12 text-emerald" />
-                  <p className="text-lg font-semibold text-text-primary">Funds Released</p>
+                  <p className="text-lg font-semibold text-text-primary">
+                    Funds Released
+                  </p>
                   <p className="text-sm text-text-secondary">
-                    The escrow has been settled and funds released to the seller.
+                    The escrow has been settled and funds released to the
+                    seller.
                   </p>
                   {txHash && (
                     <a
@@ -282,7 +333,10 @@ export function DisputeVerificationModal({
                       View transaction <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
-                  <button onClick={onClose} className="mt-2 px-6 py-2 rounded-xl bg-gold text-text-inverse text-sm font-semibold hover:bg-gold-hover transition-colors">
+                  <button
+                    onClick={onClose}
+                    className="mt-2 px-6 py-2 rounded-xl bg-gold text-text-inverse text-sm font-semibold hover:bg-gold-hover transition-colors"
+                  >
                     Close
                   </button>
                 </div>
@@ -292,9 +346,12 @@ export function DisputeVerificationModal({
               {step === "done-dispute" && (
                 <div className="flex flex-col items-center gap-4 py-6 text-center">
                   <AlertTriangle className="w-12 h-12 text-status-warning" />
-                  <p className="text-lg font-semibold text-text-primary">Dispute Raised</p>
+                  <p className="text-lg font-semibold text-text-primary">
+                    Dispute Raised
+                  </p>
                   <p className="text-sm text-text-secondary">
-                    A mediator has been alerted. Funds remain locked pending resolution.
+                    A mediator has been alerted. Funds remain locked pending
+                    resolution.
                   </p>
                   {txHash && (
                     <a
@@ -306,7 +363,10 @@ export function DisputeVerificationModal({
                       View transaction <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
-                  <button onClick={onClose} className="mt-2 px-6 py-2 rounded-xl border border-border-default text-text-secondary text-sm font-semibold hover:bg-bg-elevated transition-colors">
+                  <button
+                    onClick={onClose}
+                    className="mt-2 px-6 py-2 rounded-xl border border-border-default text-text-secondary text-sm font-semibold hover:bg-bg-elevated transition-colors"
+                  >
                     Close
                   </button>
                 </div>
@@ -316,7 +376,9 @@ export function DisputeVerificationModal({
               {step === "error" && (
                 <div className="flex flex-col items-center gap-4 py-6 text-center">
                   <X className="w-12 h-12 text-status-danger" />
-                  <p className="text-lg font-semibold text-text-primary">Transaction Failed</p>
+                  <p className="text-lg font-semibold text-text-primary">
+                    Transaction Failed
+                  </p>
                   {errorMsg && (
                     <p className="text-sm text-status-danger bg-[rgba(239,68,68,0.1)] rounded-lg px-4 py-2">
                       {errorMsg}
