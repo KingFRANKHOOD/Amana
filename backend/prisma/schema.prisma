@@ -29,6 +29,12 @@ enum DisputeStatus {
   CLOSED
 }
 
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 /// User model representing a participant in the Amana platform
 /// - walletAddress: Stellar wallet address (stored as lowercase for consistency)
 /// - displayName: User's display name
@@ -45,6 +51,8 @@ model User {
   tradesBought    Trade[]          @relation("buyer")
   tradesSold      Trade[]          @relation("seller")
   initiatedDisputes Dispute[]      @relation("initiator")
+  vaults          Vault[]
+  goals           Goal[]
 
   @@index([walletAddress])
 }
@@ -151,4 +159,55 @@ model TradeEvidence {
 model ProcessedLedger {
   ledgerSequence Int      @id
   processedAt    DateTime @default(now())
+}
+
+/// Vault model representing a savings vault on Soroban
+/// - vaultId: Unique identifier from blockchain
+/// - ownerAddress: Wallet address of vault owner (lowercase)
+/// - balanceUsdc: Current balance in USDC (string for precision)
+/// - createdAt: Timestamp of vault creation
+model Vault {
+  id              Int      @id @default(autoincrement())
+  vaultId         String   @unique @db.VarChar(255)
+  ownerAddress    String   @db.VarChar(255)
+  balanceUsdc     String   @default("0") @db.VarChar(100)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  owner           User     @relation(fields: [ownerAddress], references: [walletAddress])
+  goals           Goal[]
+
+  @@index([vaultId])
+  @@index([ownerAddress])
+}
+
+/// Goal model representing a savings goal linked to a vault
+/// - goalId: Unique identifier from blockchain
+/// - vaultId: Reference to parent vault
+/// - targetAmountUsdc: Target amount to save (string for precision)
+/// - currentAmountUsdc: Current accumulated amount (string for precision)
+/// - deadline: Target completion date
+/// - status: Goal status (ACTIVE, COMPLETED, CANCELLED)
+/// - createdAt: Timestamp of goal creation
+model Goal {
+  id                  Int         @id @default(autoincrement())
+  goalId              String      @unique @db.VarChar(255)
+  vaultId             String      @db.VarChar(255)
+  userId              Int
+  targetAmountUsdc    String      @db.VarChar(100)
+  currentAmountUsdc   String      @default("0") @db.VarChar(100)
+  deadline            DateTime
+  status              GoalStatus  @default(ACTIVE)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  // Relations
+  vault               Vault       @relation(fields: [vaultId], references: [vaultId], onDelete: Cascade)
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([vaultId])
+  @@index([userId])
+  @@index([status])
 }

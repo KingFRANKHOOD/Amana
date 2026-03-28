@@ -6,20 +6,17 @@ import { createTradeRouter } from "./routes/trade.routes";
 import { createManifestRouter } from "./routes/manifest.routes";
 import { createEvidenceRouter } from "./routes/evidence.routes";
 import { createAuditTrailRouter } from "./routes/auditTrail.routes";
+import { createGoalsRouter } from "./routes/goals.routes";
+import { createHealthRouter } from "./routes/health.routes";
 
 export function createApp(): express.Application {
   const app = express();
   app.use(cors());
   app.use(express.json());
   app.use(loggerMiddleware);
-  app.get("/health", (req, res) => {
-    appLogger.info({ path: req.url }, 'Health check');
-    res.status(200).json({
-      status: "ok",
-      service: "amana-backend",
-      timestamp: new Date().toISOString(),
-    });
-  });
+
+  // Enhanced health check with deep introspection
+  app.use("/health", createHealthRouter());
 
   const tradeRouter = createTradeRouter();
   app.use("/trades", tradeRouter);
@@ -32,6 +29,9 @@ export function createApp(): express.Application {
 
   // Audit trail: GET /trades/:id/history
   app.use("/trades", createAuditTrailRouter());
+
+  // Goals analytics: GET /goals
+  app.use("/goals", createGoalsRouter());
 
   app.use(errorHandler);
   return app;
