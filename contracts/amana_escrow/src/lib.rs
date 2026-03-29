@@ -944,7 +944,7 @@ mod test {
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
-        let buyer = env.invoker();
+        let buyer = Address::generate(&env);
         let seller = Address::generate(&env);
         let treasury = Address::generate(&env);
         let usdc_id = env.register_stellar_asset_contract(admin.clone());
@@ -3160,6 +3160,441 @@ mod integration_tests {
 
         let trade = client.get_trade(&trade_id);
         assert!(matches!(trade.status, TradeStatus::Completed));
+    }
+
+    // -----------------------------------------------------------------------
+    // Comprehensive mediator registry tests (acceptance criteria)
+    // -----------------------------------------------------------------------
+
+    /// Test: Add 3 mediators, all can call resolve_dispute()
+    /// Validates multiple mediators can be registered independently and all have resolution privileges.
+    #[test]
+    fn test_multiple_mediators_can_resolve_dispute() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Register 3 mediators
+        let mediator_1 = Address::generate(&env);
+        let mediator_2 = Address::generate(&env);
+        let mediator_3 = Address::generate(&env);
+
+        client.add_mediator(&mediator_1);
+        client.add_mediator(&mediator_2);
+        client.add_mediator(&mediator_3);
+
+        // Verify all are registered
+        assert!(client.is_mediator(&mediator_1), "mediator_1 should be registered");
+        assert!(client.is_mediator(&mediator_2), "mediator_2 should be registered");
+        assert!(client.is_mediator(&mediator_3), "mediator_3 should be registered");
+
+        // Setup buyer with enough balance for 3 trades
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &(amount * 3)); // Mint enough for 3 trades
+
+        // Each mediator should be able to resolve the dispute
+        // Test mediator_1
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+        client.resolve_dispute(&trade_id, &mediator_1, &6_000_u32);
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Completed));
+
+        // Test mediator_2
+        let trade_id_2 = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id_2);
+        client.initiate_dispute(&trade_id_2, &buyer, &String::from_str(&env, "reason2"));
+        client.resolve_dispute(&trade_id_2, &mediator_2, &6_000_u32);
+        let trade2 = client.get_trade(&trade_id_2);
+        assert!(matches!(trade2.status, TradeStatus::Completed));
+
+        // Test mediator_3
+        let trade_id_3 = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id_3);
+        client.initiate_dispute(&trade_id_3, &buyer, &String::from_str(&env, "reason3"));
+        client.resolve_dispute(&trade_id_3, &mediator_3, &6_000_u32);
+        let trade3 = client.get_trade(&trade_id_3);
+        assert!(matches!(trade3.status, TradeStatus::Completed));
+    }
+
+    /// Test: Remove 1 mediator, that mediator cannot resolve (error), others can
+    /// Validates selective revocation works correctly without affecting other mediators.
+    #[test]
+    fn test_remove_one_mediator_blocks_only_that_mediator() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Register 3 mediators
+        let mediator_1 = Address::generate(&env);
+        let mediator_2 = Address::generate(&env);
+        let mediator_3 = Address::generate(&env);
+
+        client.add_mediator(&mediator_1);
+        client.add_mediator(&mediator_2);
+        client.add_mediator(&mediator_3);
+
+        // Remove mediator_2
+        client.remove_mediator(&mediator_2);
+
+        // Verify mediator_2 is revoked, others remain
+        assert!(client.is_mediator(&mediator_1), "mediator_1 should still be registered");
+        assert!(!client.is_mediator(&mediator_2), "mediator_2 should be revoked");
+        assert!(client.is_mediator(&mediator_3), "mediator_3 should still be registered");
+
+        // Setup buyer with enough balance for 2 trades
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &(amount * 2)); // Mint enough for 2 trades
+
+        // mediator_1 should still be able to resolve
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+        client.resolve_dispute(&trade_id, &mediator_1, &6_000_u32);
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Completed));
+
+        // mediator_3 should also be able to resolve
+        let trade_id_2 = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id_2);
+        client.initiate_dispute(&trade_id_2, &buyer, &String::from_str(&env, "reason2"));
+        client.resolve_dispute(&trade_id_2, &mediator_3, &6_000_u32);
+        let trade2 = client.get_trade(&trade_id_2);
+        assert!(matches!(trade2.status, TradeStatus::Completed));
+    }
+
+    /// Test: Remove 1 mediator, that mediator cannot resolve - isolated test for panic
+    #[test]
+    #[should_panic(expected = "Unauthorized mediator")]
+    fn test_removed_mediator_cannot_resolve() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Register 3 mediators
+        let mediator_1 = Address::generate(&env);
+        let mediator_2 = Address::generate(&env);
+        let mediator_3 = Address::generate(&env);
+
+        client.add_mediator(&mediator_1);
+        client.add_mediator(&mediator_2);
+        client.add_mediator(&mediator_3);
+
+        // Remove mediator_2
+        client.remove_mediator(&mediator_2);
+
+        // Setup disputed trade
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+
+        // mediator_2 should NOT be able to resolve - must panic
+        client.resolve_dispute(&trade_id, &mediator_2, &6_000_u32);
+    }
+
+    /// Test: After removing one mediator, other mediators can still resolve
+    /// Complementary test to verify remaining mediators retain privileges.
+    #[test]
+    fn test_remaining_mediators_can_resolve_after_one_removed() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Register 3 mediators
+        let mediator_1 = Address::generate(&env);
+        let mediator_2 = Address::generate(&env);
+        let mediator_3 = Address::generate(&env);
+
+        client.add_mediator(&mediator_1);
+        client.add_mediator(&mediator_2);
+        client.add_mediator(&mediator_3);
+
+        // Remove mediator_2
+        client.remove_mediator(&mediator_2);
+
+        // Setup disputed trade for mediator_3
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+
+        // mediator_3 should still be able to resolve
+        client.resolve_dispute(&trade_id, &mediator_3, &6_000_u32);
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Completed));
+    }
+
+    /// Test: Legacy slot doesn't prevent new registry from revoking mediator
+    /// Validates that a mediator registered via add_mediator() can be fully revoked
+    /// even if legacy slot is set to a different address.
+    #[test]
+    fn test_legacy_slot_does_not_prevent_registry_revocation() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Set up legacy mediator (different from registry mediator)
+        let legacy_mediator = Address::generate(&env);
+        let registry_mediator = Address::generate(&env);
+
+        // Legacy mediator in instance storage
+        client.set_mediator(&legacy_mediator);
+        // Registry mediator in persistent storage
+        client.add_mediator(&registry_mediator);
+
+        // Verify both are registered
+        assert!(client.is_mediator(&legacy_mediator), "legacy_mediator should be registered");
+        assert!(client.is_mediator(&registry_mediator), "registry_mediator should be registered");
+
+        // Remove registry_mediator
+        client.remove_mediator(&registry_mediator);
+
+        // Verify registry_mediator is fully revoked
+        assert!(!client.is_mediator(&registry_mediator), "registry_mediator should be revoked");
+
+        // Verify legacy_mediator is NOT affected (still in legacy slot)
+        assert!(client.is_mediator(&legacy_mediator), "legacy_mediator should still be registered");
+
+        // Verify registry_mediator cannot resolve (should panic)
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+
+        // This should panic - registry_mediator is revoked
+        // We need a separate test for the panic assertion
+    }
+
+    /// Test: Registry mediator cannot resolve after removal even with legacy slot present
+    /// Isolated panic test for the above scenario.
+    #[test]
+    #[should_panic(expected = "Unauthorized mediator")]
+    fn test_registry_mediator_revoked_despite_legacy_slot_present() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Set up legacy mediator (different from registry mediator)
+        let legacy_mediator = Address::generate(&env);
+        let registry_mediator = Address::generate(&env);
+
+        // Legacy mediator in instance storage
+        client.set_mediator(&legacy_mediator);
+        // Registry mediator in persistent storage
+        client.add_mediator(&registry_mediator);
+
+        // Remove registry_mediator
+        client.remove_mediator(&registry_mediator);
+
+        // Setup disputed trade
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+
+        // registry_mediator should NOT be able to resolve - must panic
+        client.resolve_dispute(&trade_id, &registry_mediator, &6_000_u32);
+    }
+
+    /// Test: Concurrent add/remove operations don't corrupt registry
+    /// Validates that rapid add/remove cycles maintain registry integrity.
+    #[test]
+    fn test_concurrent_add_remove_operations() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, _usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let mediator_a = Address::generate(&env);
+        let mediator_b = Address::generate(&env);
+        let mediator_c = Address::generate(&env);
+
+        // Rapid add/remove cycle for mediator_a
+        client.add_mediator(&mediator_a);
+        client.add_mediator(&mediator_b);
+        client.remove_mediator(&mediator_a);
+        client.add_mediator(&mediator_c);
+        client.add_mediator(&mediator_a);
+        client.remove_mediator(&mediator_b);
+
+        // Verify final state
+        assert!(client.is_mediator(&mediator_a), "mediator_a should be registered (re-added)");
+        assert!(!client.is_mediator(&mediator_b), "mediator_b should be revoked");
+        assert!(client.is_mediator(&mediator_c), "mediator_c should be registered");
+
+        // Verify mediator_a can still resolve (proves registry is not corrupted)
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &_usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+        client.resolve_dispute(&trade_id, &mediator_a, &6_000_u32);
+
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Completed));
+    }
+
+    /// Test: Concurrent add/remove with legacy slot interactions
+    /// Validates complex interleaving of legacy and registry operations.
+    #[test]
+    fn test_concurrent_legacy_registry_operations() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let mediator_a = Address::generate(&env);
+        let mediator_b = Address::generate(&env);
+        let mediator_c = Address::generate(&env);
+
+        // Complex sequence mixing legacy and registry operations
+        client.set_mediator(&mediator_a); // Legacy + Registry
+        client.add_mediator(&mediator_b); // Registry only
+        client.add_mediator(&mediator_c); // Registry only
+        client.remove_mediator(&mediator_a); // Removes from both legacy and registry
+        client.add_mediator(&mediator_a); // Re-add to registry only
+
+        // Verify final state
+        assert!(client.is_mediator(&mediator_a), "mediator_a should be registered");
+        assert!(client.is_mediator(&mediator_b), "mediator_b should be registered");
+        assert!(client.is_mediator(&mediator_c), "mediator_c should be registered");
+
+        // Verify legacy slot is empty (mediator_a was removed, clearing it)
+        // All three should be able to resolve
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &(amount * 3)); // Mint enough for 3 trades
+
+        // Test mediator_a can resolve
+        let trade_id_a = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id_a);
+        client.initiate_dispute(&trade_id_a, &buyer, &String::from_str(&env, "reason_a"));
+        client.resolve_dispute(&trade_id_a, &mediator_a, &6_000_u32);
+        assert!(matches!(client.get_trade(&trade_id_a).status, TradeStatus::Completed));
+
+        // Test mediator_b can resolve
+        let trade_id_b = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id_b);
+        client.initiate_dispute(&trade_id_b, &buyer, &String::from_str(&env, "reason_b"));
+        client.resolve_dispute(&trade_id_b, &mediator_b, &6_000_u32);
+        assert!(matches!(client.get_trade(&trade_id_b).status, TradeStatus::Completed));
+
+        // Test mediator_c can resolve
+        let trade_id_c = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id_c);
+        client.initiate_dispute(&trade_id_c, &buyer, &String::from_str(&env, "reason_c"));
+        client.resolve_dispute(&trade_id_c, &mediator_c, &6_000_u32);
+        assert!(matches!(client.get_trade(&trade_id_c).status, TradeStatus::Completed));
+    }
+
+    /// Test: Remove mediator registered via set_mediator, verify both slots cleared
+    /// Ensures remove_mediator properly cleans up both legacy and registry storage.
+    #[test]
+    fn test_remove_mediator_clears_both_slots() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let mediator = Address::generate(&env);
+
+        // Register via set_mediator (writes to both legacy and registry)
+        client.set_mediator(&mediator);
+        assert!(client.is_mediator(&mediator), "mediator should be registered");
+
+        // Remove mediator
+        client.remove_mediator(&mediator);
+        assert!(!client.is_mediator(&mediator), "mediator should be revoked");
+
+        // Verify mediator cannot resolve
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+
+        // This should panic - mediator is fully revoked
+        // Separate panic test below
+    }
+
+    /// Test: Mediator registered via set_mediator cannot resolve after remove
+    /// Isolated panic test for complete revocation verification.
+    #[test]
+    #[should_panic(expected = "Unauthorized mediator")]
+    fn test_set_mediator_then_remove_blocks_resolution() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (contract_id, _admin, usdc_id, _treasury) = setup_base(&env);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let mediator = Address::generate(&env);
+
+        // Register via set_mediator (writes to both legacy and registry)
+        client.set_mediator(&mediator);
+
+        // Remove mediator
+        client.remove_mediator(&mediator);
+
+        // Setup disputed trade
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let amount = 1000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
+
+        // This should panic - mediator is fully revoked from both slots
+        client.resolve_dispute(&trade_id, &mediator, &6_000_u32);
     }
 }
 
