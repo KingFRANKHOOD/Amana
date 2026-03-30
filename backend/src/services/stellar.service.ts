@@ -1,4 +1,6 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
+import { retryAsync } from "../lib/retry";
+import { appLogger } from "../middleware/logger";
 
 export class StellarService {
   private server: StellarSdk.Horizon.Server;
@@ -26,7 +28,7 @@ export class StellarService {
 
   public async getAccountBalance(publicKey: string, assetCode: string = "USDC"): Promise<string> {
     try {
-      const account = await this.server.loadAccount(publicKey);
+      const account = await retryAsync(() => this.server.loadAccount(publicKey));
       const balance = account.balances.find((b: any) => {
         if (assetCode === "XLM") {
           return b.asset_type === "native";
@@ -35,7 +37,7 @@ export class StellarService {
       });
       return balance ? balance.balance : "0";
     } catch (error) {
-      console.error(`Failed to get balance for ${publicKey}:`, error);
+      appLogger.error({ error, publicKey }, "Failed to get account balance");
       throw new Error("Unable to fetch balance");
     }
   }

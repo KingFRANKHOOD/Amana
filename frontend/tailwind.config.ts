@@ -19,6 +19,7 @@ const config: Config = {
         "gold-muted": "rgba(212,168,83,0.15)",
         emerald: "#34D399",
         "emerald-muted": "rgba(52,211,153,0.15)",
+        "accent-emerald": "#34D399",
         teal: "#14B8A6",
         "text-primary": "#F0F5F1",
         "text-secondary": "#8BA89A",
@@ -84,6 +85,11 @@ const config: Config = {
           "Geist",
           "ui-sans-serif",
           "system-ui",
+          "sans-serif",
+        ],
+        manrope: [
+          "var(--font-manrope)",
+          "Manrope",
           "sans-serif",
         ],
         mono: [

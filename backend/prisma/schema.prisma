@@ -5,9 +5,15 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Connection pooling is configured via the DATABASE_URL connection string
+  // Example with PgBouncer: postgresql://user:password@localhost:5432/amana?pgbouncer=true
+  // For production, ensure the connection pool size is appropriate for your workload:
+  // - connection_limit: typically 20-100 connections
+  // - pool_mode: use 'transaction' or 'session' mode based on your needs
 }
 
 enum TradeStatus {
+  PENDING_SIGNATURE
   CREATED
   FUNDED
   DELIVERED
@@ -16,20 +22,192 @@ enum TradeStatus {
   CANCELLED
 }
 
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+/// User model representing a participant in the Amana platform
+/// - walletAddress: Stellar wallet address (stored as lowercase for consistency)
+/// - displayName: User's display name
+/// - createdAt: Timestamp of account creation
+model User {
+  id              Int              @id @default(autoincrement())
+  /// Unique wallet address (always stored as lowercase)
+  walletAddress   String           @unique @db.VarChar(255)
+  displayName     String           @db.VarChar(255)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  tradesBought    Trade[]          @relation("buyer")
+  tradesSold      Trade[]          @relation("seller")
+  initiatedDisputes Dispute[]      @relation("initiator")
+  vaults          Vault[]
+  goals           Goal[]
+
+  @@index([walletAddress])
+}
+
+/// Trade model representing a transaction on the Amana platform
+/// - tradeId: Unique identifier for the trade (from blockchain)
+/// - buyerAddress: Wallet address of the buyer (stored as lowercase)
+/// - sellerAddress: Wallet address of the seller (stored as lowercase)
+/// - amountUsdc: Amount in USDC (stored as string to preserve precision)
+/// - status: Current status of the trade
 model Trade {
-  id        Int         @id @default(autoincrement())
-  tradeId   String      @unique
-  buyer     String
-  seller    String
-  amountUsdc String     @default("0")
-  status    TradeStatus @default(CREATED)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id            Int         @id @default(autoincrement())
+  tradeId       String      @unique @db.VarChar(255)
+  buyerAddress  String      @db.VarChar(255)
+  sellerAddress String      @db.VarChar(255)
+  amountUsdc    String      @default("0") @db.VarChar(100)
+  buyerLossBps  Int         @default(5000)
+  sellerLossBps Int         @default(5000)
+  status        TradeStatus @default(CREATED)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  buyer         User             @relation("buyer", fields: [buyerAddress], references: [walletAddress])
+  seller        User             @relation("seller", fields: [sellerAddress], references: [walletAddress])
+  dispute       Dispute?
+  manifest      DeliveryManifest?
+  evidence      TradeEvidence[]
+
+  @@index([tradeId])
+  @@index([buyerAddress])
+  @@index([sellerAddress])
+  @@index([status])
+}
+
+/// Dispute model representing a dispute on a trade
+/// - tradeId: Reference to the associated trade
+/// - initiator: Wallet address of the user initiating the dispute (stored as lowercase)
+/// - reason: Reason for the dispute
+/// - status: Current status of the dispute
+/// - resolvedAt: Timestamp when the dispute was resolved
+model Dispute {
+  id           Int           @id @default(autoincrement())
+  tradeId      String        @unique @db.VarChar(255)
+  initiator    String        @db.VarChar(255)
+  reason       String        @db.Text
+  status       DisputeStatus @default(OPEN)
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  trade        Trade         @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
+  initiatorUser User         @relation("initiator", fields: [initiator], references: [walletAddress])
+
+  @@index([tradeId])
+  @@index([initiator])
+  @@index([status])
+}
+
+/// DeliveryManifest — submitted by the seller before shipping.
+/// Sensitive fields (driverName, driverIdNumber) are hashed with SHA-256 before
+/// being sent on-chain; raw values are stored here for mediator review.
+model DeliveryManifest {
+  id                      Int      @id @default(autoincrement())
+  tradeId                 String   @unique @db.VarChar(255)
+  /// Raw (plaintext) driver name — mediator-only access
+  driverName              String   @db.VarChar(255)
+  /// Raw driver ID number
+  driverIdNumber          String   @db.VarChar(255)
+  vehicleRegistration     String   @db.VarChar(100)
+  routeDescription        String   @db.Text
+  expectedDeliveryAt      DateTime
+  /// SHA-256 hash of driverName — stored on-chain
+  driverNameHash          String   @db.VarChar(64)
+  /// SHA-256 hash of driverIdNumber — stored on-chain
+  driverIdHash            String   @db.VarChar(64)
+  createdAt               DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
 
   @@index([tradeId])
 }
 
+/// TradeEvidence — IPFS-pinned files submitted as delivery evidence
+model TradeEvidence {
+  id          Int      @id @default(autoincrement())
+  tradeId     String   @db.VarChar(255)
+  cid         String   @db.VarChar(255)
+  filename    String   @db.VarChar(255)
+  mimeType    String   @db.VarChar(100)
+  uploadedBy  String   @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
+
+  @@index([tradeId])
+  @@index([cid])
+}
+
+/// ProcessedLedger model for tracking the latest processed Stellar ledger
+/// - ledgerSequence: The sequence number of the processed ledger
+/// - processedAt: Timestamp of when the ledger was processed
 model ProcessedLedger {
   ledgerSequence Int      @id
   processedAt    DateTime @default(now())
+}
+
+/// Vault model representing a savings vault on Soroban
+/// - vaultId: Unique identifier from blockchain
+/// - ownerAddress: Wallet address of vault owner (lowercase)
+/// - balanceUsdc: Current balance in USDC (string for precision)
+/// - createdAt: Timestamp of vault creation
+model Vault {
+  id              Int      @id @default(autoincrement())
+  vaultId         String   @unique @db.VarChar(255)
+  ownerAddress    String   @db.VarChar(255)
+  balanceUsdc     String   @default("0") @db.VarChar(100)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  owner           User     @relation(fields: [ownerAddress], references: [walletAddress])
+  goals           Goal[]
+
+  @@index([vaultId])
+  @@index([ownerAddress])
+}
+
+/// Goal model representing a savings goal linked to a vault
+/// - goalId: Unique identifier from blockchain
+/// - vaultId: Reference to parent vault
+/// - targetAmountUsdc: Target amount to save (string for precision)
+/// - currentAmountUsdc: Current accumulated amount (string for precision)
+/// - deadline: Target completion date
+/// - status: Goal status (ACTIVE, COMPLETED, CANCELLED)
+/// - createdAt: Timestamp of goal creation
+model Goal {
+  id                  Int         @id @default(autoincrement())
+  goalId              String      @unique @db.VarChar(255)
+  vaultId             String      @db.VarChar(255)
+  userId              Int
+  targetAmountUsdc    String      @db.VarChar(100)
+  currentAmountUsdc   String      @default("0") @db.VarChar(100)
+  deadline            DateTime
+  status              GoalStatus  @default(ACTIVE)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  // Relations
+  vault               Vault       @relation(fields: [vaultId], references: [vaultId], onDelete: Cascade)
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([vaultId])
+  @@index([userId])
+  @@index([status])
 }

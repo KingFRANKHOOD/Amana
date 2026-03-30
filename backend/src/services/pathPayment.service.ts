@@ -1,5 +1,7 @@
 import { StellarService } from "./stellar.service";
 import * as StellarSdk from "@stellar/stellar-sdk";
+import { retryAsync } from "../lib/retry";
+import { appLogger } from "../middleware/logger";
 
 export class PathPaymentService {
   private stellarService: StellarService;
@@ -36,7 +38,9 @@ export class PathPaymentService {
 
       const destAssets = [new StellarSdk.Asset("USDC", usdcIssuer)];
 
-      const paths = await server.strictSendPaths(sourceAsset, sourceAmount, destAssets).call();
+      const paths = await retryAsync(() =>
+        server.strictSendPaths(sourceAsset, sourceAmount, destAssets).call()
+      );
       
       // Map properties for easier frontend consumption
       return paths.records.map((record) => ({
@@ -49,7 +53,7 @@ export class PathPaymentService {
         path: record.path,
       }));
     } catch (error) {
-      console.error("Path payment quote error:", error);
+      appLogger.error({ error }, "Path payment quote error");
       throw new Error("Failed to fetch path payment quotes");
     }
   }

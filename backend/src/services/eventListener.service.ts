@@ -3,6 +3,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { getEventListenerConfig, EventListenerConfig } from "../config/eventListener.config";
 import { EventType, ParsedEvent } from "../types/events";
 import { dispatchEvent } from "./eventHandlers";
+import { appLogger } from "../middleware/logger";
 
 /**
  * EventListenerService — long-running service that polls Soroban RPC for
@@ -47,8 +48,9 @@ export class EventListenerService {
       this.lastLedger = recentLedgers[0].ledgerSequence;
     }
 
-    console.log(
-      `[EventListener] Started — polling every ${this.config.pollIntervalMs}ms, contractId=${this.config.contractId}`
+    appLogger.info(
+      { pollIntervalMs: this.config.pollIntervalMs, contractId: this.config.contractId },
+      "[EventListener] Started"
     );
     this.scheduleNextPoll(0);
   }
@@ -60,7 +62,7 @@ export class EventListenerService {
       clearTimeout(this.timeoutHandle);
       this.timeoutHandle = null;
     }
-    console.log("[EventListener] Stopped");
+    appLogger.info("[EventListener] Stopped");
   }
 
   /** Schedule the next poll with a given delay. */
@@ -96,7 +98,7 @@ export class EventListenerService {
       this.resetBackoff();
       this.scheduleNextPoll(this.config.pollIntervalMs);
     } catch (error) {
-      console.error("[EventListener] Poll failed:", error);
+      appLogger.error({ error }, "[EventListener] Poll failed");
       this.handleBackoff();
     }
   }
@@ -130,11 +132,12 @@ export class EventListenerService {
         this.lastLedger = ledgerSequence;
       }
 
-      console.log(
-        `[EventListener] Processed event — type=${parsed.eventType}, tradeId=${parsed.tradeId}, ledger=${ledgerSequence}`
+      appLogger.debug(
+        { eventType: parsed.eventType, tradeId: parsed.tradeId, ledger: ledgerSequence },
+        "[EventListener] Processed event"
       );
     } catch (error) {
-      console.error(`[EventListener] Failed to process event at ledger ${ledgerSequence}:`, error);
+      appLogger.error({ error, ledgerSequence }, "[EventListener] Failed to process event");
     }
   }
 
@@ -150,7 +153,7 @@ export class EventListenerService {
 
       const eventType = this.mapSymbolToEventType(eventSymbol);
       if (!eventType) {
-        console.warn(`[EventListener] Unknown event symbol: ${eventSymbol}`);
+        appLogger.warn({ eventSymbol }, "[EventListener] Unknown event symbol");
         return null;
       }
 
@@ -171,7 +174,7 @@ export class EventListenerService {
         data,
       };
     } catch (error) {
-      console.error("[EventListener] Failed to parse event:", error);
+      appLogger.error({ error }, "[EventListener] Failed to parse event");
       return null;
     }
   }
@@ -221,7 +224,7 @@ export class EventListenerService {
     const jitter = Math.random() * this.currentBackoffMs * 0.1;
     const delay = Math.min(this.currentBackoffMs + jitter, this.config.backoffMaxMs);
 
-    console.warn(`[EventListener] Backing off for ${Math.round(delay)}ms`);
+    appLogger.warn({ delayMs: Math.round(delay) }, "[EventListener] Backing off");
     this.scheduleNextPoll(delay);
 
     this.currentBackoffMs = Math.min(this.currentBackoffMs * 2, this.config.backoffMaxMs);

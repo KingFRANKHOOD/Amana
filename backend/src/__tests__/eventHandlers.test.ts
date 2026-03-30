@@ -49,8 +49,6 @@ describe("eventHandlers", () => {
 
   beforeEach(() => {
     mockPrisma = createMockPrisma();
-    jest.spyOn(console, "log").mockImplementation();
-    jest.spyOn(console, "warn").mockImplementation();
   });
 
   afterEach(() => {
@@ -75,8 +73,8 @@ describe("eventHandlers", () => {
         },
         create: {
           tradeId: "test-trade-001",
-          buyer: "GA_BUYER",
-          seller: "GA_SELLER",
+          buyerAddress: "GA_BUYER",
+          sellerAddress: "GA_SELLER",
           amountUsdc: "1000",
           status: TradeStatus.CREATED,
         },
@@ -91,8 +89,8 @@ describe("eventHandlers", () => {
       expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
-            buyer: "",
-            seller: "",
+            buyerAddress: "",
+            sellerAddress: "",
             amountUsdc: "0",
           }),
         })
@@ -165,14 +163,20 @@ describe("eventHandlers", () => {
   /* ---------- handleDisputeResolved ------------------------------- */
 
   describe("handleDisputeResolved", () => {
-    it("should upsert Trade with CANCELLED status", async () => {
+    it("should upsert Trade with COMPLETED status when dispute is resolved", async () => {
       const event = makeParsedEvent(EventType.DisputeResolved);
       await handleDisputeResolved(mockPrisma, event);
 
       expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          update: expect.objectContaining({ status: TradeStatus.CANCELLED }),
+          update: expect.objectContaining({ status: TradeStatus.COMPLETED }),
         })
+      );
+    });
+
+    it("maps DisputeResolved to COMPLETED in EVENT_TO_STATUS", () => {
+      expect(EVENT_TO_STATUS[EventType.DisputeResolved]).toBe(
+        TradeStatus.COMPLETED,
       );
     });
   });
@@ -209,9 +213,6 @@ describe("eventHandlers", () => {
       };
 
       await expect(dispatchEvent(mockPrisma, event)).resolves.not.toThrow();
-      expect(console.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Unknown event type")
-      );
     });
 
     it("should not call prisma for an unknown EventType", async () => {
