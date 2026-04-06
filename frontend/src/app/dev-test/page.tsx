@@ -1,5 +1,6 @@
-
 import { Icon } from "@/components/ui/Icon";
+import { Spinner } from "@/components/ui/Spinner";
+import { LoadingState } from "@/components/ui/LoadingState";
 
 const SAMPLE_ICONS = [
   "shield",
@@ -46,7 +47,11 @@ export default function IconDevPage() {
         </h2>
         <div className="flex items-center gap-5">
           <Icon name="check-circle" size="md" className="text-emerald" />
-          <Icon name="alert-triangle" size="md" className="text-status-warning" />
+          <Icon
+            name="alert-triangle"
+            size="md"
+            className="text-status-warning"
+          />
           <Icon name="x-circle" size="md" className="text-status-danger" />
           <Icon name="lock" size="md" className="text-gold" />
           <Icon name="user" size="md" />
@@ -82,6 +87,64 @@ export default function IconDevPage() {
               <span className="text-xs text-text-muted font-mono">{n}</span>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Spinner ──────────────────────────────────────────── */}
+      <section className="mb-10">
+        <h2 className="text-xs font-semibold tracking-widest text-text-muted mb-4 uppercase">
+          Spinner — sizes
+        </h2>
+        <div className="flex items-center gap-8">
+          {(["sm", "md", "lg"] as const).map((s) => (
+            <div key={s} className="flex flex-col items-center gap-3">
+              <Spinner size={s} />
+              <span className="text-xs text-text-muted">{s}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xs font-semibold tracking-widest text-text-muted mb-4 uppercase">
+          Spinner — inside a button
+        </h2>
+        <button
+          disabled
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-gold-cta text-text-inverse text-sm font-bold opacity-60 cursor-not-allowed"
+        >
+          <Spinner size="sm" />
+          Confirming…
+        </button>
+      </section>
+
+      {/* ── LoadingState ─────────────────────────────────────── */}
+      <section className="mb-10">
+        <h2 className="text-xs font-semibold tracking-widest text-text-muted mb-4 uppercase">
+          LoadingState — card skeleton
+        </h2>
+        <div className="max-w-sm">
+          <LoadingState variant="card" rows={4} />
+        </div>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xs font-semibold tracking-widest text-text-muted mb-4 uppercase">
+          LoadingState — row skeleton
+        </h2>
+        <div className="max-w-sm flex flex-col gap-2">
+          <LoadingState variant="row" />
+          <LoadingState variant="row" />
+          <LoadingState variant="row" />
+        </div>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xs font-semibold tracking-widest text-text-muted mb-4 uppercase">
+          LoadingState — inline skeleton
+        </h2>
+        <div className="max-w-xs">
+          <LoadingState variant="inline" />
         </div>
       </section>
     </div>
