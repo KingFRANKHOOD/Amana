@@ -27,159 +27,264 @@ Context: Refactoring pass based on implemented frontend review versus current de
 
 ## FE-REF-001 - Refactor to Single App Shell on Trades
 
-Type: Frontend Refactoring  
-Priority: P0  
-Scope: Remove duplicate shell/header rendering and keep one canonical app chrome pattern.
-Figma Design: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+Description:
+Refactor the Trades experience to use one canonical app shell only. Remove duplicate header and navigation layers so the page structure matches the intended product layout.
 
-Files:
-- frontend/src/app/layout.tsx
-- frontend/src/components/Shell.tsx
-- frontend/src/app/trades/page.tsx
+Requirements and Context:
+- This is a frontend refactoring issue (Priority: P0).
+- Scope includes layout unification between app chrome and Trades content.
+- Figma Link: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+- Affected files:
+	- frontend/src/app/layout.tsx
+	- frontend/src/components/Shell.tsx
+	- frontend/src/app/trades/page.tsx
 
 Acceptance Criteria:
-1. Trades renders with exactly one top-level app chrome.
-2. No duplicate title/logo/navigation bars remain.
-3. Sidebar, top bar, and content alignment is consistent with the canonical shell.
+- [ ] Trades renders with exactly one top-level app chrome.
+- [ ] No duplicate logo/title/nav bars remain.
+- [ ] Sidebar, top bar, and content alignment are consistent.
 
-Screenshot Requirement (Mandatory for Merge):
-1. Add before and after full-page desktop screenshots.
-2. Include one focused screenshot proving duplicate header removal.
+Deliverables:
+- [ ] Implementation of the above criteria.
+- [ ] Proof of correct behavior (screenshots and/or QA notes).
+
+NOTE:
+This issue will not be reviewed or approved without screenshot evidence demonstrating that duplicate shell/header layers were removed.
+
+Suggested Execution:
+1. Remove page-level shell duplication from Trades route.
+2. Keep only canonical app layout chrome.
+3. Validate spacing/alignment against Figma.
+
+Guidelines:
+- Follow existing frontend conventions.
+- Keep refactor scoped to layout concerns.
+- Add before/after screenshots in PR.
 
 ---
 
 ## FE-REF-002 - Unify Navigation States Across App Chrome
 
-Type: Frontend Refactoring  
-Priority: P0  
-Scope: Standardize active, hover, and focus behavior for sidebar links, top nav, and trades filter tabs.
-Figma Design: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+Description:
+Refactor sidebar, top nav, and tab interactions so active, hover, and focus states are visually and behaviorally consistent.
 
-Files:
-- frontend/src/components/layout/AppTopNav.tsx
-- frontend/src/components/layout/SideNavBar.tsx
-- frontend/src/app/trades/page.tsx
+Requirements and Context:
+- This is a frontend refactoring issue (Priority: P0).
+- Scope covers interaction consistency and accessibility for navigation.
+- Figma Link: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+- Affected files:
+	- frontend/src/components/layout/AppTopNav.tsx
+	- frontend/src/components/layout/SideNavBar.tsx
+	- frontend/src/app/trades/page.tsx
 
 Acceptance Criteria:
-1. Active states use one consistent visual pattern.
-2. Hover and keyboard focus treatments are consistent and accessible.
-3. No conflicting interaction styles remain between nav regions.
+- [ ] Active states use one consistent visual pattern.
+- [ ] Hover and focus treatments are consistent and keyboard-visible.
+- [ ] No conflicting styles remain between nav regions.
 
-Screenshot Requirement (Mandatory for Merge):
-1. Add screenshots for default, hover, active, and focus states.
-2. Include at least one screenshot each for sidebar, top nav, and tabs.
+Deliverables:
+- [ ] Implementation of the above criteria.
+- [ ] Proof of correct behavior (screenshots and/or QA notes).
+
+NOTE:
+This issue will not be reviewed or approved without screenshots showing default, hover, active, and focus states.
+
+Suggested Execution:
+1. Define one navigation state pattern from Figma.
+2. Apply to sidebar, top nav, and trades tabs.
+3. Verify keyboard navigation and visual parity.
+
+Guidelines:
+- Preserve existing routing behavior.
+- Do not regress accessibility.
+- Add state screenshots in PR.
 
 ---
 
 ## FE-REF-003 - Standardize Typography Tokens and Hierarchy
 
-Type: Frontend Refactoring  
-Priority: P1  
-Scope: Enforce typography system consistency for body text, headings, nav labels, and metadata.
-Figma Design: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+Description:
+Refactor typography usage so headings, body text, metadata, and nav labels follow one consistent tokenized hierarchy.
 
-Files:
-- frontend/src/app/layout.tsx
-- frontend/src/app/globals.css
-- frontend/src/components/TopNav.tsx
-- frontend/src/app/trades/page.tsx
+Requirements and Context:
+- This is a frontend refactoring issue (Priority: P1).
+- Scope covers token usage and hierarchy consistency.
+- Figma Link: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+- Affected files:
+	- frontend/src/app/layout.tsx
+	- frontend/src/app/globals.css
+	- frontend/src/components/TopNav.tsx
+	- frontend/src/app/trades/page.tsx
 
 Acceptance Criteria:
-1. Typography uses approved tokenized families and sizes consistently.
-2. Heading, body, and supporting text hierarchy is visually coherent.
-3. Unintended fallback stack usage is eliminated in target screens.
+- [ ] Typography uses approved tokenized families and sizes.
+- [ ] Heading/body/supporting hierarchy is coherent.
+- [ ] Unintended fallback stack usage is removed.
 
-Screenshot Requirement (Mandatory for Merge):
-1. Add before and after screenshots of top nav and trades page.
-2. Include close-up screenshot showing heading and body typography hierarchy.
+Deliverables:
+- [ ] Implementation of the above criteria.
+- [ ] Proof of correct behavior (screenshots and/or QA notes).
+
+NOTE:
+This issue will not be reviewed or approved without screenshots that clearly show typography hierarchy before and after.
+
+Suggested Execution:
+1. Audit and map current typography to Figma scale.
+2. Update tokens and component usage.
+3. Verify hierarchy in top nav and trades views.
+
+Guidelines:
+- Use token-driven classes only.
+- Avoid ad-hoc font overrides.
+- Attach close-up typography screenshots in PR.
 
 ---
 
 ## FE-REF-004 - Refactor Spacing and Layout Grid Consistency
 
-Type: Frontend Refactoring  
-Priority: P1  
-Scope: Normalize horizontal and vertical rhythm across app bars, sidebar, content gutters, and tab row.
-Figma Design: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+Description:
+Refactor spacing and grid alignment across app bars, sidebar, content gutters, and tab row to create one consistent layout rhythm.
 
-Files:
-- frontend/src/components/TopNav.tsx
-- frontend/src/components/layout/AppTopNav.tsx
-- frontend/src/app/trades/page.tsx
+Requirements and Context:
+- This is a frontend refactoring issue (Priority: P1).
+- Scope focuses on spacing scale and structural alignment.
+- Figma Link: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+- Affected files:
+	- frontend/src/components/TopNav.tsx
+	- frontend/src/components/layout/AppTopNav.tsx
+	- frontend/src/app/trades/page.tsx
 
 Acceptance Criteria:
-1. Container gutters align across shell and content.
-2. Vertical spacing follows one spacing scale and appears visually balanced.
-3. Header and main content columns align consistently.
+- [ ] Container gutters align across shell and content.
+- [ ] Vertical spacing follows one spacing scale.
+- [ ] Header and content columns align consistently.
 
-Screenshot Requirement (Mandatory for Merge):
-1. Add before and after desktop screenshots showing full layout alignment.
-2. Add mobile screenshot proving responsive spacing consistency.
+Deliverables:
+- [ ] Implementation of the above criteria.
+- [ ] Proof of correct behavior (screenshots and/or QA notes).
+
+NOTE:
+This issue will not be reviewed or approved without desktop and mobile screenshots proving spacing and alignment consistency.
+
+Suggested Execution:
+1. Establish spacing baseline from Figma.
+2. Apply spacing tokens to top bars, tabs, and content blocks.
+3. Validate desktop and mobile breakpoints.
+
+Guidelines:
+- Keep changes token-based.
+- Preserve responsive behavior.
+- Add before/after desktop and mobile screenshots.
 
 ---
 
 ## FE-REF-005 - Normalize Surface, Border, and Elevation Tokens
 
-Type: Frontend Refactoring  
-Priority: P1  
-Scope: Replace ad-hoc shades with consistent token-based surfaces, borders, and elevation across trades and chrome.
-Figma Design: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+Description:
+Refactor surfaces, borders, and elevation styles to remove ad-hoc values and enforce consistent token-based visual layering.
 
-Files:
-- frontend/tailwind.config.ts
-- frontend/src/app/trades/page.tsx
-- frontend/src/components/layout/SideNavBar.tsx
+Requirements and Context:
+- This is a frontend refactoring issue (Priority: P1).
+- Scope includes table surfaces, status chips, and sidebar chrome.
+- Figma Link: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+- Affected files:
+	- frontend/tailwind.config.ts
+	- frontend/src/app/trades/page.tsx
+	- frontend/src/components/layout/SideNavBar.tsx
 
 Acceptance Criteria:
-1. Surface layering is consistent and predictable.
-2. Border and elevation treatments are token-driven and coherent.
-3. Status indicators and selected states preserve readability and contrast.
+- [ ] Surface layering is consistent and predictable.
+- [ ] Border and elevation treatments are token-driven.
+- [ ] Status indicators remain readable and consistent.
 
-Screenshot Requirement (Mandatory for Merge):
-1. Add before and after screenshots of table rows, status chips, and selected tabs.
-2. Include one screenshot focused on border/elevation differences.
+Deliverables:
+- [ ] Implementation of the above criteria.
+- [ ] Proof of correct behavior (screenshots and/or QA notes).
+
+NOTE:
+This issue will not be reviewed or approved without screenshots of rows, chips, and selected states showing token normalization.
+
+Suggested Execution:
+1. Audit conflicting surface/border/elevation styles.
+2. Map all to approved tokens.
+3. Validate contrast and state consistency.
+
+Guidelines:
+- Avoid one-off colors in components.
+- Maintain accessibility and readability.
+- Add focused visual comparison screenshots.
 
 ---
 
 ## FE-REF-006 - Improve Trades Empty State UX and Guidance
 
-Type: Frontend Refactoring  
-Priority: P2  
-Scope: Improve empty-state hierarchy, messaging clarity, and action guidance.
-Figma Design: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+Description:
+Refactor the empty state on Trades for better messaging, hierarchy, and clear next-action guidance.
 
-Files:
-- frontend/src/app/trades/page.tsx
+Requirements and Context:
+- This is a frontend refactoring issue (Priority: P2).
+- Scope is limited to empty-state UX on Trades.
+- Figma Link: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+- Affected files:
+	- frontend/src/app/trades/page.tsx
 
 Acceptance Criteria:
-1. Empty state communicates context clearly.
-2. Empty state gives clear next action guidance.
-3. Visual hierarchy matches the rest of the screen.
+- [ ] Empty state clearly communicates context.
+- [ ] Empty state provides clear action guidance.
+- [ ] Visual hierarchy aligns with page system.
 
-Screenshot Requirement (Mandatory for Merge):
-1. Add before and after screenshots of empty state.
-2. Include one screenshot where action guidance is clearly visible.
+Deliverables:
+- [ ] Implementation of the above criteria.
+- [ ] Proof of correct behavior (screenshots and/or QA notes).
+
+NOTE:
+This issue will not be reviewed or approved without before/after screenshots of the empty state and action guidance.
+
+Suggested Execution:
+1. Refine empty-state copy and supporting content.
+2. Keep CTA prominence aligned with Figma.
+3. Validate hierarchy and spacing.
+
+Guidelines:
+- Keep messaging concise.
+- Ensure CTA remains obvious.
+- Add before/after screenshots in PR.
 
 ---
 
 ## FE-REF-007 - Replace Root Template Page with Product-Aligned Entry
 
-Type: Frontend Refactoring  
-Priority: P1  
-Scope: Replace default root template content with product-aligned experience consistent with app design language.
-Figma Design: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+Description:
+Refactor the root page by replacing template/demo content with a product-aligned entry experience that matches app design language.
 
-Files:
-- frontend/src/app/page.tsx
+Requirements and Context:
+- This is a frontend refactoring issue (Priority: P1).
+- Scope includes root page structure and visual consistency.
+- Figma Link: https://www.figma.com/design/r4l1ciQ2AnyrOxVW9t5oCm/Amana?node-id=0-1&t=1MBz2FGXTfJSQ8ma-1
+- Affected files:
+	- frontend/src/app/page.tsx
 
 Acceptance Criteria:
-1. No template/demo content remains on root page.
-2. Entry page aligns with product shell and visual system.
-3. Navigation path from root to core user flows is clear.
+- [ ] Template/demo content is fully removed.
+- [ ] Root page matches product shell and visual language.
+- [ ] Navigation to core flows is clear.
 
-Screenshot Requirement (Mandatory for Merge):
-1. Add before and after full-page desktop screenshots.
-2. Add mobile screenshot proving responsive behavior.
+Deliverables:
+- [ ] Implementation of the above criteria.
+- [ ] Proof of correct behavior (screenshots and/or QA notes).
+
+NOTE:
+This issue will not be reviewed or approved without desktop and mobile screenshots proving final behavior.
+
+Suggested Execution:
+1. Remove template assets and placeholders.
+2. Implement product-aligned entry layout from Figma.
+3. Validate responsiveness and navigation clarity.
+
+Guidelines:
+- Keep page production-ready.
+- Reuse existing design tokens and components.
+- Attach desktop/mobile screenshots in PR.
 
 ---
 
