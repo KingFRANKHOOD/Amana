@@ -1,5 +1,6 @@
 node_modules/
 **/node_modules/
+# Any package `dist/` (includes backend TypeScript output)
 dist/
 coverage/
 .env
