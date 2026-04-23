@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { TradeProvider, useTrade } from "./TradeContext";
 import Step1Details from "./steps/Step1Details";
 import Step2Negotiation from "./steps/Step2Negotiation";
@@ -53,9 +54,9 @@ function CreateTradeInner() {
     <div className="min-h-screen bg-bg-primary flex items-start justify-center px-4 py-12">
       <div className="w-full max-w-lg">
         <div className="mb-6">
-          <a href="/" className="text-text-muted text-sm hover:text-text-secondary transition-colors">
+          <Link href="/" className="text-text-muted text-sm hover:text-text-secondary transition-colors">
             ← Back
-          </a>
+          </Link>
         </div>
 
         <div className="mb-6">

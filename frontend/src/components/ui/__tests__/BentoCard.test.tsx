@@ -135,7 +135,7 @@ describe('BentoCard Component', () => {
     });
 
     it('renders with empty children', () => {
-        const { container } = render(<BentoCard {...defaultProps} children={null} />);
+        const { container } = render(<BentoCard {...defaultProps}>{null}</BentoCard>);
         expect(container.firstChild).toBeInTheDocument();
     });
 

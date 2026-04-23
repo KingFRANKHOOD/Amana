@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signTransaction } from "@stellar/freighter-api";
 import { useTrade } from "../TradeContext";
@@ -126,12 +127,12 @@ export default function Step3Review() {
         >
           View Trade Details
         </button>
-        <a
+        <Link
           href="/trades"
           className="text-sm text-text-secondary hover:text-text-primary"
         >
           View All Trades
-        </a>
+        </Link>
       </div>
     );
   }

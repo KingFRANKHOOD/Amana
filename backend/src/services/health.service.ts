@@ -23,7 +23,7 @@ interface HealthCheckResponse {
     };
 }
 
-type HealthDatabase = Pick<PrismaClient, "processedLedger" | "$queryRaw">;
+type HealthDatabase = Pick<PrismaClient, "processedEvent" | "$queryRaw">;
 
 export class HealthService {
     private startTime: number = Date.now();
@@ -84,7 +84,7 @@ export class HealthService {
 
         try {
             // Fetch the most recent processed ledger
-            const latestLedger = await this.prisma.processedLedger.findFirst({
+            const latestLedger = await this.prisma.processedEvent.findFirst({
                 orderBy: { ledgerSequence: "desc" },
                 take: 1,
             });
@@ -149,7 +149,7 @@ export class HealthService {
         }
 
         // Fetch latest ledger for details
-        const latestLedger = await this.prisma.processedLedger.findFirst({
+        const latestLedger = await this.prisma.processedEvent.findFirst({
             orderBy: { ledgerSequence: "desc" },
             take: 1,
         });

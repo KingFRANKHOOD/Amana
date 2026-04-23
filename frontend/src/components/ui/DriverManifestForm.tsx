@@ -39,11 +39,10 @@ export function DriverManifestForm({ isOpen, onComplete, onDismiss }: DriverMani
 
   useEffect(() => {
     if (!formRef.current) {
-      setSubmitEnabled(false);
+      setSubmitEnabled(false); // eslint-disable-line
       return;
     }
-
-    setSubmitEnabled(formRef.current.checkValidity());
+    setSubmitEnabled(formRef.current.checkValidity()); // eslint-disable-line
   }, [driverName, driverPhone, licensePlate]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {

@@ -1,5 +1,4 @@
 import { SkeletonList } from "@/components/ui/SkeletonList";
-import { SkeletonCard } from "@/components/ui/SkeletonCard";
 
 export default function TradesLoading() {
   return (
