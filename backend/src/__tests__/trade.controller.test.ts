@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import request from "supertest";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { tradeRoutes } from "../routes/trade.routes";
+import * as ContractServiceModule from "../services/contract.service";
 import { ContractService } from "../services/contract.service";
 import { TradeService } from "../services/trade.service";
 import { AuthService } from "../services/auth.service";
@@ -83,7 +84,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "125.1234567",
+                    amount: "125.1234567",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -96,7 +97,7 @@ describe("TradeController", () => {
             expect(ContractService.prototype.buildCreateTradeTx).toHaveBeenCalledWith({
                 buyerAddress,
                 sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
             });
@@ -104,7 +105,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
             });
@@ -116,7 +117,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress: "not-a-stellar-address",
-                    amountUsdc: "10",
+                    amount: "10",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -131,7 +132,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "invalid-amount",
+                    amount: "invalid-amount",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -146,7 +147,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "100",
+                    amount: "100",
                     buyerLossBps: 10001,
                     sellerLossBps: 0,
                 });
@@ -161,7 +162,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "100",
+                    amount: "100",
                     buyerLossBps: 0,
                     sellerLossBps: 10001,
                 });
@@ -176,7 +177,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "100",
+                    amount: "100",
                     buyerLossBps: 3000,
                     sellerLossBps: 3000,
                 });
@@ -191,7 +192,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "-100",
+                    amount: "-100",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -206,7 +207,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "0",
+                    amount: "0",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -218,7 +219,7 @@ describe("TradeController", () => {
         it("returns 401 without auth", async () => {
             const res = await request(app).post("/trades").send({
                 sellerAddress,
-                amountUsdc: "10",
+                amount: "10",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
             });
@@ -237,7 +238,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "125.1234567",
+                    amount: "125.1234567",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -253,7 +254,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "CREATED",
             });
             (ContractService.prototype.buildDepositTx as jest.Mock).mockResolvedValue({
@@ -285,7 +286,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "CREATED",
             });
 
@@ -302,7 +303,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "CREATED",
             });
 
@@ -319,7 +320,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "FUNDED",
             });
 
@@ -356,10 +357,10 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "FUNDED",
             });
-            (ContractService.buildConfirmDeliveryTx as jest.Mock).mockResolvedValue(
+            (ContractServiceModule.buildConfirmDeliveryTx as jest.Mock).mockResolvedValue(
                 "AAAA-confirm-delivery-xdr"
             );
 
@@ -375,7 +376,7 @@ describe("TradeController", () => {
                 "4294967297",
                 buyerAddress
             );
-            expect(ContractService.buildConfirmDeliveryTx).toHaveBeenCalledWith(
+            expect(ContractServiceModule.buildConfirmDeliveryTx).toHaveBeenCalledWith(
                 expect.objectContaining({
                     tradeId: "4294967297",
                     buyerAddress: buyerAddress,
@@ -389,7 +390,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "FUNDED",
             });
 
@@ -406,7 +407,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "FUNDED",
             });
 
@@ -423,7 +424,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "CREATED",
             });
 
@@ -460,10 +461,10 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "DELIVERED",
             });
-            (ContractService.buildReleaseFundsTx as jest.Mock).mockResolvedValue(
+            (ContractServiceModule.buildReleaseFundsTx as jest.Mock).mockResolvedValue(
                 "AAAA-release-funds-xdr"
             );
 
@@ -479,7 +480,7 @@ describe("TradeController", () => {
                 "4294967297",
                 buyerAddress
             );
-            expect(ContractService.buildReleaseFundsTx).toHaveBeenCalledWith(
+            expect(ContractServiceModule.buildReleaseFundsTx).toHaveBeenCalledWith(
                 expect.objectContaining({
                     tradeId: "4294967297",
                     buyerAddress: buyerAddress,
@@ -493,7 +494,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "DELIVERED",
             });
 
@@ -510,7 +511,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "DELIVERED",
             });
 
@@ -527,7 +528,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "FUNDED",
             });
 
@@ -674,13 +675,13 @@ describe("TradeController", () => {
 
     describe("listTrades()", () => {
         it("returns paginated trades for the authenticated user", async () => {
-            (TradeService.prototype.listTrades as jest.Mock).mockResolvedValue({
+            (TradeService.prototype.listUserTrades as jest.Mock).mockResolvedValue({
                 trades: [
                     {
                         tradeId: "4294967297",
                         buyerAddress: buyerAddress,
                         sellerAddress: sellerAddress,
-                        amountUsdc: "125.1234567",
+                        amount: "125.1234567",
                         status: "CREATED",
                     },
                 ],
@@ -698,7 +699,7 @@ describe("TradeController", () => {
             expect(res.body.total).toBe(1);
             expect(res.body.page).toBe(1);
             expect(res.body.limit).toBe(10);
-            expect(TradeService.prototype.listTrades).toHaveBeenCalledWith(
+            expect(TradeService.prototype.listUserTrades).toHaveBeenCalledWith(
                 buyerAddress,
                 expect.objectContaining({
                     page: 1,
@@ -708,7 +709,7 @@ describe("TradeController", () => {
         });
 
         it("handles pagination parameters correctly", async () => {
-            (TradeService.prototype.listTrades as jest.Mock).mockResolvedValue({
+            (TradeService.prototype.listUserTrades as jest.Mock).mockResolvedValue({
                 trades: [],
                 total: 0,
                 page: 2,
@@ -722,7 +723,7 @@ describe("TradeController", () => {
             expect(res.status).toBe(200);
             expect(res.body.page).toBe(2);
             expect(res.body.limit).toBe(5);
-            expect(TradeService.prototype.listTrades).toHaveBeenCalledWith(
+            expect(TradeService.prototype.listUserTrades).toHaveBeenCalledWith(
                 buyerAddress,
                 expect.objectContaining({
                     page: 2,
@@ -732,7 +733,7 @@ describe("TradeController", () => {
         });
 
         it("applies default pagination values", async () => {
-            (TradeService.prototype.listTrades as jest.Mock).mockResolvedValue({
+            (TradeService.prototype.listUserTrades as jest.Mock).mockResolvedValue({
                 trades: [],
                 total: 0,
                 page: 1,
@@ -749,13 +750,13 @@ describe("TradeController", () => {
         });
 
         it("filters by status", async () => {
-            (TradeService.prototype.listTrades as jest.Mock).mockResolvedValue({
+            (TradeService.prototype.listUserTrades as jest.Mock).mockResolvedValue({
                 trades: [
                     {
                         tradeId: "4294967297",
                         buyerAddress: buyerAddress,
                         sellerAddress: sellerAddress,
-                        amountUsdc: "125.1234567",
+                        amount: "125.1234567",
                         status: "FUNDED",
                     },
                 ],
@@ -769,7 +770,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(200);
-            expect(TradeService.prototype.listTrades).toHaveBeenCalledWith(
+            expect(TradeService.prototype.listUserTrades).toHaveBeenCalledWith(
                 buyerAddress,
                 expect.objectContaining({
                     status: "FUNDED",
@@ -778,7 +779,7 @@ describe("TradeController", () => {
         });
 
         it("enforces access control (only user's trades)", async () => {
-            (TradeService.prototype.listTrades as jest.Mock).mockResolvedValue({
+            (TradeService.prototype.listUserTrades as jest.Mock).mockResolvedValue({
                 trades: [],
                 total: 0,
                 page: 1,
@@ -790,7 +791,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${strangerToken}`);
 
             expect(res.status).toBe(200);
-            expect(TradeService.prototype.listTrades).toHaveBeenCalledWith(
+            expect(TradeService.prototype.listUserTrades).toHaveBeenCalledWith(
                 strangerAddress,
                 expect.any(Object)
             );
@@ -810,7 +811,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "CREATED",
                 createdAt: new Date().toISOString(),
             });
@@ -836,7 +837,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "CREATED",
                 createdAt: new Date().toISOString(),
             });
@@ -882,7 +883,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "CREATED",
                 createdAt: new Date().toISOString(),
                 buyerLossBps: 5000,
@@ -919,7 +920,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress: "INVALID",
-                    amountUsdc: "100",
+                    amount: "100",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -934,7 +935,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amountUsdc: "-100",
+                    amount: "-100",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -972,7 +973,7 @@ describe("TradeController", () => {
                 tradeId: "4294967297",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amountUsdc: "125.1234567",
+                amount: "125.1234567",
                 status: "DISPUTED",
             });
 
@@ -1007,7 +1008,7 @@ describe("TradeController", () => {
             ];
 
             for (const endpoint of endpoints) {
-                const res = await request(app)[endpoint.method](endpoint.path);
+                const res = await (request(app) as any)[endpoint.method](endpoint.path);
                 expect(res.status).toBe(401);
                 expect(res.body.error).toBe("Unauthorized");
             }

@@ -4,6 +4,8 @@ import {
   __resetRpcServerFactoryForTests,
   __setRpcServerFactoryForTests,
   ContractService,
+  buildConfirmDeliveryTx,
+  buildReleaseFundsTx,
 } from "../services/contract.service";
 
 describe("ContractService network resilience", () => {
@@ -61,7 +63,7 @@ describe("ContractService network resilience", () => {
     const result = await service.buildCreateTradeTx({
       buyerAddress,
       sellerAddress,
-      amountUsdc: "12.5",
+      amount: "12.5",
       buyerLossBps: 5000,
       sellerLossBps: 5000,
     });
@@ -82,7 +84,7 @@ describe("ContractService network resilience", () => {
     const result = await service.buildDepositTx({
       tradeId: "7",
       buyerAddress,
-      amountUsdc: "10",
+      amount: "10",
     });
 
     expect(result.unsignedXdr).toEqual(expect.any(String));
@@ -99,7 +101,7 @@ describe("ContractService network resilience", () => {
       service.buildDepositTx({
         tradeId: "7",
         buyerAddress,
-        amountUsdc: "10",
+        amount: "10",
       }),
     ).rejects.toEqual(expect.objectContaining({ response: { status: 400 } }));
     expect((server as any).getAccount).toHaveBeenCalledTimes(1);
@@ -173,7 +175,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress: "INVALID_ADDRESS",
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -187,7 +189,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress: "INVALID_ADDRESS",
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -200,7 +202,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 3000,
         sellerLossBps: 7000,
       });
@@ -215,7 +217,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 7000,
         sellerLossBps: 3000,
       });
@@ -230,7 +232,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -245,7 +247,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 0,
         sellerLossBps: 10000,
       });
@@ -260,7 +262,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 10000,
         sellerLossBps: 0,
       });
@@ -275,7 +277,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "999999999999.9999999",
+        amount: "999999999999.9999999",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -290,7 +292,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "0",
+        amount: "0",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -305,7 +307,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "12.5",
+        amount: "12.5",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -336,7 +338,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -349,7 +351,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -366,7 +368,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildDepositTx({
         tradeId: "7",
         buyerAddress,
-        amountUsdc: "100",
+        amount: "100",
       });
 
       expect(result.unsignedXdr).toEqual(expect.any(String));
@@ -378,7 +380,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildDepositTx({
         tradeId: "7",
         buyerAddress,
-        amountUsdc: "50.75",
+        amount: "50.75",
       });
 
       expect(result.unsignedXdr).toEqual(expect.any(String));
@@ -390,7 +392,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildDepositTx({
         tradeId: "7",
         buyerAddress,
-        amountUsdc: "0",
+        amount: "0",
       });
 
       expect(result.unsignedXdr).toEqual(expect.any(String));
@@ -402,7 +404,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildDepositTx({
         tradeId: "7",
         buyerAddress,
-        amountUsdc: "999999999999.9999999",
+        amount: "999999999999.9999999",
       });
 
       expect(result.unsignedXdr).toEqual(expect.any(String));
@@ -427,7 +429,7 @@ describe("ContractService XDR builders", () => {
         service.buildDepositTx({
           tradeId: "7",
           buyerAddress,
-          amountUsdc: "100",
+          amount: "100",
         }),
       ).rejects.toThrow("CONTRACT_ID is not configured");
     });
@@ -451,7 +453,7 @@ describe("ContractService XDR builders", () => {
         service.buildDepositTx({
           tradeId: "7",
           buyerAddress,
-          amountUsdc: "100",
+          amount: "100",
         }),
       ).rejects.toThrow("USDC_CONTRACT_ID is not configured");
     });
@@ -461,7 +463,7 @@ describe("ContractService XDR builders", () => {
     it("builds confirm delivery transaction for FUNDED trade", async () => {
       const { service } = buildService();
 
-      const result = await service.buildConfirmDeliveryTx(
+      const result = await buildConfirmDeliveryTx(
         { tradeId: "7", status: "FUNDED" },
         buyerAddress,
       );
@@ -473,7 +475,7 @@ describe("ContractService XDR builders", () => {
       const { service } = buildService();
 
       await expect(
-        service.buildConfirmDeliveryTx(
+        buildConfirmDeliveryTx(
           { tradeId: "7", status: "PENDING" },
           buyerAddress,
         ),
@@ -484,7 +486,7 @@ describe("ContractService XDR builders", () => {
       const { service } = buildService();
 
       await expect(
-        service.buildConfirmDeliveryTx(
+        buildConfirmDeliveryTx(
           { tradeId: "7", status: "DELIVERED" },
           buyerAddress,
         ),
@@ -495,7 +497,7 @@ describe("ContractService XDR builders", () => {
       const { service } = buildService();
 
       await expect(
-        service.buildConfirmDeliveryTx(
+        buildConfirmDeliveryTx(
           { tradeId: "7", status: "DISPUTED" },
           buyerAddress,
         ),
@@ -505,7 +507,7 @@ describe("ContractService XDR builders", () => {
     it("returns valid XDR string", async () => {
       const { service } = buildService();
 
-      const result = await service.buildConfirmDeliveryTx(
+      const result = await buildConfirmDeliveryTx(
         { tradeId: "7", status: "FUNDED" },
         buyerAddress,
       );
@@ -519,7 +521,7 @@ describe("ContractService XDR builders", () => {
     it("builds release funds transaction for DELIVERED trade", async () => {
       const { service } = buildService();
 
-      const result = await service.buildReleaseFundsTx(
+      const result = await buildReleaseFundsTx(
         { tradeId: "7", status: "DELIVERED" },
         buyerAddress,
       );
@@ -531,7 +533,7 @@ describe("ContractService XDR builders", () => {
       const { service } = buildService();
 
       await expect(
-        service.buildReleaseFundsTx(
+        buildReleaseFundsTx(
           { tradeId: "7", status: "FUNDED" },
           buyerAddress,
         ),
@@ -542,7 +544,7 @@ describe("ContractService XDR builders", () => {
       const { service } = buildService();
 
       await expect(
-        service.buildReleaseFundsTx(
+        buildReleaseFundsTx(
           { tradeId: "7", status: "PENDING" },
           buyerAddress,
         ),
@@ -553,7 +555,7 @@ describe("ContractService XDR builders", () => {
       const { service } = buildService();
 
       await expect(
-        service.buildReleaseFundsTx(
+        buildReleaseFundsTx(
           { tradeId: "7", status: "DISPUTED" },
           buyerAddress,
         ),
@@ -563,7 +565,7 @@ describe("ContractService XDR builders", () => {
     it("returns valid XDR string", async () => {
       const { service } = buildService();
 
-      const result = await service.buildReleaseFundsTx(
+      const result = await buildReleaseFundsTx(
         { tradeId: "7", status: "DELIVERED" },
         buyerAddress,
       );
@@ -801,7 +803,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -828,7 +830,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -855,7 +857,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -882,7 +884,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -896,7 +898,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress: "INVALID",
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -926,7 +928,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -941,7 +943,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -957,7 +959,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -972,7 +974,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildDepositTx({
         tradeId: "7",
         buyerAddress,
-        amountUsdc: "100",
+        amount: "100",
       });
 
       expect(() => Buffer.from(result.unsignedXdr, "base64")).not.toThrow();
@@ -981,7 +983,7 @@ describe("ContractService XDR builders", () => {
     it("confirm delivery XDR is decodable", async () => {
       const { service } = buildService();
 
-      const result = await service.buildConfirmDeliveryTx(
+      const result = await buildConfirmDeliveryTx(
         { tradeId: "7", status: "FUNDED" },
         buyerAddress,
       );
@@ -992,7 +994,7 @@ describe("ContractService XDR builders", () => {
     it("release funds XDR is decodable", async () => {
       const { service } = buildService();
 
-      const result = await service.buildReleaseFundsTx(
+      const result = await buildReleaseFundsTx(
         { tradeId: "7", status: "DELIVERED" },
         buyerAddress,
       );
@@ -1033,7 +1035,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1047,7 +1049,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1061,7 +1063,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1075,7 +1077,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1092,7 +1094,7 @@ describe("ContractService XDR builders", () => {
       const createResult = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1103,13 +1105,13 @@ describe("ContractService XDR builders", () => {
       const depositResult = await service.buildDepositTx({
         tradeId: "7",
         buyerAddress,
-        amountUsdc: "100",
+        amount: "100",
       });
 
       expect(depositResult.unsignedXdr).toEqual(expect.any(String));
 
       // Build release funds transaction (fee should be applied here)
-      const releaseResult = await service.buildReleaseFundsTx(
+      const releaseResult = await buildReleaseFundsTx(
         { tradeId: "7", status: "DELIVERED" },
         buyerAddress,
       );

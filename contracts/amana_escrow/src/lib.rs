@@ -345,14 +345,13 @@ impl EscrowContract {
             .remove(&DataKey::MediatorRegistry(mediator_address.clone()));
 
         // Clear legacy slot if it points to the same address
-        if let Some(legacy) = env
+        if env
             .storage()
             .instance()
             .get::<_, Address>(&DataKey::Mediator)
+            .is_some_and(|legacy| legacy == mediator_address)
         {
-            if legacy == mediator_address {
-                env.storage().instance().remove(&DataKey::Mediator);
-            }
+            env.storage().instance().remove(&DataKey::Mediator);
         }
 
         MediatorRemovedEvent {
@@ -387,14 +386,13 @@ impl EscrowContract {
             return mediator;
         }
 
-        if let Some(legacy_mediator) = env
+        if env
             .storage()
             .instance()
             .get::<_, Address>(&DataKey::Mediator)
+            .is_some_and(|legacy_mediator| legacy_mediator == mediator)
         {
-            if legacy_mediator == mediator {
-                return mediator;
-            }
+            return mediator;
         }
 
         panic!("Unauthorized mediator");
@@ -476,7 +474,7 @@ impl EscrowContract {
         );
         trade.buyer.require_auth();
         let token_client = token::Client::new(&env, &trade.token);
-        token_client.transfer(&trade.buyer, &env.current_contract_address(), &trade.amount);
+        token_client.transfer(&trade.buyer, env.current_contract_address(), &trade.amount);
         let now = env.ledger().timestamp();
         trade.status = TradeStatus::Funded;
         trade.funded_at = Some(now);
@@ -659,7 +657,7 @@ impl EscrowContract {
     /// dispute brief so the full content lives off-chain but is committed here.
     pub fn initiate_dispute(env: Env, trade_id: u64, initiator: Address, reason_hash: String) {
         initiator.require_auth();
-        assert!(reason_hash.len() > 0, "reason_hash must not be empty");
+        assert!(!reason_hash.is_empty(), "reason_hash must not be empty");
 
         let key = DataKey::Trade(trade_id);
         let mut trade: Trade = env
@@ -951,7 +949,7 @@ impl EscrowContract {
     pub fn submit_video_proof(env: Env, trade_id: u64, submitter: Address, ipfs_cid: String) {
         submitter.require_auth();
 
-        assert!(ipfs_cid.len() > 0, "ipfs_cid must not be empty");
+        assert!(!ipfs_cid.is_empty(), "ipfs_cid must not be empty");
 
         let key = DataKey::Trade(trade_id);
         let trade: Trade = env
@@ -1004,10 +1002,13 @@ impl EscrowContract {
     ) {
         seller.require_auth();
         assert!(
-            driver_name_hash.len() > 0,
+            !driver_name_hash.is_empty(),
             "driver_name_hash must not be empty"
         );
-        assert!(driver_id_hash.len() > 0, "driver_id_hash must not be empty");
+        assert!(
+            !driver_id_hash.is_empty(),
+            "driver_id_hash must not be empty"
+        );
 
         let key = DataKey::Trade(trade_id);
         let trade: Trade = env
@@ -2808,6 +2809,7 @@ mod integration_tests {
         env: Env,
         contract_id: Address,
         usdc_id: Address,
+        #[allow(dead_code)]
         admin: Address,
         buyer: Address,
         seller: Address,
@@ -4307,7 +4309,7 @@ mod property_tests {
 
     use super::*;
     use quickcheck::{Arbitrary, Gen, QuickCheck, TestResult};
-    use soroban_sdk::testutils::{Address as _, Ledger as _};
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{Address, Env, token};
     use std::boxed::Box;
     use std::vec::Vec;
@@ -4729,7 +4731,7 @@ mod property_tests {
         assert_eq!(token.balance(&treasury), 100, "treasury should get fee");
 
         // Verify conservation
-        assert_eq!(9_900 + 0 + 100, amount, "conservation must hold");
+        assert_eq!(9_900 + 100, amount, "conservation must hold");
     }
 
     /// Edge case: seller_gets_bps = 0 (total loss) with various loss-sharing ratios
@@ -4876,7 +4878,7 @@ mod property_tests {
         );
 
         // Verify conservation
-        assert_eq!(7_500 + 2_500 + 0, amount, "conservation must hold");
+        assert_eq!(7_500 + 2_500, amount, "conservation must hold");
     }
 
     /// Edge case: fee = 1000 (10% fee - maximum typical fee)
@@ -5535,7 +5537,7 @@ mod fee_and_evidence_tests {
         let env = Env::default();
         env.mock_all_auths();
         // Use max fee_bps = 10000 (100%)
-        let (contract_id, _buyer, seller, treasury, usdc_id, trade_id) =
+        let (contract_id, _buyer, _seller, treasury, usdc_id, trade_id) =
             setup_fee_trade(&env, 100, 10_000);
         let client = EscrowContractClient::new(&env, &contract_id);
         client.confirm_delivery(&trade_id);

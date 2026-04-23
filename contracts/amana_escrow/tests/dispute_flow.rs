@@ -53,6 +53,7 @@ impl MockToken {
 enum DbStatus {
     Funded,
     Disputed,
+    #[allow(dead_code)]
     Completed,
 }
 
@@ -121,11 +122,11 @@ impl H {
         }
     }
 
-    fn c(&self) -> EscrowContractClient {
+    fn c(&self) -> EscrowContractClient<'_> {
         EscrowContractClient::new(&self.env, &self.escrow)
     }
 
-    fn tok(&self) -> MockTokenClient {
+    fn tok(&self) -> MockTokenClient<'_> {
         MockTokenClient::new(&self.env, &self.token)
     }
 
