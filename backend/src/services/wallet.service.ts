@@ -1,4 +1,5 @@
 import { StellarService } from "./stellar.service";
+import { TOKEN_CONFIG } from "../config/token";
 
 export class WalletService {
   private stellarService: StellarService;
@@ -8,10 +9,15 @@ export class WalletService {
   }
 
   /**
-   * Returns the USDC balance on Stellar for the given wallet address.
+   * Returns the token balance on Stellar for the given wallet address.
    */
+  public async getTokenBalance(walletAddress: string): Promise<string> {
+    return this.stellarService.getAccountBalance(walletAddress, TOKEN_CONFIG.symbol);
+  }
+
+  /** Legacy method for compatibility during transition */
   public async getUsdcBalance(walletAddress: string): Promise<string> {
-    // "USDC" is the default assetCode in StellarService.getAccountBalance
-    return this.stellarService.getAccountBalance(walletAddress, "USDC");
+    return this.getTokenBalance(walletAddress);
   }
 }
+

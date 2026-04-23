@@ -2,11 +2,12 @@ import { Trade } from "@prisma/client";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { env } from "../config/env";
 import { retryAsync } from "../lib/retry";
+import { TOKEN_CONFIG } from "../config/token";
 
 const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
 const DEFAULT_TIMEOUT_SECONDS = 300;
-const USDC_DECIMALS = 7n;
-const USDC_BASE = 10n ** USDC_DECIMALS;
+const TOKEN_DECIMALS = BigInt(TOKEN_CONFIG.decimals);
+const TOKEN_BASE = 10n ** TOKEN_DECIMALS;
 
 type RpcServerFactory = (rpcUrl: string) => StellarSdk.rpc.Server;
 
@@ -16,10 +17,11 @@ let serverFactory: RpcServerFactory = (rpcUrl: string) =>
 export interface BuildCreateTradeTxInput {
   buyerAddress: string;
   sellerAddress: string;
-  amountUsdc: string;
+  amount: string;
   buyerLossBps: number;
   sellerLossBps: number;
 }
+
 
 export interface BuildCreateTradeTxResult {
   tradeId: string;
@@ -209,18 +211,18 @@ export async function buildInitiateDisputeTx(
 export class ContractService {
   private readonly rpcServer: StellarSdk.rpc.Server;
   private readonly contractId: string;
-  private readonly usdcContractId: string;
+  private readonly tokenContractId: string;
   private readonly networkPassphrase: string;
 
   constructor(
     rpcUrl: string = getRpcUrl(),
     contractId: string = getEscrowContractId(),
-    usdcContractId: string = env.USDC_CONTRACT_ID,
+    tokenContractId: string = env.USDC_CONTRACT_ID,
     networkPassphrase: string = getNetworkPassphrase(),
   ) {
     this.rpcServer = getRpcServer(rpcUrl);
     this.contractId = contractId;
-    this.usdcContractId = usdcContractId;
+    this.tokenContractId = tokenContractId;
     this.networkPassphrase = networkPassphrase;
   }
 
@@ -233,7 +235,7 @@ export class ContractService {
 
     const account = await getRpcAccount(this.rpcServer, input.buyerAddress);
     const contract = new StellarSdk.Contract(this.contractId);
-    const amount = this.toContractAmount(input.amountUsdc);
+    const amount = this.toContractAmount(input.amount);
 
     const transaction = new StellarSdk.TransactionBuilder(account, {
       fee: StellarSdk.BASE_FEE,
@@ -270,14 +272,14 @@ export class ContractService {
       throw new Error("CONTRACT_ID is not configured");
     }
 
-    if (!this.usdcContractId) {
-      throw new Error("USDC_CONTRACT_ID is not configured");
+    if (!this.tokenContractId) {
+      throw new Error("TOKEN_CONTRACT_ID is not configured");
     }
 
     const account = await getRpcAccount(this.rpcServer, trade.buyerAddress);
     const contract = new StellarSdk.Contract(this.contractId);
 
-    // The current escrow contract pulls the buyer's USDC during `deposit()`,
+    // The current escrow contract pulls the buyer's token during `deposit()`,
     // so the prepared Soroban transaction is a single deposit invocation.
     const transaction = new StellarSdk.TransactionBuilder(account, {
       fee: StellarSdk.BASE_FEE,
@@ -365,14 +367,14 @@ export class ContractService {
     return { unsignedXdr: prepared.toXDR() };
   }
 
-  private toContractAmount(amountUsdc: string): bigint {
-    const [wholePart, fractionPart = ""] = amountUsdc.split(".");
-    const paddedFraction = `${fractionPart}0000000`.slice(
+  private toContractAmount(amount: string): bigint {
+    const [wholePart, fractionPart = ""] = amount.split(".");
+    const paddedFraction = `${fractionPart}${"0".repeat(Number(TOKEN_DECIMALS))}`.slice(
       0,
-      Number(USDC_DECIMALS),
+      Number(TOKEN_DECIMALS),
     );
 
-    return BigInt(wholePart) * USDC_BASE + BigInt(paddedFraction);
+    return BigInt(wholePart) * TOKEN_BASE + BigInt(paddedFraction);
   }
 
   private extractTradeId(

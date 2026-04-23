@@ -1,7 +1,7 @@
 import request from 'supertest';
 import express from 'express';
 import { createApp } from '../app';
-import { errorHandler } from '../middleware/errorHandler';
+import { errorHandler } from '../errors/errorHandler';
 
 describe('App Bootstrap', () => {
   let app: express.Application;
@@ -31,9 +31,14 @@ describe('App Bootstrap', () => {
 
     const res = await request(testApp).get('/test-error');
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("error", true);
-    expect(res.body).toHaveProperty("status", 400);
+    expect(res.body).toHaveProperty("code");
     expect(res.body).toHaveProperty("message", "Test error");
+  });
+
+  it('mounts wallet routes via createApp', async () => {
+    const res = await request(app).get('/wallet/balance');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Unauthorized');
   });
 });
 

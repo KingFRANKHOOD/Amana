@@ -1,8 +1,9 @@
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
-import { errorHandler } from './middleware/errorHandler';
+import { errorHandler } from "./errors/errorHandler";
 import loggerMiddleware, { appLogger } from './middleware/logger';
+import { requestIdMiddleware } from "./middleware/requestId";
 import { authRoutes } from "./routes/auth.routes";
 import { walletRoutes } from "./routes/wallet.routes";
 import { createTradeRouter } from "./routes/trade.routes";
@@ -11,6 +12,7 @@ import { createEvidenceRouter } from "./routes/evidence.routes";
 import { createAuditTrailRouter } from "./routes/auditTrail.routes";
 import { createGoalsRouter } from "./routes/goals.routes";
 import { createHealthRouter } from "./routes/health.routes";
+import userRoutes from "./routes/user.routes";
 
 /** Parse the CORS_ORIGINS env var into a usable allowlist.
  *  Value should be a comma-separated list of allowed origins, e.g.:
@@ -42,6 +44,9 @@ function buildCorsOptions(): cors.CorsOptions {
 
 export function createApp(): express.Application {
   const app = express();
+
+  // Request ID for correlation
+  app.use(requestIdMiddleware);
 
   // Security headers
   app.use(
@@ -81,6 +86,7 @@ export function createApp(): express.Application {
 
   app.use("/auth", authRoutes);
   app.use("/wallet", walletRoutes);
+  app.use("/users", userRoutes);
 
   const tradeRouter = createTradeRouter();
   app.use("/trades", tradeRouter);
@@ -100,4 +106,5 @@ export function createApp(): express.Application {
   app.use(errorHandler);
   return app;
 }
+
 

@@ -7,7 +7,7 @@
 | auditTrail.service.ts | ✓ | ✗ | ✗ | ✓ | ✗ |
 | auth.service.ts | ✗ | ✗ | ✗ | ✗ | ✗ |
 | contract.service.ts | ✗ | ✗ | ✗ | ✗ | ✗ |
-| eventHandlers.ts | ✓ | ✗ | ✗ | ✗ | ✗ |
+| eventHandlers.ts | ✓ | ✗ | ✗ | ✓ | ✗ |
 | eventListener.service.ts | ✓ | ✗ | ✗ | ✗ | ✗ |
 | evidence.service.ts | ✓ | ✗ | ✗ | ✗ | ✗ |
 | ipfs.service.ts | ✓ | ✗ | ✗ | ✗ | ✗ |
@@ -67,7 +67,7 @@
 | app/vault/page.tsx | ✗ | ✗ | ✗ | ✗ | ✗ |
 | app/vault/loading.tsx | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-| contracts/amana_escrow (lib.rs) | ✗ | ✗ | ✗ | ✗ | ✗ |
+| contracts/amana_escrow (lib.rs) | ✗ | ✗ | ✓ | ✓ | ✗ |
 
 ## Missing Test Coverage
 

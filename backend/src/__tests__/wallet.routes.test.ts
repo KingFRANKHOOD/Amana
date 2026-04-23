@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { walletRoutes } from "../routes/wallet.routes";
 import { WalletService } from "../services/wallet.service";
 import { PathPaymentService } from "../services/pathPayment.service";
+import { AuthService } from "../services/auth.service";
 
 // Mock the services
 jest.mock("../services/wallet.service");
@@ -18,9 +19,21 @@ describe("Wallet Routes", () => {
   let token: string;
 
   beforeAll(() => {
+    jest.spyOn(AuthService, "isTokenRevoked").mockResolvedValue(false);
     // Generate a valid mock token for testing
-    const secret = process.env.JWT_SECRET || "default_secret";
-    token = jwt.sign({ walletAddress: mockWalletAddress }, secret);
+    const secret = process.env.JWT_SECRET || "test-secret-at-least-32-characters-long";
+    token = jwt.sign(
+      {
+        walletAddress: mockWalletAddress,
+        jti: "wallet-test-jti",
+        nbf: Math.floor(Date.now() / 1000) - 5,
+      },
+      secret,
+      {
+        issuer: process.env.JWT_ISSUER || "amana",
+        audience: process.env.JWT_AUDIENCE || "amana-api",
+      }
+    );
   });
 
   afterEach(() => {
@@ -62,7 +75,7 @@ describe("Wallet Routes", () => {
   });
 
   describe("GET /wallet/path-payment-quote", () => {
-    it("should return routes array", async () => {
+    it("should return routes array when authenticated", async () => {
       const mockQuotes = [
         {
           source_amount: "1000",
@@ -77,10 +90,13 @@ describe("Wallet Routes", () => {
 
       (PathPaymentService.prototype.getPathPaymentQuote as jest.Mock).mockResolvedValue(mockQuotes);
 
-      const res = await request(app).get("/wallet/path-payment-quote").query({
-        sourceAmount: "1000",
-        sourceAsset: "NGN",
-      });
+      const res = await request(app)
+        .get("/wallet/path-payment-quote")
+        .set("Authorization", `Bearer ${token}`)
+        .query({
+          sourceAmount: "1000",
+          sourceAsset: "NGN",
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.routes).toEqual(mockQuotes);
@@ -92,10 +108,24 @@ describe("Wallet Routes", () => {
     });
 
     it("should return 400 without required query parameters", async () => {
-      const res = await request(app).get("/wallet/path-payment-quote");
+      const res = await request(app)
+        .get("/wallet/path-payment-quote")
+        .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Missing sourceAmount or sourceAsset");
+    });
+
+    it("should return 401 without token", async () => {
+      const res = await request(app)
+        .get("/wallet/path-payment-quote")
+        .query({
+          sourceAmount: "1000",
+          sourceAsset: "NGN",
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("Unauthorized");
     });
   });
 });

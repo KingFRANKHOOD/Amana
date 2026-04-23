@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { WalletService } from "../services/wallet.service";
 import { PathPaymentService } from "../services/pathPayment.service";
+import { TOKEN_CONFIG } from "../config/token";
 
 export const walletRoutes = Router();
 const walletService = new WalletService();
@@ -14,13 +15,14 @@ walletRoutes.get("/balance", authMiddleware, async (req: any, res) => {
       return res.status(400).json({ error: "Wallet address not found in token" });
     }
     const balance = await walletService.getUsdcBalance(walletAddress);
-    res.json({ balance, asset: "USDC" });
+    res.json({ balance, asset: TOKEN_CONFIG.symbol });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch balance" });
   }
 });
 
-walletRoutes.get("/path-payment-quote", async (req, res) => {
+
+walletRoutes.get("/path-payment-quote", authMiddleware, async (req, res) => {
   try {
     const { sourceAmount, sourceAsset, sourceAssetIssuer } = req.query;
     if (!sourceAmount || !sourceAsset) {

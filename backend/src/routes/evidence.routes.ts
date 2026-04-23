@@ -7,6 +7,13 @@ import {
     EvidenceTradeNotFoundError,
 } from "../services/evidence.service";
 import { appLogger } from "../middleware/logger";
+import { validateRequest } from "../middleware/validateRequest";
+import { idempotencyMiddleware } from "../middleware/idempotency";
+import { 
+    uploadEvidenceSchema, 
+    streamEvidenceParamSchema 
+} from "../schemas/evidence.schemas";
+import { tradeIdParamSchema } from "../schemas/trade.schemas";
 
 const ALLOWED_MIME_TYPES = ["video/mp4", "video/webm"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -41,71 +48,82 @@ export function createEvidenceRouter(evidenceService = new EvidenceService()) {
     const router = Router({ mergeParams: true });
 
     // GET /trades/:id/evidence — list all evidence for a trade
-    router.get("/trades/:id/evidence", authMiddleware, async (req: AuthRequest, res: Response) => {
-        const callerAddress = req.user?.walletAddress;
-        if (!callerAddress) {
-            res.status(401).json({ error: "Unauthorized" });
-            return;
-        }
+    router.get(
+        "/trades/:id/evidence", 
+        authMiddleware, 
+        validateRequest({ params: tradeIdParamSchema }),
+        async (req: AuthRequest, res: Response) => {
+            const callerAddress = req.user?.walletAddress;
+            if (!callerAddress) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
+            }
 
-        try {
-            const records = await evidenceService.getEvidenceByTradeId(
-                req.params.id as string,
-                callerAddress,
-            );
-            res.status(200).json({ evidence: records });
-        } catch (err) {
-            if (err instanceof EvidenceTradeNotFoundError) {
-                res.status(404).json({ error: err.message });
-                return;
+            try {
+                const records = await evidenceService.getEvidenceByTradeId(
+                    req.params.id as string,
+                    callerAddress,
+                );
+                res.status(200).json({ evidence: records });
+            } catch (err) {
+                if (err instanceof EvidenceTradeNotFoundError) {
+                    res.status(404).json({ error: err.message });
+                    return;
+                }
+                if (err instanceof EvidenceAccessDeniedError) {
+                    res.status(403).json({ error: err.message });
+                    return;
+                }
+                throw err;
             }
-            if (err instanceof EvidenceAccessDeniedError) {
-                res.status(403).json({ error: err.message });
-                return;
-            }
-            appLogger.error({ err }, "[EvidenceRoute] Error");
-            res.status(500).json({ error: "Failed to retrieve evidence" });
         }
-    });
+    );
 
     // GET /evidence/:cid/stream — proxy IPFS with range support
-    router.get("/evidence/:cid/stream", authMiddleware, async (req: AuthRequest, res: Response) => {
-        const callerAddress = req.user?.walletAddress;
-        if (!callerAddress) {
-            res.status(401).json({ error: "Unauthorized" });
-            return;
-        }
-
-        const cid = req.params.cid as string;
-        const range = req.headers["range"] as string | undefined;
-
-        try {
-            const upstream = await evidenceService.streamFromIPFS(cid, range);
-
-            // Always advertise range support so clients know they can seek
-            res.setHeader("accept-ranges", "bytes");
-
-            // Forward relevant headers from the upstream gateway
-            const forwardHeaders = ["content-type", "content-length", "content-range"];
-            for (const h of forwardHeaders) {
-                const val = upstream.headers[h];
-                if (val) res.setHeader(h, val as string);
+    router.get(
+        "/evidence/:cid/stream", 
+        authMiddleware, 
+        validateRequest({ params: streamEvidenceParamSchema }),
+        async (req: AuthRequest, res: Response) => {
+            const callerAddress = req.user?.walletAddress;
+            if (!callerAddress) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
             }
 
-            const status = range ? 206 : upstream.status;
-            res.status(status);
-            upstream.data.pipe(res);
-        } catch (err) {
-            appLogger.error({ err }, "[EvidenceRoute] Stream error");
-            res.status(502).json({ error: "Failed to stream from IPFS gateway" });
+            const cid = req.params.cid as string;
+            const range = req.headers["range"] as string | undefined;
+
+            try {
+                const upstream = await evidenceService.streamFromIPFS(cid, range);
+
+                // Always advertise range support so clients know they can seek
+                res.setHeader("accept-ranges", "bytes");
+
+                // Forward relevant headers from the upstream gateway
+                const forwardHeaders = ["content-type", "content-length", "content-range"];
+                for (const h of forwardHeaders) {
+                    const val = upstream.headers[h];
+                    if (val) res.setHeader(h, val as string);
+                }
+
+                const status = range ? 206 : upstream.status;
+                res.status(status);
+                upstream.data.pipe(res);
+            } catch (err) {
+                appLogger.error({ err }, "[EvidenceRoute] Stream error");
+                res.status(502).json({ error: "Failed to stream from IPFS gateway" });
+            }
         }
-    });
+    );
 
     // POST /evidence/video — upload a video file (MP4 / WebM, ≤ 50 MB) to IPFS
     router.post(
         "/evidence/video",
         authMiddleware,
+        idempotencyMiddleware,
         handleVideoMulter,
+        validateRequest({ body: uploadEvidenceSchema }),
         async (req: AuthRequest, res: Response) => {
             const callerAddress = req.user?.walletAddress;
             if (!callerAddress) {
@@ -118,11 +136,7 @@ export function createEvidenceRouter(evidenceService = new EvidenceService()) {
                 return;
             }
 
-            const tradeId = req.body?.tradeId as string | undefined;
-            if (!tradeId) {
-                res.status(400).json({ error: "tradeId is required" });
-                return;
-            }
+            const { tradeId } = req.body;
 
             try {
                 const result = await evidenceService.uploadVideoEvidence(tradeId, callerAddress, req.file);
@@ -136,13 +150,13 @@ export function createEvidenceRouter(evidenceService = new EvidenceService()) {
                     res.status(403).json({ error: err.message });
                     return;
                 }
-                appLogger.error({ err }, "[EvidenceRoute] Video upload error");
-                res.status(500).json({ error: "Failed to upload evidence" });
+                throw err;
             }
         },
     );
 
     return router;
 }
+
 
 export const evidenceRoutes = createEvidenceRouter();

@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
+import crypto from "crypto";
 import { prisma as defaultPrisma } from "../lib/db";
+import { TOKEN_CONFIG } from "../config/token";
 
 export type TradeEventType =
     | "CREATED"
@@ -19,6 +21,24 @@ export interface TradeEvent {
     metadata: Record<string, unknown>;
 }
 
+export interface AuditIntegrityMetadata {
+    algorithm: "ed25519";
+    keyId: string;
+    payloadHash: string;
+    signature: string;
+}
+
+export interface CanonicalAuditPayload {
+    tradeId: string;
+    generatedAt: string;
+    events: Array<{
+        eventType: TradeEventType;
+        timestamp: string;
+        actor: string;
+        metadata: Record<string, unknown>;
+    }>;
+}
+
 export class AuditTrailAccessDeniedError extends Error {
     status = 403;
     constructor() {
@@ -32,6 +52,14 @@ export class AuditTrailTradeNotFoundError extends Error {
     constructor() {
         super("Trade not found");
         this.name = "AuditTrailTradeNotFoundError";
+    }
+}
+
+export class AuditSigningConfigError extends Error {
+    status = 500;
+    constructor(message = "Audit signing configuration is invalid") {
+        super(message);
+        this.name = "AuditSigningConfigError";
     }
 }
 
@@ -67,7 +95,11 @@ export class AuditTrailService {
             eventType: "CREATED",
             timestamp: trade.createdAt,
             actor: trade.buyerAddress,
-            metadata: { amountUsdc: trade.amountUsdc },
+            metadata: { 
+                amount: trade.amountUsdc, 
+                symbol: TOKEN_CONFIG.symbol,
+                amountUsdc: trade.amountUsdc // Legacy
+            },
         });
 
         // FUNDED — infer from status history; use updatedAt when status is FUNDED
@@ -157,5 +189,51 @@ export class AuditTrailService {
         events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         return events;
+    }
+
+    getCanonicalPayload(tradeId: string, events: TradeEvent[]): CanonicalAuditPayload {
+        return {
+            tradeId,
+            generatedAt: new Date().toISOString(),
+            events: events.map((event) => ({
+                eventType: event.eventType,
+                timestamp: event.timestamp.toISOString(),
+                actor: event.actor,
+                metadata: event.metadata,
+            })),
+        };
+    }
+
+    signPayload(payload: CanonicalAuditPayload): AuditIntegrityMetadata {
+        const keyId = process.env.AUDIT_SIGNING_KEY_ID;
+        const privateKeyPem = process.env.AUDIT_SIGNING_PRIVATE_KEY_PEM;
+
+        if (!keyId || !privateKeyPem) {
+            throw new AuditSigningConfigError("AUDIT_SIGNING_KEY_ID and AUDIT_SIGNING_PRIVATE_KEY_PEM are required");
+        }
+
+        const payloadBytes = Buffer.from(JSON.stringify(payload), "utf8");
+        const payloadHash = crypto.createHash("sha256").update(payloadBytes).digest("hex");
+        const privateKey = crypto.createPrivateKey(privateKeyPem);
+        const signature = crypto.sign(null, payloadBytes, privateKey).toString("base64");
+
+        return {
+            algorithm: "ed25519",
+            keyId,
+            payloadHash,
+            signature,
+        };
+    }
+
+    verifyPayload(payload: CanonicalAuditPayload, signatureBase64: string): boolean {
+        const publicKeyPem = process.env.AUDIT_SIGNING_PUBLIC_KEY_PEM;
+        if (!publicKeyPem) {
+            throw new AuditSigningConfigError("AUDIT_SIGNING_PUBLIC_KEY_PEM is required");
+        }
+
+        const payloadBytes = Buffer.from(JSON.stringify(payload), "utf8");
+        const signature = Buffer.from(signatureBase64, "base64");
+        const publicKey = crypto.createPublicKey(publicKeyPem);
+        return crypto.verify(null, payloadBytes, publicKey, signature);
     }
 }

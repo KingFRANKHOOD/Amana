@@ -6,6 +6,7 @@ import {
 } from '../config/stellar';
 import { retryAsync } from "../lib/retry";
 import { appLogger } from "../middleware/logger";
+import { TOKEN_CONFIG } from "../config/token";
 
 export class StellarService {
   private horizonServer: Horizon.Server;
@@ -27,7 +28,8 @@ export class StellarService {
     return this.networkPassphrase;
   }
 
-  public async getAccountBalance(publicKey: string, assetCode: string = "USDC"): Promise<string> {
+  public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONFIG.symbol): Promise<string> {
+
     try {
       const account = await retryAsync(() => this.horizonServer.loadAccount(publicKey));
       const balance = account.balances.find((b: any) => {
