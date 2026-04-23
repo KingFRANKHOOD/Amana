@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { api, ApiError, TradeResponse } from "@/lib/api";
+import { SkeletonList } from "@/components/ui/SkeletonList";
 
 type TradeStatus = "all" | "active" | "pending" | "completed" | "disputed";
 
@@ -119,12 +120,7 @@ export default function TradesPage() {
 
       {/* Loading state */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <svg className="animate-spin w-8 h-8 text-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" />
-          </svg>
-        </div>
+        <SkeletonList rows={6} columns={5} />
       )}
 
       {/* Error state */}

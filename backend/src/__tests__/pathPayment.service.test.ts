@@ -18,7 +18,7 @@ describe("PathPaymentService network resilience", () => {
 
     jest
       .spyOn(StellarService.prototype, "getNetworkPassphrase")
-      .mockReturnValue("Test SDF Network ; September 2015");
+      .mockReturnValue("Public Global Stellar Network ; September 2015");
   });
 
   afterEach(() => {

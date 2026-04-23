@@ -1,4 +1,4 @@
-import { Horizon, SorobanRpc, Networks } from '@stellar/stellar-sdk';
+import { Horizon, rpc, Networks } from '@stellar/stellar-sdk';
 
 // Read network configuration from environment
 const stellarNetwork = process.env.STELLAR_NETWORK || 'testnet';
@@ -24,7 +24,7 @@ const defaultRpcUrl = networkType === 'testnet'
   ? 'https://soroban-testnet.stellar.org'
   : 'https://soroban-rpc.stellar.org';
 
-export const sorobanRpcClient = new SorobanRpc.Server(
+export const sorobanRpcClient = new rpc.Server(
   stellarRpcUrl || defaultRpcUrl
 );
 
