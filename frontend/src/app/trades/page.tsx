@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
 import { api, ApiError, TradeResponse } from "@/lib/api";
 
 type TradeStatus = "all" | "active" | "pending" | "completed" | "disputed";
@@ -27,6 +28,7 @@ const PAGE_SIZE = 10;
 
 export default function TradesPage() {
   const { token, isAuthenticated } = useAuth();
+  const { addToast } = useToast();
   const [activeFilter, setActiveFilter] = useState<TradeStatus>("all");
   const [page, setPage] = useState(1);
   const [trades, setTrades] = useState<TradeResponse[]>([]);
@@ -93,12 +95,21 @@ export default function TradesPage() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-text-primary">Trades</h1>
-        <Link
-          href="/trades/create"
-          className="px-4 py-2 rounded-md bg-gold text-text-inverse text-sm font-medium hover:bg-gold-hover transition-colors"
-        >
-          Create Trade
-        </Link>
+        <div className="flex gap-2 items-center">
+          {/* Toast test buttons */}
+          <div className="flex gap-2 mr-4 border-r border-border-default pr-4 hidden md:flex">
+            <button onClick={() => addToast({ type: 'success', title: 'Success', message: 'Trade completed successfully!' })} className="px-3 py-1.5 rounded-md bg-status-success/10 border border-status-success/30 text-status-success text-xs font-medium hover:bg-status-success/20 transition-colors">Success</button>
+            <button onClick={() => addToast({ type: 'error', title: 'Error', message: 'Failed to complete trade.' })} className="px-3 py-1.5 rounded-md bg-status-danger/10 border border-status-danger/30 text-status-danger text-xs font-medium hover:bg-status-danger/20 transition-colors">Error</button>
+            <button onClick={() => addToast({ type: 'warning', title: 'Warning', message: 'Trade is disputed.' })} className="px-3 py-1.5 rounded-md bg-status-warning/10 border border-status-warning/30 text-status-warning text-xs font-medium hover:bg-status-warning/20 transition-colors">Warning</button>
+            <button onClick={() => addToast({ type: 'info', title: 'Info', message: 'New message received.' })} className="px-3 py-1.5 rounded-md bg-status-info/10 border border-status-info/30 text-status-info text-xs font-medium hover:bg-status-info/20 transition-colors">Info</button>
+          </div>
+          <Link
+            href="/trades/create"
+            className="px-4 py-2 rounded-md bg-gold text-text-inverse text-sm font-medium hover:bg-gold-hover transition-colors"
+          >
+            Create Trade
+          </Link>
+        </div>
       </div>
 
       {/* Filter tabs */}
