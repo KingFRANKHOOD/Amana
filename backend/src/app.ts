@@ -12,6 +12,7 @@ import { createEvidenceRouter } from "./routes/evidence.routes";
 import { createAuditTrailRouter } from "./routes/auditTrail.routes";
 import { createGoalsRouter } from "./routes/goals.routes";
 import { createHealthRouter } from "./routes/health.routes";
+import userRoutes from "./routes/user.routes";
 
 /** Parse the CORS_ORIGINS env var into a usable allowlist.
  *  Value should be a comma-separated list of allowed origins, e.g.:
@@ -85,6 +86,7 @@ export function createApp(): express.Application {
 
   app.use("/auth", authRoutes);
   app.use("/wallet", walletRoutes);
+  app.use("/users", userRoutes);
 
   const tradeRouter = createTradeRouter();
   app.use("/trades", tradeRouter);

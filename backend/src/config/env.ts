@@ -15,6 +15,9 @@ const envSchema = z.object({
   STELLAR_RPC_URL: z.string().optional(),
   AMANA_ESCROW_CONTRACT_ID: z.string().min(1),
   USDC_CONTRACT_ID: z.string().min(1),
+  AUDIT_SIGNING_KEY_ID: z.string().min(1).optional(),
+  AUDIT_SIGNING_PRIVATE_KEY_PEM: z.string().min(1).optional(),
+  AUDIT_SIGNING_PUBLIC_KEY_PEM: z.string().min(1).optional(),
 });
 
 export const env = envSchema.parse(process.env);

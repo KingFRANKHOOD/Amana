@@ -22,7 +22,7 @@ walletRoutes.get("/balance", authMiddleware, async (req: any, res) => {
 });
 
 
-walletRoutes.get("/path-payment-quote", async (req, res) => {
+walletRoutes.get("/path-payment-quote", authMiddleware, async (req, res) => {
   try {
     const { sourceAmount, sourceAsset, sourceAssetIssuer } = req.query;
     if (!sourceAmount || !sourceAsset) {

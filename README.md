@@ -14,10 +14,10 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 
 ## 🛠 Features
 
-- **Smart Escrow:** Secure funds holding using USDC/Stablecoins on the Stellar network.
+- **Smart Escrow:** Secure funds holding using cNGN/stablecoins on the Stellar network.
 - **Dynamic Loss Sharing:** Negotiable risk-sharing ratios (e.g., 50/50, 70/30) hardcoded into every trade to handle transit accidents or theft.
 - **Proof-of-Delivery (PoD):** A mandatory video-based verification protocol involving the buyer and the driver to confirm the state of goods.
-- **Volatility Protection:** Utilizes Stellar Path Payments to allow users to pay in local currency (NGN) while locking the value in USDC to protect against inflation.
+- **Volatility Protection:** Utilizes Stellar Path Payments to allow users to pay in local currency (NGN) while locking value in cNGN.
 - **Automated Settlement:** A flat 1% platform fee is automatically deducted upon successful trade completion.
 
 ## 🏗 Technical Stack
@@ -56,7 +56,7 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 
 ## 🔄 How It Works (The Amana Flow)
 
-1. **Initiate:** The Seller lists products. The Buyer initiates a trade, depositing funds that are converted to USDC via a Stellar Path Payment.
+1. **Initiate:** The Seller lists products. The Buyer initiates a trade, depositing funds that are converted to cNGN via a Stellar Path Payment.
 2. **Lock:** The Smart Contract locks the funds and stores the agreed-upon `Loss_Ratio`.
 3. **Dispatch:** The Seller provides the driver's name, phone number, and vehicle manifest.
 4. **Verification:** - **Success:** Buyer receives goods and uploads a confirmation video. Funds release to Seller.

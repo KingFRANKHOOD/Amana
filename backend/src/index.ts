@@ -4,16 +4,8 @@ import fs from "fs";
 import path from "path";
 import swaggerUi from "swagger-ui-express";
 import YAML from "yamljs";
-import cors from "cors";
 import { prisma } from "./lib/db";
-import userRoutes from "./routes/user.routes";
 import { EventListenerService } from "./services/eventListener.service";
-import { createTradeRouter } from "./routes/trade.routes";
-import { walletRoutes } from "./routes/wallet.routes";
-import { authRoutes } from "./routes/auth.routes";
-import { createManifestRouter } from "./routes/manifest.routes";
-import { createEvidenceRouter } from "./routes/evidence.routes";
-import { createAuditTrailRouter } from "./routes/auditTrail.routes";
 import { createApp } from "./app";
 import { env } from "./config/env";
 import { appLogger } from "./middleware/logger";
@@ -47,8 +39,6 @@ if (process.env.NODE_ENV !== "production" && openapiSpec) {
 
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 }
-
-app.use("/users", userRoutes);
 
 const eventListenerService = new EventListenerService(prisma);
 

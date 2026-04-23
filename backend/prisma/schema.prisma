@@ -71,6 +71,8 @@ model Trade {
   amountUsdc    String      @default("0") @db.VarChar(100)
   buyerLossBps  Int         @default(5000)
   sellerLossBps Int         @default(5000)
+  /// Monotonic optimistic concurrency counter for status transitions.
+  version       Int         @default(0)
   status        TradeStatus @default(CREATED)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt

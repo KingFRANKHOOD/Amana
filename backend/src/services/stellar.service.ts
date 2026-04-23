@@ -1,4 +1,4 @@
-import { Horizon, SorobanRpc, TransactionBuilder, BASE_FEE, xdr } from '@stellar/stellar-sdk';
+import { Horizon, rpc, TransactionBuilder, BASE_FEE, xdr } from '@stellar/stellar-sdk';
 import { 
   horizonServer, 
   sorobanRpcClient, 
@@ -10,7 +10,7 @@ import { TOKEN_CONFIG } from "../config/token";
 
 export class StellarService {
   private horizonServer: Horizon.Server;
-  private sorobanRpc: SorobanRpc.Server;
+  private sorobanRpc: rpc.Server;
   private networkPassphrase: string;
 
   constructor() {
@@ -81,7 +81,7 @@ export class StellarService {
     }
   }
 
-  public async submitTransaction(signedXdr: string): Promise<SorobanRpc.Api.SendTransactionResponse> {
+  public async submitTransaction(signedXdr: string): Promise<rpc.Api.SendTransactionResponse> {
     try {
       // Parse XDR into Transaction object
       const transaction = TransactionBuilder.fromXDR(signedXdr, this.networkPassphrase);

@@ -70,3 +70,34 @@ Mutation endpoints support idempotency via the `Idempotency-Key` header.
 
 - **Request ID**: Every request is assigned a unique `X-Request-ID` header for correlation.
 - **Logging**: Structured logging using **Pino**, including error codes and request IDs.
+
+## 6. Wallet Route Security and Bootstrap Parity
+
+- Wallet routes are mounted in the shared app factory (`createApp`) used by runtime bootstrap.
+- `GET /wallet/balance` and `GET /wallet/path-payment-quote` both require JWT authentication.
+- This prevents route-protection drift between test app instances and production startup wiring.
+
+## 7. Optimistic Concurrency for Trade Status
+
+- Trade records now include a monotonic `version` field.
+- Event-driven status transitions are guarded by compare-and-set updates:
+  - expected `tradeId`
+  - expected current `status`
+  - expected current `version`
+- Invalid or out-of-order transitions are ignored with structured warning logs.
+- Replays for already-applied statuses are idempotent no-ops.
+
+## 8. Signed Audit Export Integrity
+
+- Audit history exports support signed integrity metadata using Ed25519.
+- Signed responses include:
+  - `algorithm` (`ed25519`)
+  - `keyId`
+  - `payloadHash` (SHA-256)
+  - detached `signature` (base64)
+- Verification endpoint:
+  - `GET /trades/:id/history/verify?signature=<base64>`
+- Required environment variables for signing/verification:
+  - `AUDIT_SIGNING_KEY_ID`
+  - `AUDIT_SIGNING_PRIVATE_KEY_PEM`
+  - `AUDIT_SIGNING_PUBLIC_KEY_PEM`

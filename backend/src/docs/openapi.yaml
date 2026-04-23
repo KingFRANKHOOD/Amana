@@ -1,10 +1,16 @@
-﻿openapi: 3.0.0
+openapi: 3.0.0
 info:
   title: Amana Backend API
   version: 1.0.0
-  description: Backend API for the Amana protocol (Phase 1 endpoints).
+  description: Backend API for the Amana protocol.
 servers:
   - url: http://localhost:4000
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 paths:
   /health:
     get:
@@ -50,3 +56,116 @@ paths:
                   - message
               example:
                 message: Internal server error
+  /wallet/balance:
+    get:
+      summary: Get wallet token balance
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Wallet balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance:
+                    type: string
+                  asset:
+                    type: string
+                required:
+                  - balance
+                  - asset
+        "401":
+          description: Unauthorized
+  /wallet/path-payment-quote:
+    get:
+      summary: Get Stellar path payment quotes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: sourceAmount
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: sourceAsset
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: sourceAssetIssuer
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available payment routes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  routes:
+                    type: array
+                    items:
+                      type: object
+        "400":
+          description: Missing required query parameters
+        "401":
+          description: Unauthorized
+  /trades/{id}/history:
+    get:
+      summary: Retrieve trade audit history
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: format
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+        - in: query
+          name: signed
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Trade history response
+        "401":
+          description: Unauthorized
+        "403":
+          description: Caller is not a trade party
+        "404":
+          description: Trade not found
+  /trades/{id}/history/verify:
+    get:
+      summary: Verify a signed trade history payload
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: signature
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signature verification result
+        "400":
+          description: Missing signature
+        "401":
+          description: Unauthorized
