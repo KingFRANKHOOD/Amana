@@ -19,9 +19,9 @@ const geistMono = Geist_Mono({
 });
 
 const manrope = Manrope({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-manrope',
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-manrope",
 });
 
 export const metadata: Metadata = {
@@ -44,7 +44,7 @@ export default function RootLayout({
             <AppTopNav />
             <div className="flex flex-1 overflow-hidden">
               <AppSidebar />
-              <main className="flex-1 overflow-y-auto">{children}</main>
+              <main className="flex-1 overflow-y-auto h-full">{children}</main>
             </div>
           </div>
         </AuthProvider>
