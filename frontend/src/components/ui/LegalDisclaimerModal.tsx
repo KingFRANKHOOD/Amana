@@ -1,8 +1,15 @@
 "use client";
 
-import React, { useEffect } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
-import { clsx } from "clsx";
+import React from "react";
+import {
+    Modal,
+    ModalBody,
+    ModalContent,
+    ModalDescription,
+    ModalFooter,
+    ModalHeader,
+    ModalTitle,
+} from "./Modal";
 
 interface LegalDisclaimerModalProps {
     isOpen: boolean;
@@ -19,35 +26,20 @@ export function LegalDisclaimerModal({
     lossRatio,
     tradeValueUsdc,
 }: LegalDisclaimerModalProps) {
-    useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = "hidden";
-        } else {
-            document.body.style.overflow = "unset";
-        }
-        return () => {
-            document.body.style.overflow = "unset";
-        };
-    }, [isOpen]);
-
     const buyerPercentage = lossRatio.buyer / 100;
     const sellerPercentage = lossRatio.seller / 100;
 
     return (
-        <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onDecline()}>
-            <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 bg-overlay backdrop-blur-lg z-50 flex items-center justify-center">
-                    <Dialog.Content className="bg-card border border-border-default shadow-modal max-w-lg w-full max-h-[90vh] rounded-2xl flex flex-col">
-                        <div className="p-6 border-b border-border-default">
-                            <Dialog.Title className="text-xl font-semibold text-primary">
-                                Loss-Sharing Terms
-                            </Dialog.Title>
-                            <Dialog.Description className="text-sm text-secondary mt-1">
-                                Please review the loss-sharing agreement before proceeding.
-                            </Dialog.Description>
-                        </div>
+        <Modal open={isOpen} onOpenChange={(open) => !open && onDecline()}>
+            <ModalContent className="max-h-[90vh] flex flex-col" mobileFullScreen={false}>
+                <ModalHeader>
+                    <ModalTitle>Loss-Sharing Terms</ModalTitle>
+                    <ModalDescription>
+                        Please review the loss-sharing agreement before proceeding.
+                    </ModalDescription>
+                </ModalHeader>
 
-                        <div className="overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-white/10 flex-1">
+                <ModalBody className="scrollbar-thin scrollbar-thumb-white/10 flex-1">
                             <div className="space-y-4">
                                 <p className="text-secondary text-sm">
                                     By locking funds in this escrow, you acknowledge and agree to the following loss-sharing terms in case of damage or interception during transit:
@@ -77,9 +69,9 @@ export function LegalDisclaimerModal({
                                     </p>
                                 </div>
                             </div>
-                        </div>
+                </ModalBody>
 
-                        <div className="p-6 border-t border-border-default flex gap-3">
+                <ModalFooter className="sm:justify-stretch sm:[&>*]:flex-1">
                             <button
                                 onClick={onDecline}
                                 className="flex-1 px-4 py-2 rounded-lg border border-border-default text-secondary hover:bg-elevated transition-colors"
@@ -92,10 +84,8 @@ export function LegalDisclaimerModal({
                             >
                                 Accept & Proceed
                             </button>
-                        </div>
-                    </Dialog.Content>
-                </Dialog.Overlay>
-            </Dialog.Portal>
-        </Dialog.Root>
+                </ModalFooter>
+            </ModalContent>
+        </Modal>
     );
 }

@@ -52,6 +52,26 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 1. `cd contracts/amana_escrow`
 2. `cargo build`
 
+## 🔒 Required PR CI Gates
+
+Amana enforces stack-level CI gates on pull requests through `.github/workflows/ci.yml`.
+
+- **Frontend Required Gate**: `npm ci`, `npm run lint`, `npm run build` in `frontend/`
+- **Backend Required Gate**: `npm ci`, `npm run build`, `npm test` in `backend/`
+- **Contracts Required Gate**: `cargo test` in `contracts/amana_escrow/`
+
+Path-aware execution is enabled to avoid unnecessary runtime. If a stack has no changed files, the gate reports a skip-note and passes.
+
+### Branch protection setup (GitHub)
+
+For the protected branch (`main`), set these required status checks:
+
+- `Frontend Required Gate`
+- `Backend Required Gate`
+- `Contracts Required Gate`
+
+---
+
 ---
 
 ## 🔄 How It Works (The Amana Flow)

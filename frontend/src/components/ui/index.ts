@@ -13,3 +13,5 @@ export { RepScoreRing } from "./RepScoreRing";
 export type { RepScoreRingProps } from "./RepScoreRing";
 export { VideoUploadCard } from "./VideoUploadCard";
 export type { VideoUploadCardProps } from "./VideoUploadCard";
+export { Modal, ModalBody, ModalClose, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalPortal, ModalTitle, ModalTrigger } from "./Modal";
+export type { ModalProps, ModalContentProps } from "./Modal";
