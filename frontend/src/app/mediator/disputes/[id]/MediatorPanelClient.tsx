@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Address,
   BASE_FEE,
@@ -13,6 +13,7 @@ import {
 import { signTransaction } from "@stellar/freighter-api";
 
 import { useFreighterIdentity } from "@/hooks/useFreighterIdentity";
+import { api, ApiError, type EvidenceRecord } from "@/lib/api";
 
 type Props = { disputeId: string };
 
@@ -24,6 +25,8 @@ type ConfirmationModalState = {
 
 const DEFAULT_MEDIATOR_ADDRESSES = ["GEXAMPLEMEDIATORPUBLICKEY1"];
 
+const TOKEN_STORAGE_KEY = "amana_jwt";
+
 const PINATA_GATEWAYS = [
   process.env.NEXT_PUBLIC_PINATA_GATEWAY_URL?.trim(),
   "https://gateway.pinata.cloud/ipfs",
@@ -32,6 +35,36 @@ const PINATA_GATEWAYS = [
 
 const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
 
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+function isProbablyIpfsCid(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+
+  // CIDv0 (base58btc) is typically 46 chars and starts with Qm
+  if (/^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(v)) return true;
+
+  // CIDv1 (base32) often starts with bafy...
+  if (/^bafy[2-7a-z]{20,}$/i.test(v)) return true;
+
+  return false;
+}
+
+function pickBestEvidenceCid(records: EvidenceRecord[]): string | null {
+  if (!records || records.length === 0) return null;
+  const sorted = [...records].sort((a, b) => {
+    const at = new Date(a.createdAt).getTime();
+    const bt = new Date(b.createdAt).getTime();
+    if (Number.isNaN(at) || Number.isNaN(bt)) return 0;
+    return bt - at;
+  });
+  const candidate = sorted[0]?.cid?.trim();
+  return candidate && isProbablyIpfsCid(candidate) ? candidate : null;
+}
+
 export default function MediatorPanelClient({ disputeId }: Props) {
   const { address, isAuthorized, isLoading, connectWallet } =
     useFreighterIdentity();
@@ -39,6 +72,11 @@ export default function MediatorPanelClient({ disputeId }: Props) {
   const [txStatus, setTxStatus] = useState<string>("");
   const [isSubmittingTx, setIsSubmittingTx] = useState(false);
   const [activeGatewayIndex, setActiveGatewayIndex] = useState(0);
+  const [resolvedCid, setResolvedCid] = useState<string | null>(null);
+  const [cidSource, setCidSource] = useState<
+    "backend" | "query" | "none" | "loading" | "error"
+  >("loading");
+  const [cidMessage, setCidMessage] = useState<string>("");
   const [modal, setModal] = useState<ConfirmationModalState>({
     isOpen: false,
     sellerGetsBps: null,
@@ -56,8 +94,91 @@ export default function MediatorPanelClient({ disputeId }: Props) {
 
   const isMediator = Boolean(address && mediatorAddresses.includes(address));
 
-  const cid = disputeId || "QmExampleCidForDemo";
-  const pinataUrl = `${PINATA_GATEWAYS[activeGatewayIndex]}/${cid}`;
+  const pinataUrl = resolvedCid
+    ? `${PINATA_GATEWAYS[activeGatewayIndex]}/${resolvedCid}`
+    : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveCidFromBackend(): Promise<void> {
+      setCidSource("loading");
+      setCidMessage("");
+      setResolvedCid(null);
+
+      const parsedTradeId = Number(disputeId);
+      if (!Number.isInteger(parsedTradeId) || parsedTradeId < 0) {
+        setCidSource("error");
+        setCidMessage("Invalid dispute id. Expected a numeric trade id.");
+        return;
+      }
+
+      const url = new URL(window.location.href);
+      const queryCid = url.searchParams.get("cid")?.trim() ?? "";
+
+      const token = getStoredToken();
+      if (!token) {
+        if (queryCid && isProbablyIpfsCid(queryCid)) {
+          setCidSource("query");
+          setResolvedCid(queryCid);
+          setCidMessage("Using CID from query param fallback.");
+          return;
+        }
+
+        setCidSource("none");
+        setCidMessage(
+          "No evidence CID available. Authenticate to load evidence from the backend, or supply a valid ?cid=... parameter.",
+        );
+        return;
+      }
+
+      try {
+        const response = await api.trades.getEvidence(token, String(parsedTradeId));
+        const backendCid = pickBestEvidenceCid(response.evidence);
+
+        if (!cancelled && backendCid) {
+          setCidSource("backend");
+          setResolvedCid(backendCid);
+          return;
+        }
+
+        if (!cancelled && queryCid && isProbablyIpfsCid(queryCid)) {
+          setCidSource("query");
+          setResolvedCid(queryCid);
+          setCidMessage("No backend evidence CID found. Using query param fallback.");
+          return;
+        }
+
+        if (!cancelled) {
+          setCidSource("none");
+          setCidMessage("No evidence found for this trade.");
+        }
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? `Evidence lookup failed (${err.status}).`
+            : "Evidence lookup failed.";
+
+        if (!cancelled && queryCid && isProbablyIpfsCid(queryCid)) {
+          setCidSource("query");
+          setResolvedCid(queryCid);
+          setCidMessage(`${message} Using query param fallback.`);
+          return;
+        }
+
+        if (!cancelled) {
+          setCidSource("none");
+          setCidMessage(`${message} No CID available for playback.`);
+        }
+      }
+    }
+
+    void resolveCidFromBackend();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [disputeId]);
 
   function buildExec(split: string) {
     const s = `soroban://execute?cmd=resolve_dispute&split=${split}&dispute=${disputeId}`;
@@ -173,21 +294,40 @@ export default function MediatorPanelClient({ disputeId }: Props) {
       <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
         <div className="col-span-7">
           <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-modal">
-            <video
-              controls
-              className="w-full h-full object-contain bg-black"
-              src={pinataUrl}
-              onError={() => {
-                if (activeGatewayIndex < PINATA_GATEWAYS.length - 1) {
-                  setActiveGatewayIndex((prev) => prev + 1);
-                }
-              }}
-            />
+            {pinataUrl ? (
+              <video
+                controls
+                className="w-full h-full object-contain bg-black"
+                src={pinataUrl}
+                onError={() => {
+                  if (activeGatewayIndex < PINATA_GATEWAYS.length - 1) {
+                    setActiveGatewayIndex((prev) => prev + 1);
+                  }
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-200 text-sm p-6 text-center">
+                {cidSource === "loading"
+                  ? "Loading evidence…"
+                  : cidMessage || "No evidence available."}
+              </div>
+            )}
           </div>
           <div className="mt-3 text-sm text-gray-600">
             <div>Dispute ID: {disputeId}</div>
-            <div>Pinata CID: {cid}</div>
-            <div>Gateway: {PINATA_GATEWAYS[activeGatewayIndex]}</div>
+            <div>
+              Evidence CID: {resolvedCid ?? "—"}{" "}
+              <span className="text-xs text-gray-500">
+                ({cidSource === "backend"
+                  ? "from backend"
+                  : cidSource === "query"
+                    ? "from query"
+                    : cidSource === "loading"
+                      ? "resolving"
+                      : "none"})
+              </span>
+            </div>
+            <div>Gateway: {PINATA_GATEWAYS[activeGatewayIndex] ?? "—"}</div>
             <div>Mapped address: {address ?? "Not connected"}</div>
             <div className="mt-2">
               {isMediator ? (
