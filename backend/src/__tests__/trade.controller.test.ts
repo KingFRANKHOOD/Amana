@@ -7,13 +7,18 @@ import * as ContractServiceModule from "../services/contract.service";
 import { ContractService } from "../services/contract.service";
 import { TradeService } from "../services/trade.service";
 import { AuthService } from "../services/auth.service";
+import { errorHandler } from "../errors/errorHandler";
 
 jest.mock("../services/contract.service");
 jest.mock("../services/trade.service");
+jest.mock("../lib/redis", () => ({
+  redis: { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue("OK"), on: jest.fn() },
+}));
 
 const app = express();
 app.use(express.json());
 app.use("/trades", tradeRoutes);
+app.use(errorHandler);
 
 describe("TradeController", () => {
     const buyerAddress = StellarSdk.Keypair.random().publicKey();
@@ -72,11 +77,11 @@ describe("TradeController", () => {
     describe("createTrade()", () => {
         it("returns 201 with tradeId and unsignedXdr for a valid request", async () => {
             (ContractService.prototype.buildCreateTradeTx as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 unsignedXdr: "AAAA-test-xdr",
             });
             (TradeService.prototype.createPendingTrade as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
             });
 
             const res = await request(app)
@@ -84,14 +89,14 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "125.1234567",
+                    amountUsdc: "125.1234567",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
 
             expect(res.status).toBe(201);
             expect(res.body).toEqual({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 unsignedXdr: "AAAA-test-xdr",
             });
             expect(ContractService.prototype.buildCreateTradeTx).toHaveBeenCalledWith({
@@ -102,10 +107,10 @@ describe("TradeController", () => {
                 sellerLossBps: 5000,
             });
             expect(TradeService.prototype.createPendingTrade).toHaveBeenCalledWith({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
-                amount: "125.1234567",
+                amountUsdc: "125.1234567",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
             });
@@ -117,7 +122,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress: "not-a-stellar-address",
-                    amount: "10",
+                    amountUsdc: "10",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -132,7 +137,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "invalid-amount",
+                    amountUsdc: "invalid-amount",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -147,7 +152,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "100",
+                    amountUsdc: "100",
                     buyerLossBps: 10001,
                     sellerLossBps: 0,
                 });
@@ -162,7 +167,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "100",
+                    amountUsdc: "100",
                     buyerLossBps: 0,
                     sellerLossBps: 10001,
                 });
@@ -177,7 +182,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "100",
+                    amountUsdc: "100",
                     buyerLossBps: 3000,
                     sellerLossBps: 3000,
                 });
@@ -192,7 +197,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "-100",
+                    amountUsdc: "-100",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -207,7 +212,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "0",
+                    amountUsdc: "0",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -219,7 +224,7 @@ describe("TradeController", () => {
         it("returns 401 without auth", async () => {
             const res = await request(app).post("/trades").send({
                 sellerAddress,
-                amount: "10",
+                amountUsdc: "10",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
             });
@@ -238,7 +243,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "125.1234567",
+                    amountUsdc: "125.1234567",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -251,7 +256,7 @@ describe("TradeController", () => {
     describe("buildDepositTx()", () => {
         it("returns unsignedXdr for a valid buyer deposit request", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -262,7 +267,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/deposit")
+                .post("/trades/00000000-0000-0000-0000-000000000001/deposit")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(200);
@@ -270,12 +275,12 @@ describe("TradeController", () => {
                 unsignedXdr: "AAAA-deposit-xdr",
             });
             expect(TradeService.prototype.getTradeById).toHaveBeenCalledWith(
-                "4294967297",
+                "00000000-0000-0000-0000-000000000001",
                 buyerAddress
             );
             expect(ContractService.prototype.buildDepositTx).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    tradeId: "4294967297",
+                    tradeId: "00000000-0000-0000-0000-000000000001",
                     buyerAddress: buyerAddress,
                 })
             );
@@ -283,7 +288,7 @@ describe("TradeController", () => {
 
         it("returns 403 if the caller is the seller", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -291,7 +296,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/deposit")
+                .post("/trades/00000000-0000-0000-0000-000000000001/deposit")
                 .set("Authorization", `Bearer ${sellerToken}`);
 
             expect(res.status).toBe(403);
@@ -300,7 +305,7 @@ describe("TradeController", () => {
 
         it("returns 403 if the caller is a stranger", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -308,7 +313,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/deposit")
+                .post("/trades/00000000-0000-0000-0000-000000000001/deposit")
                 .set("Authorization", `Bearer ${strangerToken}`);
 
             expect(res.status).toBe(403);
@@ -317,7 +322,7 @@ describe("TradeController", () => {
 
         it("returns 400 if the trade is already funded", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -325,7 +330,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/deposit")
+                .post("/trades/00000000-0000-0000-0000-000000000001/deposit")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(400);
@@ -336,7 +341,7 @@ describe("TradeController", () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue(null);
 
             const res = await request(app)
-                .post("/trades/9999999999/deposit")
+                .post("/trades/00000000-0000-0000-0000-000000000002/deposit")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(404);
@@ -344,7 +349,7 @@ describe("TradeController", () => {
         });
 
         it("returns 401 without auth", async () => {
-            const res = await request(app).post("/trades/4294967297/deposit");
+            const res = await request(app).post("/trades/00000000-0000-0000-0000-000000000001/deposit");
 
             expect(res.status).toBe(401);
             expect(res.body.error).toBe("Unauthorized");
@@ -354,7 +359,7 @@ describe("TradeController", () => {
     describe("confirmDelivery()", () => {
         it("returns unsignedXdr for a valid buyer confirm delivery request", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -365,7 +370,7 @@ describe("TradeController", () => {
             );
 
             const res = await request(app)
-                .post("/trades/4294967297/confirm-delivery")
+                .post("/trades/00000000-0000-0000-0000-000000000001/confirm")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(200);
@@ -373,12 +378,12 @@ describe("TradeController", () => {
                 unsignedXdr: "AAAA-confirm-delivery-xdr",
             });
             expect(TradeService.prototype.getTradeById).toHaveBeenCalledWith(
-                "4294967297",
+                "00000000-0000-0000-0000-000000000001",
                 buyerAddress
             );
             expect(ContractServiceModule.buildConfirmDeliveryTx).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    tradeId: "4294967297",
+                    tradeId: "00000000-0000-0000-0000-000000000001",
                     buyerAddress: buyerAddress,
                 }),
                 buyerAddress
@@ -387,7 +392,7 @@ describe("TradeController", () => {
 
         it("returns 403 if the caller is the seller", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -395,7 +400,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/confirm-delivery")
+                .post("/trades/00000000-0000-0000-0000-000000000001/confirm")
                 .set("Authorization", `Bearer ${sellerToken}`);
 
             expect(res.status).toBe(403);
@@ -404,7 +409,7 @@ describe("TradeController", () => {
 
         it("returns 403 if the caller is a stranger", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -412,7 +417,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/confirm-delivery")
+                .post("/trades/00000000-0000-0000-0000-000000000001/confirm")
                 .set("Authorization", `Bearer ${strangerToken}`);
 
             expect(res.status).toBe(403);
@@ -421,7 +426,7 @@ describe("TradeController", () => {
 
         it("returns 400 if the trade is not FUNDED", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -429,7 +434,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/confirm-delivery")
+                .post("/trades/00000000-0000-0000-0000-000000000001/confirm")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(400);
@@ -440,7 +445,7 @@ describe("TradeController", () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue(null);
 
             const res = await request(app)
-                .post("/trades/9999999999/confirm-delivery")
+                .post("/trades/00000000-0000-0000-0000-000000000002/confirm")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(404);
@@ -448,7 +453,7 @@ describe("TradeController", () => {
         });
 
         it("returns 401 without auth", async () => {
-            const res = await request(app).post("/trades/4294967297/confirm-delivery");
+            const res = await request(app).post("/trades/00000000-0000-0000-0000-000000000001/confirm");
 
             expect(res.status).toBe(401);
             expect(res.body.error).toBe("Unauthorized");
@@ -458,7 +463,7 @@ describe("TradeController", () => {
     describe("releaseFunds()", () => {
         it("returns unsignedXdr for a valid buyer release funds request", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -469,7 +474,7 @@ describe("TradeController", () => {
             );
 
             const res = await request(app)
-                .post("/trades/4294967297/release-funds")
+                .post("/trades/00000000-0000-0000-0000-000000000001/release")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(200);
@@ -477,12 +482,12 @@ describe("TradeController", () => {
                 unsignedXdr: "AAAA-release-funds-xdr",
             });
             expect(TradeService.prototype.getTradeById).toHaveBeenCalledWith(
-                "4294967297",
+                "00000000-0000-0000-0000-000000000001",
                 buyerAddress
             );
             expect(ContractServiceModule.buildReleaseFundsTx).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    tradeId: "4294967297",
+                    tradeId: "00000000-0000-0000-0000-000000000001",
                     buyerAddress: buyerAddress,
                 }),
                 buyerAddress
@@ -491,7 +496,7 @@ describe("TradeController", () => {
 
         it("returns 403 if the caller is the seller", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -499,7 +504,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/release-funds")
+                .post("/trades/00000000-0000-0000-0000-000000000001/release")
                 .set("Authorization", `Bearer ${sellerToken}`);
 
             expect(res.status).toBe(403);
@@ -508,7 +513,7 @@ describe("TradeController", () => {
 
         it("returns 403 if the caller is a stranger", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -516,7 +521,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/release-funds")
+                .post("/trades/00000000-0000-0000-0000-000000000001/release")
                 .set("Authorization", `Bearer ${strangerToken}`);
 
             expect(res.status).toBe(403);
@@ -525,7 +530,7 @@ describe("TradeController", () => {
 
         it("returns 400 if the trade is not DELIVERED", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -533,7 +538,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/release-funds")
+                .post("/trades/00000000-0000-0000-0000-000000000001/release")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(400);
@@ -544,7 +549,7 @@ describe("TradeController", () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue(null);
 
             const res = await request(app)
-                .post("/trades/9999999999/release-funds")
+                .post("/trades/00000000-0000-0000-0000-000000000002/release")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(404);
@@ -552,7 +557,7 @@ describe("TradeController", () => {
         });
 
         it("returns 401 without auth", async () => {
-            const res = await request(app).post("/trades/4294967297/release-funds");
+            const res = await request(app).post("/trades/00000000-0000-0000-0000-000000000001/release");
 
             expect(res.status).toBe(401);
             expect(res.body.error).toBe("Unauthorized");
@@ -566,7 +571,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/initiate-dispute")
+                .post("/trades/00000000-0000-0000-0000-000000000001/dispute")
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     reason: "Goods not as described",
@@ -578,7 +583,7 @@ describe("TradeController", () => {
                 unsignedXdr: "AAAA-initiate-dispute-xdr",
             });
             expect(TradeService.prototype.initiateDispute).toHaveBeenCalledWith(
-                "4294967297",
+                "00000000-0000-0000-0000-000000000001",
                 buyerAddress,
                 "Goods not as described",
                 "quality"
@@ -587,7 +592,7 @@ describe("TradeController", () => {
 
         it("validates reason string is required", async () => {
             const res = await request(app)
-                .post("/trades/4294967297/initiate-dispute")
+                .post("/trades/00000000-0000-0000-0000-000000000001/dispute")
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     category: "quality",
@@ -599,7 +604,7 @@ describe("TradeController", () => {
 
         it("validates category string is required", async () => {
             const res = await request(app)
-                .post("/trades/4294967297/initiate-dispute")
+                .post("/trades/00000000-0000-0000-0000-000000000001/dispute")
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     reason: "Goods not as described",
@@ -615,7 +620,7 @@ describe("TradeController", () => {
             );
 
             const res = await request(app)
-                .post("/trades/4294967297/initiate-dispute")
+                .post("/trades/00000000-0000-0000-0000-000000000001/dispute")
                 .set("Authorization", `Bearer ${strangerToken}`)
                 .send({
                     reason: "Goods not as described",
@@ -632,7 +637,7 @@ describe("TradeController", () => {
             );
 
             const res = await request(app)
-                .post("/trades/4294967297/initiate-dispute")
+                .post("/trades/00000000-0000-0000-0000-000000000001/dispute")
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     reason: "Goods not as described",
@@ -649,7 +654,7 @@ describe("TradeController", () => {
             );
 
             const res = await request(app)
-                .post("/trades/9999999999/initiate-dispute")
+                .post("/trades/00000000-0000-0000-0000-000000000002/dispute")
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     reason: "Goods not as described",
@@ -662,7 +667,7 @@ describe("TradeController", () => {
 
         it("returns 401 without auth", async () => {
             const res = await request(app)
-                .post("/trades/4294967297/initiate-dispute")
+                .post("/trades/00000000-0000-0000-0000-000000000001/dispute")
                 .send({
                     reason: "Goods not as described",
                     category: "quality",
@@ -678,7 +683,7 @@ describe("TradeController", () => {
             (TradeService.prototype.listUserTrades as jest.Mock).mockResolvedValue({
                 trades: [
                     {
-                        tradeId: "4294967297",
+                        tradeId: "00000000-0000-0000-0000-000000000001",
                         buyerAddress: buyerAddress,
                         sellerAddress: sellerAddress,
                         amount: "125.1234567",
@@ -753,7 +758,7 @@ describe("TradeController", () => {
             (TradeService.prototype.listUserTrades as jest.Mock).mockResolvedValue({
                 trades: [
                     {
-                        tradeId: "4294967297",
+                        tradeId: "00000000-0000-0000-0000-000000000001",
                         buyerAddress: buyerAddress,
                         sellerAddress: sellerAddress,
                         amount: "125.1234567",
@@ -808,7 +813,7 @@ describe("TradeController", () => {
     describe("getTrade()", () => {
         it("returns trade details for the buyer", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -817,24 +822,24 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .get("/trades/4294967297")
+                .get("/trades/00000000-0000-0000-0000-000000000001")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(200);
-            expect(res.body.tradeId).toBe("4294967297");
+            expect(res.body.tradeId).toBe("00000000-0000-0000-0000-000000000001");
             expect(res.body.buyerAddress).toBe(buyerAddress);
             expect(res.body.sellerAddress).toBe(sellerAddress);
             expect(res.body.amountUsdc).toBe("125.1234567");
             expect(res.body.status).toBe("CREATED");
             expect(TradeService.prototype.getTradeById).toHaveBeenCalledWith(
-                "4294967297",
+                "00000000-0000-0000-0000-000000000001",
                 buyerAddress
             );
         });
 
         it("returns trade details for the seller", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -843,13 +848,13 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .get("/trades/4294967297")
+                .get("/trades/00000000-0000-0000-0000-000000000001")
                 .set("Authorization", `Bearer ${sellerToken}`);
 
             expect(res.status).toBe(200);
-            expect(res.body.tradeId).toBe("4294967297");
+            expect(res.body.tradeId).toBe("00000000-0000-0000-0000-000000000001");
             expect(TradeService.prototype.getTradeById).toHaveBeenCalledWith(
-                "4294967297",
+                "00000000-0000-0000-0000-000000000001",
                 sellerAddress
             );
         });
@@ -860,7 +865,7 @@ describe("TradeController", () => {
             );
 
             const res = await request(app)
-                .get("/trades/4294967297")
+                .get("/trades/00000000-0000-0000-0000-000000000001")
                 .set("Authorization", `Bearer ${strangerToken}`);
 
             expect(res.status).toBe(403);
@@ -871,7 +876,7 @@ describe("TradeController", () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue(null);
 
             const res = await request(app)
-                .get("/trades/9999999999")
+                .get("/trades/00000000-0000-0000-0000-000000000002")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(404);
@@ -880,7 +885,7 @@ describe("TradeController", () => {
 
         it("returns all required fields", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -891,7 +896,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .get("/trades/4294967297")
+                .get("/trades/00000000-0000-0000-0000-000000000001")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(200);
@@ -906,7 +911,7 @@ describe("TradeController", () => {
         });
 
         it("returns 401 without auth", async () => {
-            const res = await request(app).get("/trades/4294967297");
+            const res = await request(app).get("/trades/00000000-0000-0000-0000-000000000001");
 
             expect(res.status).toBe(401);
             expect(res.body.error).toBe("Unauthorized");
@@ -920,7 +925,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress: "INVALID",
-                    amount: "100",
+                    amountUsdc: "100",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -935,7 +940,7 @@ describe("TradeController", () => {
                 .set("Authorization", `Bearer ${token}`)
                 .send({
                     sellerAddress,
-                    amount: "-100",
+                    amountUsdc: "-100",
                     buyerLossBps: 5000,
                     sellerLossBps: 5000,
                 });
@@ -950,7 +955,7 @@ describe("TradeController", () => {
             );
 
             const res = await request(app)
-                .post("/trades/4294967297/deposit")
+                .post("/trades/00000000-0000-0000-0000-000000000001/deposit")
                 .set("Authorization", `Bearer ${strangerToken}`);
 
             expect(res.status).toBe(403);
@@ -961,7 +966,7 @@ describe("TradeController", () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue(null);
 
             const res = await request(app)
-                .post("/trades/9999999999/confirm-delivery")
+                .post("/trades/00000000-0000-0000-0000-000000000002/confirm")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(404);
@@ -970,7 +975,7 @@ describe("TradeController", () => {
 
         it("handles business logic violations in releaseFunds", async () => {
             (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
-                tradeId: "4294967297",
+                tradeId: "00000000-0000-0000-0000-000000000001",
                 buyerAddress: buyerAddress,
                 sellerAddress: sellerAddress,
                 amount: "125.1234567",
@@ -978,7 +983,7 @@ describe("TradeController", () => {
             });
 
             const res = await request(app)
-                .post("/trades/4294967297/release-funds")
+                .post("/trades/00000000-0000-0000-0000-000000000001/release")
                 .set("Authorization", `Bearer ${token}`);
 
             expect(res.status).toBe(400);
@@ -999,12 +1004,12 @@ describe("TradeController", () => {
         it("enforces auth on all endpoints", async () => {
             const endpoints = [
                 { method: "post", path: "/trades" },
-                { method: "post", path: "/trades/4294967297/deposit" },
-                { method: "post", path: "/trades/4294967297/confirm-delivery" },
-                { method: "post", path: "/trades/4294967297/release-funds" },
-                { method: "post", path: "/trades/4294967297/initiate-dispute" },
+                { method: "post", path: "/trades/00000000-0000-0000-0000-000000000001/deposit" },
+                { method: "post", path: "/trades/00000000-0000-0000-0000-000000000001/confirm" },
+                { method: "post", path: "/trades/00000000-0000-0000-0000-000000000001/release" },
+                { method: "post", path: "/trades/00000000-0000-0000-0000-000000000001/dispute" },
                 { method: "get", path: "/trades" },
-                { method: "get", path: "/trades/4294967297" },
+                { method: "get", path: "/trades/00000000-0000-0000-0000-000000000001" },
             ];
 
             for (const endpoint of endpoints) {

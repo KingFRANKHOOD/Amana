@@ -5,6 +5,8 @@ export const createTradeSchema = z.object({
   buyerAddress: z.string().min(1, "Buyer address is required"),
   sellerAddress: z.string().min(1, "Seller address is required"),
   amountUsdc: z.string().regex(/^\d+(\.\d{1,7})?$/, "Invalid amount format"),
+  buyerLossBps: z.number().int().min(0).max(10000).optional(),
+  sellerLossBps: z.number().int().min(0).max(10000).optional(),
   description: z.string().optional(),
 });
 
@@ -21,4 +23,5 @@ export const listTradesQuerySchema = z.object({
 
 export const initiateDisputeSchema = z.object({
   reason: z.string().min(10, "Reason must be at least 10 characters"),
+  category: z.string().min(1, "Category string is required"),
 });

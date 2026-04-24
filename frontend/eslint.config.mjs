@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "jest.config.cjs",
   ]),
   // Relax strict rules in test files and lib utilities
   {
