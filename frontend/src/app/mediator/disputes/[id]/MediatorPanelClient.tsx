@@ -13,6 +13,7 @@ import {
 import { signTransaction } from "@stellar/freighter-api";
 
 import { useFreighterIdentity } from "@/hooks/useFreighterIdentity";
+import { Badge } from "@/components/ui/Badge";
 
 type Props = { disputeId: string };
 
@@ -187,17 +188,13 @@ export default function MediatorPanelClient({ disputeId }: Props) {
           <div className="mt-3 text-sm text-gray-600">
             <div>Dispute ID: {disputeId}</div>
             <div>Pinata CID: {cid}</div>
-            <div>Gateway: {PINATA_GATEWAYS[activeGatewayIndex]}</div>
+            <div>Gateway: <Badge variant="info">{PINATA_GATEWAYS[activeGatewayIndex]}</Badge></div>
             <div>Mapped address: {address ?? "Not connected"}</div>
             <div className="mt-2">
               {isMediator ? (
-                <span className="px-2 py-1 bg-green-100 text-green-800 rounded">
-                  Mediator access
-                </span>
+                <Badge variant="success">Authorized</Badge>
               ) : (
-                <span className="px-2 py-1 bg-red-100 text-red-800 rounded">
-                  Not a mediator
-                </span>
+                <Badge variant="danger">Unauthorized</Badge>
               )}
             </div>
           </div>
@@ -221,9 +218,7 @@ export default function MediatorPanelClient({ disputeId }: Props) {
             )}
 
             {!isMediator && (
-              <div className="rounded-md border border-red-200 bg-red-50 text-red-700 text-sm p-3">
-                Unauthorized wallet. Access is restricted to mediator addresses.
-              </div>
+              <Badge variant="danger">Unauthorized wallet. Access is restricted to mediator addresses.</Badge>
             )}
 
             <div className="grid grid-cols-1 gap-3">
