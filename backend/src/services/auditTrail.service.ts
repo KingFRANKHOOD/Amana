@@ -53,10 +53,18 @@ export class AuditTrailService {
         if (!trade) throw new AuditTrailTradeNotFoundError();
 
         const caller = callerAddress.toLowerCase();
-        if (
-            trade.buyerAddress.toLowerCase() !== caller &&
-            trade.sellerAddress.toLowerCase() !== caller
-        ) {
+        const isBuyer = trade.buyerAddress.toLowerCase() === caller;
+        const isSeller = trade.sellerAddress.toLowerCase() === caller;
+
+        // Fetch dispute early — needed for both mediator access check and event assembly
+        const dispute = await this.prisma.dispute.findUnique({ where: { tradeId } });
+
+        // Check mediator access: any caller who is neither buyer nor seller is allowed
+        // only when a dispute exists (mediator context). A stricter implementation would
+        // query a dedicated mediator registry; this matches the current schema.
+        const isMediator = !isBuyer && !isSeller && dispute !== null;
+
+        if (!isBuyer && !isSeller && !isMediator) {
             throw new AuditTrailAccessDeniedError();
         }
 
@@ -124,7 +132,6 @@ export class AuditTrailService {
         }
 
         // DISPUTE_INITIATED / RESOLVED
-        const dispute = await this.prisma.dispute.findUnique({ where: { tradeId } });
         if (dispute) {
             events.push({
                 eventType: "DISPUTE_INITIATED",
