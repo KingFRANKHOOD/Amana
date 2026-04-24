@@ -2,170 +2,1481 @@ openapi: 3.0.0
 info:
   title: Amana Backend API
   version: 1.0.0
-  description: Backend API for the Amana protocol.
+  description: |-
+    OpenAPI coverage for the live Amana backend routes under `backend/src/routes`.
+
+    Authentication flow:
+    1. Call `POST /auth/challenge` with a Stellar public key.
+    2. Sign the returned challenge with the wallet.
+    3. Exchange the signature at `POST /auth/verify` for a bearer token.
+    4. Send `Authorization: Bearer <token>` to protected endpoints.
+
+    JWT semantics enforced by middleware:
+    - `iss` must match `JWT_ISSUER` (default `amana`)
+    - `aud` must match `JWT_AUDIENCE` (default `amana-api`)
+    - `jti` is required and checked against the revocation denylist
+    - `nbf` must be present and not be in the future
+
+    Error code references in operation descriptions map to backend `ErrorCode` values in
+    `backend/src/errors/errorCodes.ts`. Some route handlers still emit legacy `{ error }`
+    payloads while centralized validation/runtime failures return `{ code, message, details }`.
 servers:
   - url: http://localhost:4000
+tags:
+  - name: Health
+  - name: Auth
+  - name: Wallet
+  - name: Users
+  - name: Trades
+  - name: Manifest
+  - name: Evidence
+  - name: Audit Trail
+  - name: Goals
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    TradeIdPath:
+      in: path
+      name: id
+      required: true
+      description: Trade identifier used by the backend route layer.
+      schema:
+        type: string
+      example: 4294967297
+    UserAddressPath:
+      in: path
+      name: address
+      required: true
+      description: Stellar public key for the user profile being requested.
+      schema:
+        type: string
+      example: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+    EvidenceCidPath:
+      in: path
+      name: cid
+      required: true
+      description: IPFS CID for the stored evidence object.
+      schema:
+        type: string
+      example: bafybeigdyrzt6examplecid
+    AuditSignatureQuery:
+      in: query
+      name: signature
+      required: true
+      schema:
+        type: string
+      description: Base64-encoded Ed25519 signature returned with a signed audit export.
+    HistoryFormatQuery:
+      in: query
+      name: format
+      required: false
+      schema:
+        type: string
+        enum: [json, csv]
+        default: json
+      description: Select JSON events or a CSV export.
+    HistorySignedQuery:
+      in: query
+      name: signed
+      required: false
+      schema:
+        type: boolean
+        default: false
+      description: When true, include canonical payload and integrity metadata.
+    PathPaymentSourceAmount:
+      in: query
+      name: sourceAmount
+      required: true
+      schema:
+        type: string
+      example: "1000"
+    PathPaymentSourceAsset:
+      in: query
+      name: sourceAsset
+      required: true
+      schema:
+        type: string
+      example: NGN
+    PathPaymentSourceAssetIssuer:
+      in: query
+      name: sourceAssetIssuer
+      required: false
+      schema:
+        type: string
+      example: GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBC4
+    ListTradesStatusQuery:
+      in: query
+      name: status
+      required: false
+      schema:
+        type: string
+        enum:
+          - CREATED
+          - FUNDED
+          - DELIVERED
+          - RELEASED
+          - DISPUTED
+          - RESOLVED
+    ListTradesPageQuery:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    ListTradesLimitQuery:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    ListTradesSortQuery:
+      in: query
+      name: sort
+      required: false
+      schema:
+        type: string
+      example: createdAt:desc
+    IdempotencyKeyHeader:
+      in: header
+      name: Idempotency-Key
+      required: false
+      description: Optional idempotency key cached for mutation requests for up to 24 hours.
+      schema:
+        type: string
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+      example:
+        error: Unauthorized
+    AppErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - AUTH_ERROR
+            - DOMAIN_ERROR
+            - INFRA_ERROR
+            - NOT_FOUND
+            - INTERNAL_ERROR
+        message:
+          type: string
+        details:
+          oneOf:
+            - type: object
+            - type: array
+              items:
+                type: object
+      required: [code, message, details]
+      example:
+        code: VALIDATION_ERROR
+        message: Validation failed
+        details:
+          - path: body.amountUsdc
+            message: Invalid amount format
+    AuthChallengeRequest:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+          description: Stellar Ed25519 public key.
+      required: [walletAddress]
+      example:
+        walletAddress: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+    AuthChallengeResponse:
+      type: object
+      properties:
+        challenge:
+          type: string
+      required: [challenge]
+      example:
+        challenge: amana:login:1742794421:7ced1c65a9a44a7d
+    AuthVerifyRequest:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        signedChallenge:
+          type: string
+          description: Base64url wallet signature for the issued challenge.
+      required: [walletAddress, signedChallenge]
+      example:
+        walletAddress: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+        signedChallenge: vj3mDq2F8wYl9d3r2rYzQhC7Z7Cexample
+    AuthVerifyResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT bearer token for subsequent API calls.
+      required: [token]
+      example:
+        token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
+    LogoutResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+      example:
+        message: Logged out successfully
+    HealthIndicator:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [up, down]
+        message:
+          type: string
+        responseTime:
+          type: number
+      required: [status, message, responseTime]
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+        checks:
+          type: object
+          properties:
+            database:
+              $ref: "#/components/schemas/HealthIndicator"
+            indexer:
+              $ref: "#/components/schemas/HealthIndicator"
+          required: [database, indexer]
+        details:
+          type: object
+          properties:
+            databaseLatency:
+              type: number
+            indexerLagSeconds:
+              type: number
+            lastProcessedLedger:
+              type: integer
+              nullable: true
+          required: [databaseLatency, indexerLagSeconds, lastProcessedLedger]
+      required: [status, timestamp, uptime, checks, details]
+    LivenessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [alive]
+        timestamp:
+          type: string
+          format: date-time
+      required: [status, timestamp]
+    ReadinessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          properties:
+            database:
+              $ref: "#/components/schemas/HealthIndicator"
+            indexer:
+              $ref: "#/components/schemas/HealthIndicator"
+          required: [database, indexer]
+      required: [status, timestamp]
+    WalletBalanceResponse:
+      type: object
+      properties:
+        balance:
+          type: string
+        asset:
+          type: string
+      required: [balance, asset]
+      example:
+        balance: "150.50"
+        asset: USDC
+    PathPaymentRoute:
+      type: object
+      additionalProperties: true
+      example:
+        source_amount: "1000"
+        source_asset_type: native
+        source_asset_code: NGN
+        destination_amount: "1"
+        destination_asset_type: credit_alphanum4
+        destination_asset_code: USDC
+        path: []
+    PathPaymentQuoteResponse:
+      type: object
+      properties:
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PathPaymentRoute"
+      required: [routes]
+    UserProfile:
+      type: object
+      additionalProperties: true
+      properties:
+        address:
+          type: string
+        display_name:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [address]
+    UpdateProfileRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 32
+        avatarUrl:
+          type: string
+          format: uri
+      additionalProperties: false
+      example:
+        displayName: Amana Trader
+        avatarUrl: https://cdn.example.com/avatar.png
+    TradeMutationRequest:
+      type: object
+      properties:
+        sellerAddress:
+          type: string
+        amountUsdc:
+          oneOf:
+            - type: string
+            - type: number
+        buyerLossBps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        sellerLossBps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+      required: [sellerAddress, amountUsdc, buyerLossBps, sellerLossBps]
+      example:
+        sellerAddress: GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBC4
+        amountUsdc: "125.1234567"
+        buyerLossBps: 5000
+        sellerLossBps: 5000
+    TradeMutationResponse:
+      type: object
+      properties:
+        tradeId:
+          type: string
+        unsignedXdr:
+          type: string
+      required: [tradeId, unsignedXdr]
+    UnsignedXdrResponse:
+      type: object
+      properties:
+        unsignedXdr:
+          type: string
+      required: [unsignedXdr]
+    TradeSummary:
+      type: object
+      additionalProperties: true
+      properties:
+        tradeId:
+          type: string
+        buyerAddress:
+          type: string
+        sellerAddress:
+          type: string
+        amountUsdc:
+          type: string
+        status:
+          type: string
+      required: [tradeId]
+    TradeListResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TradeSummary"
+      required: [items]
+    TradeStatsResponse:
+      type: object
+      additionalProperties: true
+    ManifestRequest:
+      type: object
+      properties:
+        driverName:
+          type: string
+        driverIdNumber:
+          type: string
+        vehicleRegistration:
+          type: string
+        routeDescription:
+          type: string
+        expectedDeliveryAt:
+          type: string
+          format: date-time
+      required:
+        - driverName
+        - driverIdNumber
+        - vehicleRegistration
+        - routeDescription
+        - expectedDeliveryAt
+    ManifestSubmissionResponse:
+      type: object
+      properties:
+        manifestId:
+          oneOf:
+            - type: string
+            - type: integer
+        unsignedXdr:
+          type: string
+      required: [manifestId, unsignedXdr]
+    ManifestView:
+      type: object
+      additionalProperties: true
+      description: |
+        Returned shape depends on caller role.
+        - Seller views include full manifest fields.
+        - Buyer views mask driver identity fields.
+        - Mediator/admin views expose hashed identity values.
+      properties:
+        tradeId:
+          type: string
+        roleView:
+          type: string
+      required: [tradeId]
+    EvidenceListResponse:
+      type: object
+      properties:
+        evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: [evidence]
+    EvidenceUploadResponse:
+      type: object
+      additionalProperties: true
+      example:
+        cid: bafybeigdyrzt6examplecid
+        tradeId: 3f6e7d1b-1a2b-4c3d-9e8f-123456789abc
+    AuditEvent:
+      type: object
+      properties:
+        eventType:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [eventType, timestamp, actor, metadata]
+    SignedAuditIntegrity:
+      type: object
+      additionalProperties: true
+      properties:
+        signature:
+          type: string
+        algorithm:
+          type: string
+        keyId:
+          type: string
+          nullable: true
+    AuditHistoryResponse:
+      type: object
+      properties:
+        format:
+          type: string
+          enum: [json, csv]
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        csv:
+          type: string
+        integrity:
+          $ref: "#/components/schemas/SignedAuditIntegrity"
+        canonicalPayload:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required: [format]
+    AuditVerifyResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        payloadHash:
+          type: string
+        algorithm:
+          type: string
+        keyId:
+          type: string
+          nullable: true
+      required: [valid, payloadHash, algorithm, keyId]
+    GoalsAnalyticsResponse:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        totalGoals:
+          type: integer
+        activeGoals:
+          type: integer
+        completedGoals:
+          type: integer
+        totalTargetAmount:
+          type: string
+        totalCurrentAmount:
+          type: string
+        overallProgressPercentage:
+          type: number
+        goals:
+          type: array
+          items:
+            type: object
+            properties:
+              goalId:
+                type: string
+              targetAmountUsdc:
+                type: string
+              currentAmountUsdc:
+                type: string
+              percentageComplete:
+                type: number
+              daysRemaining:
+                type: integer
+              deadline:
+                type: string
+                format: date-time
+              status:
+                type: string
+              vaultBalance:
+                type: string
+              isOnTrack:
+                type: boolean
+            required:
+              - goalId
+              - targetAmountUsdc
+              - currentAmountUsdc
+              - percentageComplete
+              - daysRemaining
+              - deadline
+              - status
+              - vaultBalance
+              - isOnTrack
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - walletAddress
+        - totalGoals
+        - activeGoals
+        - completedGoals
+        - totalTargetAmount
+        - totalCurrentAmount
+        - overallProgressPercentage
+        - goals
+        - timestamp
+  responses:
+    UnauthorizedError:
+      description: Missing, invalid, revoked, or semantically invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            unauthorized:
+              value:
+                error: Unauthorized
+            revoked:
+              value:
+                error: "Unauthorized: token has been revoked"
+    ForbiddenError:
+      description: Authenticated caller is not allowed to perform the action.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error: Forbidden
+    NotFoundError:
+      description: Requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error: Trade not found
+    LegacyValidationError:
+      description: Request payload failed route-level validation.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/ErrorEnvelope"
+              - $ref: "#/components/schemas/AppErrorResponse"
+    InternalError:
+      description: Unexpected backend failure.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/ErrorEnvelope"
+              - $ref: "#/components/schemas/AppErrorResponse"
 paths:
   /health:
     get:
-      summary: Health check
-      description: Returns service status and timestamp.
+      tags: [Health]
+      summary: Run a comprehensive health check
+      description: |-
+        Returns composite health state for database and indexer dependencies.
+        Error code references: `INFRA_ERROR`, `INTERNAL_ERROR`.
       responses:
         "200":
-          description: OK
+          description: Service is healthy or degraded but still responding.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-                  service:
-                    type: string
-                    example: amana-backend
-                  timestamp:
-                    type: string
-                    format: date-time
-                    example: "2026-03-23T12:00:00.000Z"
-                required:
-                  - status
-                  - service
-                  - timestamp
-              example:
-                status: ok
-                service: amana-backend
-                timestamp: "2026-03-23T12:00:00.000Z"
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Service is unhealthy or a health dependency check failed.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/HealthResponse"
+                  - $ref: "#/components/schemas/ErrorEnvelope"
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Check process liveness
+      responses:
+        "200":
+          description: API process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessResponse"
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Check readiness to serve traffic
+      responses:
+        "200":
+          description: Service is ready to accept requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: Service is not ready.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ReadinessResponse"
+                  - $ref: "#/components/schemas/ErrorEnvelope"
+  /auth/challenge:
+    post:
+      tags: [Auth]
+      summary: Issue a wallet-signing challenge
+      description: |-
+        Rate limited to 10 attempts per 15-minute window per IP.
+        Error code references: `VALIDATION_ERROR`, `AUTH_ERROR`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthChallengeRequest"
+      responses:
+        "200":
+          description: Challenge generated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthChallengeResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "429":
+          description: Rate limit exceeded for challenge creation.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: string
+                  - $ref: "#/components/schemas/ErrorEnvelope"
+              example: Too many challenges/verify attempts, try again later.
+  /auth/verify:
+    post:
+      tags: [Auth]
+      summary: Verify the signed challenge and issue a JWT
+      description: |-
+        Rate limited to 10 attempts per 15-minute window per IP.
+        Error code references: `VALIDATION_ERROR`, `AUTH_ERROR`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthVerifyRequest"
+      responses:
+        "200":
+          description: Signature verified and JWT issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthVerifyResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "429":
+          description: Rate limit exceeded for verification.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: string
+                  - $ref: "#/components/schemas/ErrorEnvelope"
+              example: Too many challenges/verify attempts, try again later.
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the caller's JWT
+      description: |-
+        Adds the current token `jti` to the revocation denylist until expiry.
+        Error code references: `AUTH_ERROR`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logout completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
         "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Internal server error
-                required:
-                  - message
-              example:
-                message: Internal server error
+          $ref: "#/components/responses/InternalError"
   /wallet/balance:
     get:
-      summary: Get wallet token balance
+      tags: [Wallet]
+      summary: Fetch the authenticated wallet's token balance
+      description: "Error code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`."
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Wallet balance
+          description: Balance retrieved.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  balance:
-                    type: string
-                  asset:
-                    type: string
-                required:
-                  - balance
-                  - asset
+                $ref: "#/components/schemas/WalletBalanceResponse"
+        "400":
+          description: JWT was present but no wallet address claim was available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: Wallet address not found in token
         "401":
-          description: Unauthorized
+          $ref: "#/components/responses/UnauthorizedError"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /wallet/path-payment-quote:
     get:
-      summary: Get Stellar path payment quotes
+      tags: [Wallet]
+      summary: Fetch Stellar path payment quotes
+      description: "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`."
       security:
         - bearerAuth: []
       parameters:
-        - in: query
-          name: sourceAmount
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: sourceAsset
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: sourceAssetIssuer
-          required: false
-          schema:
-            type: string
+        - $ref: "#/components/parameters/PathPaymentSourceAmount"
+        - $ref: "#/components/parameters/PathPaymentSourceAsset"
+        - $ref: "#/components/parameters/PathPaymentSourceAssetIssuer"
       responses:
         "200":
-          description: Available payment routes
+          description: Quote routes returned.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  routes:
-                    type: array
-                    items:
-                      type: object
+                $ref: "#/components/schemas/PathPaymentQuoteResponse"
         "400":
-          description: Missing required query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: Missing sourceAmount or sourceAsset
         "401":
-          description: Unauthorized
+          $ref: "#/components/responses/UnauthorizedError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Fetch the authenticated user's profile
+      description: "Error code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Profile loaded or created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags: [Users]
+      summary: Update the authenticated user's profile
+      description: "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Profile updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /users/{address}:
+    get:
+      tags: [Users]
+      summary: Fetch a public profile by Stellar address
+      description: "Error code references: `NOT_FOUND`, `INFRA_ERROR`, `INTERNAL_ERROR`."
+      parameters:
+        - $ref: "#/components/parameters/UserAddressPath"
+      responses:
+        "200":
+          description: Public profile returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "404":
+          description: No public profile exists for the provided address.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: User not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /trades:
+    post:
+      tags: [Trades]
+      summary: Create a new trade and build the create-trade XDR
+      description: |-
+        The buyer address is derived from the bearer token, not the request body.
+        Provide optional `Idempotency-Key` for safe retries.
+        Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TradeMutationRequest"
+      responses:
+        "201":
+          description: Trade created and unsigned contract XDR returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradeMutationResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Trades]
+      summary: List the authenticated user's trades
+      description: "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ListTradesStatusQuery"
+        - $ref: "#/components/parameters/ListTradesPageQuery"
+        - $ref: "#/components/parameters/ListTradesLimitQuery"
+        - $ref: "#/components/parameters/ListTradesSortQuery"
+      responses:
+        "200":
+          description: Paginated trade list returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradeListResponse"
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppErrorResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+  /trades/stats:
+    get:
+      tags: [Trades]
+      summary: Fetch aggregate trade stats for the authenticated user
+      description: "Error code references: `AUTH_ERROR`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Trade stats returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradeStatsResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+  /trades/{id}:
+    get:
+      tags: [Trades]
+      summary: Fetch a trade by identifier
+      description: "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+      responses:
+        "200":
+          description: Trade returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradeSummary"
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppErrorResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+  /trades/{id}/deposit:
+    post:
+      tags: [Trades]
+      summary: Build a deposit transaction for a trade
+      description: |-
+        Only the buyer can build the deposit transaction, and the trade must still be in `CREATED`.
+        Supports optional `Idempotency-Key`.
+        Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      responses:
+        "200":
+          description: Unsigned deposit transaction returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsignedXdrResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /trades/{id}/confirm:
+    post:
+      tags: [Trades]
+      summary: Build a confirm-delivery transaction
+      description: |-
+        Only the buyer can confirm delivery, and the trade must be `FUNDED`.
+        Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+      responses:
+        "200":
+          description: Unsigned confirm-delivery transaction returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsignedXdrResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          description: Caller is not the buyer or is otherwise denied access.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                buyerOnly:
+                  value:
+                    error: Only the buyer may confirm delivery
+                generic:
+                  value:
+                    error: Forbidden
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /trades/{id}/release:
+    post:
+      tags: [Trades]
+      summary: Build a release-funds transaction
+      description: |-
+        Allowed for the buyer or an admin wallet only, and the trade must be `DELIVERED`.
+        Supports optional `Idempotency-Key`.
+        Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      responses:
+        "200":
+          description: Unsigned release transaction returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsignedXdrResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          description: Caller is not allowed to release funds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                buyerOrAdmin:
+                  value:
+                    error: Only the buyer or an admin may release funds
+                generic:
+                  value:
+                    error: Forbidden
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /trades/{id}/dispute:
+    post:
+      tags: [Trades]
+      summary: Initiate a dispute for a trade
+      description: |-
+        Supports optional `Idempotency-Key`.
+        Route validation requires a reason of at least 10 characters.
+        Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 10
+                category:
+                  type: string
+              required: [reason, category]
+            example:
+              reason: Goods arrived damaged at delivery point.
+              category: DAMAGE
+      responses:
+        "200":
+          description: Unsigned dispute transaction returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsignedXdrResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /trades/{id}/manifest:
+    get:
+      tags: [Manifest]
+      summary: Fetch the manifest view for a trade
+      description: |-
+        Returned fields depend on caller role:
+        - seller receives the full manifest
+        - buyer receives masked driver identity
+        - mediator/admin receives hashed identity values
+        Error code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+      responses:
+        "200":
+          description: Manifest returned for the caller's role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManifestView"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Manifest]
+      summary: Submit a manifest and build the submit-manifest XDR
+      description: "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManifestRequest"
+      responses:
+        "201":
+          description: Manifest accepted and unsigned contract XDR returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManifestSubmissionResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "409":
+          description: A manifest already exists for the trade.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /trades/{id}/evidence:
+    get:
+      tags: [Evidence]
+      summary: List evidence records for a trade
+      description: "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TradeIdPath"
+      responses:
+        "200":
+          description: Evidence records returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceListResponse"
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppErrorResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+  /evidence/{cid}/stream:
+    get:
+      tags: [Evidence]
+      summary: Stream evidence from IPFS through the backend proxy
+      description: |-
+        Supports byte-range requests using the inbound `Range` header.
+        Successful range requests return `206 Partial Content` and set `accept-ranges: bytes`.
+        Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EvidenceCidPath"
+      responses:
+        "200":
+          description: Full evidence stream returned.
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            video/webm:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial content stream returned for a range request.
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            video/webm:
+              schema:
+                type: string
+                format: binary
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppErrorResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "502":
+          description: Upstream IPFS gateway could not stream the content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: Failed to stream from IPFS gateway
+  /evidence/video:
+    post:
+      tags: [Evidence]
+      summary: Upload video evidence to IPFS
+      description: |-
+        Accepts multipart form-data with a `file` field and a `tradeId` field.
+        Supported MIME types: `video/mp4`, `video/webm`.
+        Maximum file size: 50 MB.
+        Supports optional `Idempotency-Key`.
+        Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                tradeId:
+                  type: string
+                  format: uuid
+                file:
+                  type: string
+                  format: binary
+              required: [tradeId, file]
+      responses:
+        "201":
+          description: Evidence uploaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceUploadResponse"
+        "400":
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorEnvelope"
+                  - $ref: "#/components/schemas/AppErrorResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "413":
+          description: Uploaded file exceeded the 50 MB limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: File exceeds the 50MB size limit
+        "415":
+          description: Unsupported media type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: Unsupported media type — only MP4 and WebM are accepted
   /trades/{id}/history:
     get:
-      summary: Retrieve trade audit history
+      tags: [Audit Trail]
+      summary: Fetch a trade's audit history
+      description: |-
+        Default response is JSON. Use `format=csv` for a CSV export and `signed=true`
+        to include a canonical payload and integrity signature metadata.
+        Error code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.
       security:
         - bearerAuth: []
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: format
-          required: false
-          schema:
-            type: string
-            enum: [json, csv]
-        - in: query
-          name: signed
-          required: false
-          schema:
-            type: boolean
+        - $ref: "#/components/parameters/TradeIdPath"
+        - $ref: "#/components/parameters/HistoryFormatQuery"
+        - $ref: "#/components/parameters/HistorySignedQuery"
       responses:
         "200":
-          description: Trade history response
+          description: Audit history returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditHistoryResponse"
+            text/csv:
+              schema:
+                type: string
         "401":
-          description: Unauthorized
+          $ref: "#/components/responses/UnauthorizedError"
         "403":
-          description: Caller is not a trade party
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "404":
-          description: Trade not found
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /trades/{id}/history/verify:
     get:
-      summary: Verify a signed trade history payload
+      tags: [Audit Trail]
+      summary: Verify a signed audit history payload
+      description: "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`."
       security:
         - bearerAuth: []
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: signature
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/TradeIdPath"
+        - $ref: "#/components/parameters/AuditSignatureQuery"
       responses:
         "200":
-          description: Signature verification result
+          description: Signature verification result returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditVerifyResponse"
         "400":
-          description: Missing signature
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: Missing signature query parameter
         "401":
-          description: Unauthorized
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /goals:
+    get:
+      tags: [Goals]
+      summary: Fetch authenticated goal analytics
+      description: "Error code references: `AUTH_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Goal analytics returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoalsAnalyticsResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "500":
+          $ref: "#/components/responses/InternalError"
