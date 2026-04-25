@@ -1,5 +1,7 @@
 #![no_std]
 
+#[cfg(test)]
+mod tests;
 use soroban_sdk::{
     Address, Bytes, Env, String, Symbol, Vec, contract, contractevent, contractimpl, contracttype,
     symbol_short, token,
@@ -12,7 +14,7 @@ use soroban_sdk::{
 const NEXT_TRADE_ID: Symbol = symbol_short!("NXTTRD");
 const BPS_DIVISOR: i128 = 10_000;
 const INSTANCE_TTL_THRESHOLD: u32 = 50_000;
-const INSTANCE_TTL_EXTEND_TO: u32 = 50_000;
+pub(crate) const INSTANCE_TTL_EXTEND_TO: u32 = 50_000;
 
 fn checked_fee_amount(amount: i128, fee_bps: u32) -> i128 {
     amount
