@@ -125,7 +125,6 @@ function SelectField({
 export default function SettingsPage() {
   const {
     address,
-    shortAddress,
     isAuthenticated,
     isWalletConnected,
     isWalletDetected,

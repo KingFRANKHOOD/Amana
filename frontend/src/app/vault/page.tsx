@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 
 import Link from "next/link";
 import {
@@ -45,7 +45,6 @@ const PARTNERS = [
 
 export default function VaultPage() {
   const {
-    address,
     shortAddress,
     token,
     isAuthenticated,
@@ -68,7 +67,7 @@ export default function VaultPage() {
     null,
   );
 
-  const fetchVaultData = async () => {
+  const fetchVaultData = useCallback(async () => {
     if (!token) return;
 
     setLoading(true);
@@ -88,13 +87,13 @@ export default function VaultPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
   useEffect(() => {
     if (isAuthenticated && token) {
       void fetchVaultData();
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, fetchVaultData]);
 
   const walletStatus = authLoading
     ? "Checking wallet"

@@ -112,6 +112,7 @@ export function TradeTimeline({ events }: TradeTimelineProps) {
                   <div className="mt-3 flex items-center gap-3 bg-elevated rounded-lg p-3 border border-border-default">
                     <div className="w-12 h-12 rounded-md bg-teal/10 border border-teal/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {event.tracking.imageUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
                         <img
                           src={event.tracking.imageUrl}
                           alt="vessel"

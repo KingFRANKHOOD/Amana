@@ -23,7 +23,7 @@ export function RepScoreRing({
   animated = true,
 }: RepScoreRingProps) {
   const clampedScore = Math.min(Math.max(score, 0), maxScore);
-  const { svgSize, strokeWidth, radius, fontSize, labelSize } = SIZE_CONFIG[size];
+  const { svgSize, strokeWidth, radius, labelSize } = SIZE_CONFIG[size];
 
   const circumference = 2 * Math.PI * radius;
   const fillRatio = clampedScore / maxScore;

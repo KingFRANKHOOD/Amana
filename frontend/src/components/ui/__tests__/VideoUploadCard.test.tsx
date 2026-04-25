@@ -4,7 +4,7 @@ import { VideoUploadCard } from '../VideoUploadCard';
 
 // Mock the BentoCard component
 jest.mock('../BentoCard', () => ({
-    BentoCard: ({ children, title, icon, glowVariant, className }: any) => (
+    BentoCard: ({ children, title, glowVariant, className }: { children: React.ReactNode, title?: string, icon?: React.ReactNode, glowVariant?: string, className?: string }) => (
         <div data-testid="bento-card" data-title={title} data-glow={glowVariant} className={className}>
             {children}
         </div>
@@ -13,18 +13,18 @@ jest.mock('../BentoCard', () => ({
 
 // Mock the Icon component
 jest.mock('../Icon', () => ({
-    Icon: ({ name, size, className, ...props }: any) => (
+    Icon: ({ name, size, className, ...props }: { name: string, size?: string, className?: string, [key: string]: unknown }) => (
         <svg data-testid={`icon-${name}`} data-size={size} className={className} {...props} />
     ),
 }));
 
 // Mock XMLHttpRequest
-const mockXhr = {
+const mockXhr: Record<string, unknown> = {
     upload: {
-        onprogress: null as any,
+        onprogress: null as ((ev: ProgressEvent<EventTarget>) => void) | null,
     },
-    onload: null as any,
-    onerror: null as any,
+    onload: null as (() => void) | null,
+    onerror: null as (() => void) | null,
     open: jest.fn(),
     setRequestHeader: jest.fn(),
     send: jest.fn(),
@@ -33,7 +33,7 @@ const mockXhr = {
     statusText: 'OK',
 };
 
-global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
+global.XMLHttpRequest = jest.fn(() => mockXhr) as unknown as typeof XMLHttpRequest;
 
 describe('VideoUploadCard Component', () => {
     const defaultProps = {
@@ -42,7 +42,7 @@ describe('VideoUploadCard Component', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-        mockXhr.upload.onprogress = null;
+        (mockXhr.upload as { onprogress: null }).onprogress = null;
         mockXhr.onload = null;
         mockXhr.onerror = null;
         mockXhr.status = 200;
@@ -112,7 +112,9 @@ describe('VideoUploadCard Component', () => {
 
         // Simulate successful upload
         await waitFor(() => {
-            mockXhr.onload();
+            if (mockXhr.onload) {
+                (mockXhr.onload as () => void)();
+            }
         });
 
         await waitFor(() => {
@@ -135,8 +137,9 @@ describe('VideoUploadCard Component', () => {
 
         // Simulate progress
         await waitFor(() => {
-            if (mockXhr.upload.onprogress) {
-                mockXhr.upload.onprogress({ lengthComputable: true, loaded: 50, total: 100 });
+            const upload = mockXhr.upload as { onprogress?: (ev: { lengthComputable: boolean; loaded: number; total: number }) => void };
+            if (upload.onprogress) {
+                upload.onprogress({ lengthComputable: true, loaded: 50, total: 100 });
             }
         });
 
@@ -160,7 +163,9 @@ describe('VideoUploadCard Component', () => {
 
         // Simulate successful upload
         await waitFor(() => {
-            mockXhr.onload();
+            if (mockXhr.onload) {
+                (mockXhr.onload as () => void)();
+            }
         });
 
         await waitFor(() => {
@@ -183,7 +188,9 @@ describe('VideoUploadCard Component', () => {
 
         // Simulate successful upload
         await waitFor(() => {
-            mockXhr.onload();
+            if (mockXhr.onload) {
+                (mockXhr.onload as () => void)();
+            }
         });
 
         await waitFor(() => {
@@ -208,7 +215,9 @@ describe('VideoUploadCard Component', () => {
 
         // Simulate failed upload
         await waitFor(() => {
-            mockXhr.onload();
+            if (mockXhr.onload) {
+                (mockXhr.onload as () => void)();
+            }
         });
 
         await waitFor(() => {
@@ -230,7 +239,9 @@ describe('VideoUploadCard Component', () => {
 
         // Simulate network error
         await waitFor(() => {
-            mockXhr.onerror();
+            if (mockXhr.onerror) {
+                (mockXhr.onerror as () => void)();
+            }
         });
 
         await waitFor(() => {
@@ -291,7 +302,9 @@ describe('VideoUploadCard Component', () => {
 
         // Simulate successful upload
         await waitFor(() => {
-            mockXhr.onload();
+            if (mockXhr.onload) {
+                (mockXhr.onload as () => void)();
+            }
         });
 
         await waitFor(() => {

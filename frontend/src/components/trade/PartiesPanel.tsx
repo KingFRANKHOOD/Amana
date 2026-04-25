@@ -26,6 +26,7 @@ function PartyCard({
         {/* Avatar */}
         <div className="w-10 h-10 rounded-lg bg-bg-input border border-border-default flex items-center justify-center text-lg flex-shrink-0">
           {party.avatar ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={party.avatar}
               alt={party.name}

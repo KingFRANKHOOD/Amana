@@ -4,9 +4,6 @@ import { Spinner } from "@/components/ui/Spinner";
 
 import { StepIndicator } from "@/components/ui/StepIndicator";
 import { TradeListItemDemo } from "./TradeListItemDemo";
-import { Spinner } from "@/components/ui/Spinner";
-import { LoadingState } from "@/components/ui/LoadingState";
-
 const STEPS = [
   { label: "Create Trade", description: "3-step flow" },
   { label: "Verification", description: "4-step flow" },

@@ -328,7 +328,7 @@ describe("authenticate — challenge-verify flow", () => {
     mockWalletConnected();
     mockedChallenge.mockResolvedValue({ challenge: CHALLENGE_STRING });
     mockedSignMessage.mockResolvedValue(signMessageRes(SIGNED_CHALLENGE));
-    mockedVerify.mockRejectedValue(new (ApiError as any)(400, "Invalid signature"));
+    mockedVerify.mockRejectedValue(new ApiError(400, "Invalid signature"));
 
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));

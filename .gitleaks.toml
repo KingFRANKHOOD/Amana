@@ -1,0 +1,93 @@
+# .gitleaks.toml — Gitleaks configuration for the Amana repository
+# Docs: https://github.com/gitleaks/gitleaks
+
+title = "Amana Gitleaks Config"
+
+[extend]
+# Extend the default built-in ruleset
+useDefault = true
+
+# ── Allowlist ──────────────────────────────────────────────────────────────────
+# Paths and patterns that are safe to ignore.
+[[allowlists]]
+description = "Example / placeholder files"
+paths = [
+  ".env.*.example",
+  ".env.example",
+  "docs/",
+  "*.md",
+]
+
+[[allowlists]]
+description = "Test files — fake credentials used in test fixtures"
+paths = [
+  "backend/src/__tests__/",
+  "**/*.test.ts",
+  "**/*.spec.ts",
+]
+
+[[allowlists]]
+description = "Prisma migration SQL — no secrets allowed but allowlist format strings"
+paths = [
+  "backend/prisma/migrations/",
+]
+
+# ── Custom rules ──────────────────────────────────────────────────────────────
+
+[[rules]]
+id          = "amana-jwt-secret"
+description = "Amana JWT_SECRET assigned a real value"
+regex       = '''(?i)JWT_SECRET\s*=\s*["']?(?!your-|change-|test-|placeholder)[A-Za-z0-9+/=_\-]{20,}'''
+tags        = ["secret", "jwt"]
+severity    = "critical"
+
+[[rules]]
+id          = "stellar-secret-key"
+description = "Stellar secret key (starts with S, 56 chars)"
+# Stellar secret keys: S + 55 base32 chars
+regex       = '''\bS[A-Z2-7]{55}\b'''
+tags        = ["stellar", "key"]
+severity    = "critical"
+
+[[rules]]
+id          = "pinata-jwt"
+description = "Pinata IPFS JWT token"
+regex       = '''(?i)PINATA_JWT\s*=\s*["']?ey[A-Za-z0-9_\-]+\.ey[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+'''
+tags        = ["pinata", "ipfs", "jwt"]
+severity    = "critical"
+
+[[rules]]
+id          = "supabase-service-role-key"
+description = "Supabase service role key (JWT)"
+regex       = '''(?i)SUPABASE_SERVICE_ROLE_KEY\s*=\s*["']?ey[A-Za-z0-9_\-]+\.ey[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+'''
+tags        = ["supabase", "jwt"]
+severity    = "critical"
+
+[[rules]]
+id          = "ed25519-private-key-pem"
+description = "Ed25519 / EC private key PEM block"
+regex       = '''-----BEGIN (EC |OPENSSH )?PRIVATE KEY-----'''
+tags        = ["pem", "private-key"]
+severity    = "critical"
+
+[[rules]]
+id          = "database-url-with-password"
+description = "PostgreSQL connection string with embedded password"
+# Matches postgresql://user:PASS@host where PASS is non-empty and not a variable
+regex       = '''postgresql://[^:]+:[^@$\{]{4,}@'''
+tags        = ["database", "password"]
+severity    = "critical"
+
+[[rules]]
+id          = "redis-url-with-password"
+description = "Redis connection string with embedded password"
+regex       = '''redis://:([^@\s$\{]{4,})@'''
+tags        = ["redis", "password"]
+severity    = "high"
+
+[[rules]]
+id          = "generic-api-key-assignment"
+description = "Generic API_KEY / SECRET assignment with a non-placeholder value"
+regex       = '''(?i)(api[_-]?key|api[_-]?secret|secret[_-]?key)\s*=\s*["']?(?!your-|change-|test-|placeholder|<)[A-Za-z0-9+/=_\-]{20,}'''
+tags        = ["api-key"]
+severity    = "high"

@@ -1,10 +1,10 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { DriverManifestForm } from '../DriverManifestForm';
 
 // Mock the FormField component
 jest.mock('../FormField', () => ({
-    FormField: ({ label, name, required, hint, error, children }: any) => (
+    FormField: ({ label, name, hint, error, children }: { label: string, name: string, required?: boolean, hint?: string, error?: string, children: React.ReactNode }) => (
         <div data-testid={`form-field-${name}`}>
             <label>{label}</label>
             {children}
@@ -16,40 +16,40 @@ jest.mock('../FormField', () => ({
 
 // Mock the Icon component
 jest.mock('../Icon', () => ({
-    Icon: ({ name, size, className, ...props }: any) => (
+    Icon: ({ name, size, className, ...props }: { name: string, size?: string, className?: string, [key: string]: unknown }) => (
         <svg data-testid={`icon-${name}`} data-size={size} className={className} {...props} />
     ),
 }));
 
 // Mock Radix Dialog
 jest.mock('@radix-ui/react-dialog', () => ({
-    Root: ({ children, open, onOpenChange }: any) => (
+    Root: ({ children, open }: { children: React.ReactNode; open: boolean; onOpenChange?: (open: boolean) => void }) => (
         <div data-testid="dialog-root" data-open={open}>
             {children}
         </div>
     ),
-    Portal: ({ children }: any) => <div data-testid="dialog-portal">{children}</div>,
-    Overlay: ({ children, className }: any) => (
+    Portal: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-portal">{children}</div>,
+    Overlay: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div data-testid="dialog-overlay" className={className}>
             {children}
         </div>
     ),
-    Content: ({ children, className }: any) => (
+    Content: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div data-testid="dialog-content" className={className}>
             {children}
         </div>
     ),
-    Title: ({ children, className }: any) => (
+    Title: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <h2 data-testid="dialog-title" className={className}>
             {children}
         </h2>
     ),
-    Description: ({ children, className }: any) => (
+    Description: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <p data-testid="dialog-description" className={className}>
             {children}
         </p>
     ),
-    Close: ({ children, onClick, className, ...props }: any) => (
+    Close: ({ children, onClick, className, ...props }: { children: React.ReactNode; onClick?: () => void; className?: string; [key: string]: unknown }) => (
         <button data-testid="dialog-close" onClick={onClick} className={className} {...props}>
             {children}
         </button>

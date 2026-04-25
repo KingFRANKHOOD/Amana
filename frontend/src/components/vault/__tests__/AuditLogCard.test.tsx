@@ -4,7 +4,7 @@ import { AuditLogCard } from '../AuditLogCard';
 
 // Mock the BentoCard component
 jest.mock('@/components/ui/BentoCard', () => ({
-    BentoCard: ({ children, title, icon, glowVariant, className }: any) => (
+    BentoCard: ({ children, title, glowVariant, className }: { children: React.ReactNode, title?: string, icon?: React.ReactNode, glowVariant?: string, className?: string }) => (
         <div data-testid="bento-card" data-title={title} data-glow={glowVariant} className={className}>
             {children}
         </div>
@@ -14,7 +14,10 @@ jest.mock('@/components/ui/BentoCard', () => ({
 // Mock next/image
 jest.mock('next/image', () => ({
     __esModule: true,
-    default: (props: any) => <img {...props} />,
+    default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
+        /* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */
+        <img {...props} />
+    ),
 }));
 
 describe('AuditLogCard Component', () => {
@@ -74,21 +77,21 @@ describe('AuditLogCard Component', () => {
     });
 
     it('renders biometric entry with correct icon', () => {
-        const { container } = render(<AuditLogCard {...defaultProps} />);
+        render(<AuditLogCard {...defaultProps} />);
         const biometricEntry = screen.getByText('Biometric validation passed').closest('div');
         const svgIcon = biometricEntry?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
     it('renders multi-sig entry with correct icon', () => {
-        const { container } = render(<AuditLogCard {...defaultProps} />);
+        render(<AuditLogCard {...defaultProps} />);
         const multiSigEntry = screen.getByText('Multi-sig request broadcast').closest('div');
         const imgIcon = multiSigEntry?.querySelector('img');
         expect(imgIcon).toBeInTheDocument();
     });
 
     it('renders ledger entry with correct icon', () => {
-        const { container } = render(<AuditLogCard {...defaultProps} />);
+        render(<AuditLogCard {...defaultProps} />);
         const ledgerEntry = screen.getByText('Ledger synchronization').closest('div');
         const svgIcon = ledgerEntry?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();

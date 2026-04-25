@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Step3Review from '../steps/Step3Review';
 import { TradeProvider } from '../TradeContext';
@@ -33,7 +33,7 @@ jest.mock('next/navigation', () => ({
     }),
 }));
 
-const renderWithProvider = (initialData = {}) => {
+const renderWithProvider = () => {
     return render(
         <TradeProvider>
             <Step3Review />
@@ -360,7 +360,6 @@ describe('Step3Review', () => {
         });
 
         it('should prevent empty submission', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const submitButton = screen.getByRole('button', { name: /lock funds & create trade/i });

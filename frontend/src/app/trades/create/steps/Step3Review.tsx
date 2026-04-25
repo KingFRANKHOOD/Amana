@@ -5,6 +5,7 @@ import { signTransaction } from "@stellar/freighter-api";
 import { useTrade } from "../TradeContext";
 import { useAuth } from "@/hooks/useAuth";
 import { api, apiConfig, ApiError } from "@/lib/api";
+import Link from "next/link";
 
 type Row = { label: string; value: string };
 
@@ -126,12 +127,12 @@ export default function Step3Review() {
         >
           View Trade Details
         </button>
-        <a
+        <Link
           href="/trades"
           className="text-sm text-text-secondary hover:text-text-primary"
         >
           View All Trades
-        </a>
+        </Link>
       </div>
     );
   }

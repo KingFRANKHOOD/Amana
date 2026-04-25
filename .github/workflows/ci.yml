@@ -1,15 +1,47 @@
 name: CI
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-  pull_request:
+      - develop
+    paths:
+      - ".github/workflows/ci.yml"
+      - "frontend/**"
+      - "backend/**"
+      - "contracts/**"
+      - "package-lock.json"
+      - "frontend/package-lock.json"
+      - "backend/package-lock.json"
 
 jobs:
-  frontend:
-    name: Frontend Check
+  changes:
+    name: Detect Changed Stacks
     runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - "frontend/**"
+            backend:
+              - "backend/**"
+            contracts:
+              - "contracts/**"
+
+  frontend:
+    name: Frontend Required Gate
+    runs-on: ubuntu-latest
+    needs: changes
     defaults:
       run:
         working-directory: frontend
@@ -20,22 +52,30 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install deps
+        if: needs.changes.outputs.frontend == 'true'
         run: npm ci
 
       - name: Lint
+        if: needs.changes.outputs.frontend == 'true'
         run: npm run lint
 
       - name: Build
+        if: needs.changes.outputs.frontend == 'true'
         run: npm run build
 
+      - name: Skip note (no frontend changes)
+        if: needs.changes.outputs.frontend != 'true'
+        run: echo "No frontend file changes detected, required gate passed."
+
   backend:
-    name: Backend Check
+    name: Backend Required Gate
     runs-on: ubuntu-latest
+    needs: changes
     defaults:
       run:
         working-directory: backend
@@ -46,22 +86,33 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
       - name: Install deps
+        if: needs.changes.outputs.backend == 'true'
         run: npm ci
 
       - name: Build
+        if: needs.changes.outputs.backend == 'true'
         run: npm run build
 
+      - name: Test
+        if: needs.changes.outputs.backend == 'true'
+        run: npm test
+
+      - name: Skip note (no backend changes)
+        if: needs.changes.outputs.backend != 'true'
+        run: echo "No backend file changes detected, required gate passed."
+
   contracts:
-    name: Contracts Check
+    name: Contracts Required Gate
     runs-on: ubuntu-latest
+    needs: changes
     defaults:
       run:
-        working-directory: contracts
+        working-directory: contracts/amana_escrow
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,5 +120,10 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
-        run: cargo build --workspace --locked
+      - name: Test
+        if: needs.changes.outputs.contracts == 'true'
+        run: cargo test
+
+      - name: Skip note (no contract changes)
+        if: needs.changes.outputs.contracts != 'true'
+        run: echo "No contract file changes detected, required gate passed."

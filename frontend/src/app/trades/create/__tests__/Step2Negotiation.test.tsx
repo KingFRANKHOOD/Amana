@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import Step2Negotiation from '../steps/Step2Negotiation';
 import { TradeProvider } from '../TradeContext';
 
-const renderWithProvider = (initialData = {}) => {
+const renderWithProvider = () => {
     return render(
         <TradeProvider>
             <Step2Negotiation />
@@ -30,7 +30,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should update buyer ratio when slider changes', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');
@@ -40,7 +39,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should clamp buyer ratio to 0 minimum', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');
@@ -50,7 +48,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should clamp buyer ratio to 100 maximum', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');
@@ -60,7 +57,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should sync seller ratio as complement of buyer ratio', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');
@@ -84,7 +80,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should update buyer absorbs percentage when slider changes', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');
@@ -95,7 +90,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should update seller absorbs percentage when slider changes', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');
@@ -269,7 +263,6 @@ describe('Step2Negotiation', () => {
 
     describe('edge cases', () => {
         it('should handle boundary value 0 for buyer ratio', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');
@@ -279,7 +272,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should handle boundary value 100 for buyer ratio', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const slider = screen.getByRole('slider');

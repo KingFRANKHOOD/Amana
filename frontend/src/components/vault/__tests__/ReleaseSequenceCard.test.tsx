@@ -4,7 +4,7 @@ import { ReleaseSequenceCard } from '../ReleaseSequenceCard';
 
 // Mock the BentoCard component
 jest.mock('@/components/ui/BentoCard', () => ({
-    BentoCard: ({ children, title, icon, glowVariant, className }: any) => (
+    BentoCard: ({ children, title, glowVariant, className }: { children: React.ReactNode, title?: string, icon?: React.ReactNode, glowVariant?: string, className?: string }) => (
         <div data-testid="bento-card" data-title={title} data-glow={glowVariant} className={className}>
             {children}
         </div>
@@ -13,7 +13,7 @@ jest.mock('@/components/ui/BentoCard', () => ({
 
 // Mock the SettingsIcon component
 jest.mock('@/components/icons', () => ({
-    SettingsIcon: ({ className }: any) => (
+    SettingsIcon: ({ className }: { className?: string }) => (
         <svg data-testid="settings-icon" className={className} />
     ),
 }));
@@ -58,21 +58,21 @@ describe('ReleaseSequenceCard Component', () => {
     });
 
     it('renders completed step with correct icon', () => {
-        const { container } = render(<ReleaseSequenceCard {...defaultProps} />);
+        render(<ReleaseSequenceCard {...defaultProps} />);
         const completedStep = screen.getByText('Agreement').closest('div');
         const svgIcon = completedStep?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
     it('renders in-progress step with correct icon', () => {
-        const { container } = render(<ReleaseSequenceCard {...defaultProps} />);
+        render(<ReleaseSequenceCard {...defaultProps} />);
         const inProgressStep = screen.getByText('Audit Phase').closest('div');
         const svgIcon = inProgressStep?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
     it('renders pending step with correct icon', () => {
-        const { container } = render(<ReleaseSequenceCard {...defaultProps} />);
+        render(<ReleaseSequenceCard {...defaultProps} />);
         const pendingStep = screen.getByText('Final Release').closest('div');
         const svgIcon = pendingStep?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();

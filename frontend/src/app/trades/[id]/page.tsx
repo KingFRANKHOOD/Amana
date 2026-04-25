@@ -24,15 +24,7 @@ function BentoCard({
   );
 }
 
-function BentoFallback({ label }: { label: string }) {
-  return (
-    <div className="rounded-lg border border-border-default bg-bg-card p-4 animate-pulse">
-      <p className="text-xs uppercase tracking-wide text-text-muted">{label}</p>
-      <div className="mt-3 h-6 w-2/3 rounded bg-bg-elevated" />
-      <div className="mt-2 h-4 w-full rounded bg-bg-elevated" />
-    </div>
-  );
-}
+
 
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString("en-US", {

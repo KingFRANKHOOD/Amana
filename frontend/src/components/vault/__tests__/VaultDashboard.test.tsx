@@ -4,7 +4,7 @@ import { VaultDashboard } from '../VaultDashboard';
 
 // Mock all child components
 jest.mock('@/components/vault', () => ({
-    VaultHero: ({ escrowId, custodyType, status, isSecured }: any) => (
+    VaultHero: ({ escrowId, custodyType, status, isSecured }: { escrowId: string, custodyType: string, status: string, isSecured: boolean }) => (
         <div data-testid="vault-hero">
             <span>{escrowId}</span>
             <span>{custodyType}</span>
@@ -12,13 +12,13 @@ jest.mock('@/components/vault', () => ({
             <span>{isSecured ? 'Secured' : 'Not Secured'}</span>
         </div>
     ),
-    ReleaseSequenceCard: ({ sequenceId, steps }: any) => (
+    ReleaseSequenceCard: ({ sequenceId, steps }: { sequenceId: string, steps: unknown[] }) => (
         <div data-testid="release-sequence-card">
             <span>{sequenceId}</span>
             <span>{steps.length} steps</span>
         </div>
     ),
-    VaultValueCard: ({ value, currency, isInsured, onReleaseFunds }: any) => (
+    VaultValueCard: ({ value, currency, isInsured, onReleaseFunds }: { value: number, currency: string, isInsured: boolean, onReleaseFunds: () => void }) => (
         <div data-testid="vault-value-card">
             <span>{value}</span>
             <span>{currency}</span>
@@ -26,7 +26,7 @@ jest.mock('@/components/vault', () => ({
             <button onClick={onReleaseFunds}>Release Funds</button>
         </div>
     ),
-    ContractManifestCard: ({ contractId, agreementDate, settlementType, originParty, recipientParty, onExportPdf, onViewClauses }: any) => (
+    ContractManifestCard: ({ contractId, agreementDate, settlementType, originParty, recipientParty, onExportPdf, onViewClauses }: { contractId: string, agreementDate: string, settlementType: string, originParty: { name: string }, recipientParty: { name: string }, onExportPdf: () => void, onViewClauses: () => void }) => (
         <div data-testid="contract-manifest-card">
             <span>{contractId}</span>
             <span>{agreementDate}</span>
@@ -37,25 +37,25 @@ jest.mock('@/components/vault', () => ({
             <button onClick={onViewClauses}>View Clauses</button>
         </div>
     ),
-    AuditLogCard: ({ entries, isLiveSync }: any) => (
+    AuditLogCard: ({ entries, isLiveSync }: { entries: unknown[], isLiveSync: boolean }) => (
         <div data-testid="audit-log-card">
             <span>{entries.length} entries</span>
             <span>{isLiveSync ? 'Live Sync' : 'Not Live'}</span>
         </div>
     ),
-    NetworkBackboneCard: ({ description }: any) => (
+    NetworkBackboneCard: ({ description }: { description: string }) => (
         <div data-testid="network-backbone-card">
             <span>{description}</span>
         </div>
     ),
-    VaultFooter: ({ version, links, socialLinks }: any) => (
+    VaultFooter: ({ version, links, socialLinks }: { version: string, links: unknown[], socialLinks: unknown[] }) => (
         <div data-testid="vault-footer">
             <span>{version}</span>
             <span>{links.length} links</span>
             <span>{socialLinks.length} social links</span>
         </div>
     ),
-    PaymentOverviewCard: ({ totalUsdc, ngnRate }: any) => (
+    PaymentOverviewCard: ({ totalUsdc, ngnRate }: { totalUsdc: number, ngnRate: number }) => (
         <div data-testid="payment-overview-card">
             <span>{totalUsdc}</span>
             <span>{ngnRate}</span>

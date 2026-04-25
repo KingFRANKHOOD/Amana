@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { TradeProvider, useTrade, TradeData } from '../TradeContext';
+import { TradeProvider, useTrade } from '../TradeContext';
 
 describe('TradeContext', () => {
     const wrapper = ({ children }: { children: React.ReactNode }) => (

@@ -4,7 +4,7 @@ import { ContractManifestCard } from '../ContractManifestCard';
 
 // Mock the BentoCard component
 jest.mock('@/components/ui/BentoCard', () => ({
-    BentoCard: ({ children, title, icon, glowVariant, className }: any) => (
+    BentoCard: ({ children, title, glowVariant, className }: { children: React.ReactNode, title?: string, icon?: React.ReactNode, glowVariant?: string, className?: string }) => (
         <div data-testid="bento-card" data-title={title} data-glow={glowVariant} className={className}>
             {children}
         </div>
@@ -14,7 +14,10 @@ jest.mock('@/components/ui/BentoCard', () => ({
 // Mock next/image
 jest.mock('next/image', () => ({
     __esModule: true,
-    default: (props: any) => <img {...props} />,
+    default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
+        /* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */
+        <img {...props} />
+    ),
 }));
 
 describe('ContractManifestCard Component', () => {
@@ -154,14 +157,14 @@ describe('ContractManifestCard Component', () => {
     });
 
     it('renders the eye icon in View Clauses button', () => {
-        const { container } = render(<ContractManifestCard {...defaultProps} />);
+        render(<ContractManifestCard {...defaultProps} />);
         const viewClausesButton = screen.getByText('View Clauses').closest('button');
         const svgIcon = viewClausesButton?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
     it('renders the export icon in Export PDF button', () => {
-        const { container } = render(<ContractManifestCard {...defaultProps} />);
+        render(<ContractManifestCard {...defaultProps} />);
         const exportButton = screen.getByText('Export PDF').closest('button');
         const imgIcon = exportButton?.querySelector('img');
         expect(imgIcon).toBeInTheDocument();

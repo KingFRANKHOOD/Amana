@@ -37,14 +37,6 @@ export function DriverManifestForm({ isOpen, onComplete, onDismiss }: DriverMani
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!formRef.current) {
-      setSubmitEnabled(false);
-      return;
-    }
-
-    setSubmitEnabled(formRef.current.checkValidity());
-  }, [driverName, driverPhone, licensePlate]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -98,7 +90,9 @@ export function DriverManifestForm({ isOpen, onComplete, onDismiss }: DriverMani
               </div>
             </div>
 
-            <form ref={formRef} onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-4 flex-1">
+            <form ref={formRef} onSubmit={handleSubmit} onChange={() => {
+              if (formRef.current) setSubmitEnabled(formRef.current.checkValidity());
+            }} className="overflow-y-auto p-6 space-y-4 flex-1">
               <FormField label="Driver Name" name="driver-name" required>
                 <input
                   type="text"

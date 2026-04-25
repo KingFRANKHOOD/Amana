@@ -1,31 +1,119 @@
 version: '3.8'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Amana Docker Compose – environment-specific profiles
+#
+# Profiles:
+#   dev      – local development (postgres + redis, persistent volume)
+#   staging  – staging parity (postgres + redis, seeded synthetic data)
+#   test     – CI / unit-test isolation (ephemeral in-memory postgres)
+#
+# Usage:
+#   docker compose --profile dev     up -d
+#   docker compose --profile staging up -d
+#   docker compose --profile test    up -d
+#
+# Or use the helper scripts in scripts/:
+#   ./scripts/dev-up.sh
+#   ./scripts/staging-up.sh
+#   ./scripts/test-up.sh
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-postgres-healthcheck: &postgres-healthcheck
+  test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 10s
+
+x-redis-healthcheck: &redis-healthcheck
+  test: ["CMD", "redis-cli", "ping"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 5s
+
 services:
+
+  # ── Development ─────────────────────────────────────────────────────────────
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: amana
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-amana}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    healthcheck: *postgres-healthcheck
+    profiles: [dev]
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck: *redis-healthcheck
+    profiles: [dev]
+
+  # ── Staging ─────────────────────────────────────────────────────────────────
+  # Mirrors production topology: same images, separate named volume, locked
+  # credentials sourced from .env.staging (never committed).
+  postgres-staging:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${STAGING_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${STAGING_POSTGRES_PASSWORD:-staging-password}
+      POSTGRES_DB: ${STAGING_POSTGRES_DB:-amana_staging}
+    ports:
+      - "${STAGING_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    healthcheck: *postgres-healthcheck
+    profiles: [staging]
+
+  redis-staging:
+    image: redis:7-alpine
+    command: redis-server --requirepass ${STAGING_REDIS_PASSWORD:-staging-redis-pass}
+    ports:
+      - "${STAGING_REDIS_PORT:-6380}:6379"
+    healthcheck: *redis-healthcheck
+    profiles: [staging]
+
+  # ── Test (CI / ephemeral) ───────────────────────────────────────────────────
+  # Uses tmpfs so data never persists between test runs.
+  postgres-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: amana_test
+    ports:
+      - "${TEST_POSTGRES_PORT:-5433}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    profiles: [test]
+
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "${TEST_REDIS_PORT:-6381}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    profiles: [test]
 
 volumes:
   postgres_data:
+    driver: local
+  postgres_staging_data:
+    driver: local

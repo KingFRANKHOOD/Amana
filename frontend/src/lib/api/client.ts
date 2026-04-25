@@ -64,7 +64,7 @@ export async function request<T>(endpoint: string, options: FetchOptions = {}): 
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new ApiError(response.status, (data as any)?.error || response.statusText, data);
+    throw new ApiError(response.status, (data as { error?: string })?.error || response.statusText, data);
   }
 
   return data as T;

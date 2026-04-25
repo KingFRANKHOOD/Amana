@@ -1,10 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DisputeVerificationModal } from '../DisputeVerificationModal';
+import { signTransaction } from '@stellar/freighter-api';
 
 // Mock the VideoUploadCard component
 jest.mock('@/components/ui/VideoUploadCard', () => ({
-    VideoUploadCard: ({ onUpload }: any) => (
+    VideoUploadCard: ({ onUpload }: { onUpload: (hash: string) => void }) => (
         <div data-testid="video-upload-card">
             <button onClick={() => onUpload('QmTestHash123')}>Upload Video</button>
         </div>
@@ -13,33 +14,33 @@ jest.mock('@/components/ui/VideoUploadCard', () => ({
 
 // Mock Radix Dialog
 jest.mock('@radix-ui/react-dialog', () => ({
-    Root: ({ children, open, onOpenChange }: any) => (
+    Root: ({ children, open }: { children: React.ReactNode; open: boolean; onOpenChange?: (open: boolean) => void }) => (
         <div data-testid="dialog-root" data-open={open}>
             {children}
         </div>
     ),
-    Portal: ({ children }: any) => <div data-testid="dialog-portal">{children}</div>,
-    Overlay: ({ children, className }: any) => (
+    Portal: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-portal">{children}</div>,
+    Overlay: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div data-testid="dialog-overlay" className={className}>
             {children}
         </div>
     ),
-    Content: ({ children, className, ...props }: any) => (
+    Content: ({ children, className, ...props }: { children: React.ReactNode; className?: string; [key: string]: unknown }) => (
         <div data-testid="dialog-content" className={className} {...props}>
             {children}
         </div>
     ),
-    Title: ({ children, className }: any) => (
+    Title: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <h2 data-testid="dialog-title" className={className}>
             {children}
         </h2>
     ),
-    Description: ({ children, className }: any) => (
+    Description: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <p data-testid="dialog-description" className={className}>
             {children}
         </p>
     ),
-    Close: ({ children, onClick, className, ...props }: any) => (
+    Close: ({ children, onClick, className, ...props }: { children: React.ReactNode; onClick?: () => void; className?: string; [key: string]: unknown }) => (
         <button data-testid="dialog-close" onClick={onClick} className={className} {...props}>
             {children}
         </button>
@@ -273,8 +274,7 @@ describe('DisputeVerificationModal Component', () => {
     });
 
     it('displays signing step when transaction is being signed', async () => {
-        const { signTransaction } = require('@stellar/freighter-api');
-        signTransaction.mockImplementation(() => new Promise(() => { })); // Never resolves
+        (signTransaction as jest.Mock).mockImplementation(() => new Promise(() => { })); // Never resolves
 
         render(<DisputeVerificationModal {...defaultProps} />);
 
@@ -297,8 +297,7 @@ describe('DisputeVerificationModal Component', () => {
     });
 
     it('displays done-accept step after successful release', async () => {
-        const { signTransaction } = require('@stellar/freighter-api');
-        signTransaction.mockResolvedValue({
+        (signTransaction as jest.Mock).mockResolvedValue({
             signedTxXdr: 'signed-xdr',
         });
 
@@ -328,8 +327,7 @@ describe('DisputeVerificationModal Component', () => {
     });
 
     it('displays done-dispute step after successful dispute', async () => {
-        const { signTransaction } = require('@stellar/freighter-api');
-        signTransaction.mockResolvedValue({
+        (signTransaction as jest.Mock).mockResolvedValue({
             signedTxXdr: 'signed-xdr',
         });
 
@@ -359,8 +357,7 @@ describe('DisputeVerificationModal Component', () => {
     });
 
     it('displays error step when signing fails', async () => {
-        const { signTransaction } = require('@stellar/freighter-api');
-        signTransaction.mockRejectedValue(new Error('Signing rejected'));
+        (signTransaction as jest.Mock).mockRejectedValue(new Error('Signing rejected'));
 
         render(<DisputeVerificationModal {...defaultProps} />);
 
@@ -384,8 +381,7 @@ describe('DisputeVerificationModal Component', () => {
     });
 
     it('displays Try Again button in error step', async () => {
-        const { signTransaction } = require('@stellar/freighter-api');
-        signTransaction.mockRejectedValue(new Error('Signing rejected'));
+        (signTransaction as jest.Mock).mockRejectedValue(new Error('Signing rejected'));
 
         render(<DisputeVerificationModal {...defaultProps} />);
 
@@ -408,8 +404,7 @@ describe('DisputeVerificationModal Component', () => {
     });
 
     it('returns to upload step when Try Again is clicked', async () => {
-        const { signTransaction } = require('@stellar/freighter-api');
-        signTransaction.mockRejectedValue(new Error('Signing rejected'));
+        (signTransaction as jest.Mock).mockRejectedValue(new Error('Signing rejected'));
 
         render(<DisputeVerificationModal {...defaultProps} />);
 
@@ -447,8 +442,7 @@ describe('DisputeVerificationModal Component', () => {
     });
 
     it('calls onClose when Close button is clicked in done-accept step', async () => {
-        const { signTransaction } = require('@stellar/freighter-api');
-        signTransaction.mockResolvedValue({
+        (signTransaction as jest.Mock).mockResolvedValue({
             signedTxXdr: 'signed-xdr',
         });
 

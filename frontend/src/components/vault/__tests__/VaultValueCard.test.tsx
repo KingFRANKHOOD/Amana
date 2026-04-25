@@ -4,7 +4,7 @@ import { VaultValueCard } from '../VaultValueCard';
 
 // Mock the BentoCard component
 jest.mock('@/components/ui/BentoCard', () => ({
-    BentoCard: ({ children, title, icon, glowVariant, className }: any) => (
+    BentoCard: ({ children, title, glowVariant, className }: { children: React.ReactNode, title?: string, icon?: React.ReactNode, glowVariant?: string, className?: string }) => (
         <div data-testid="bento-card" data-title={title} data-glow={glowVariant} className={className}>
             {children}
         </div>
@@ -84,7 +84,7 @@ describe('VaultValueCard Component', () => {
     });
 
     it('renders the key icon in the Release Funds button', () => {
-        const { container } = render(<VaultValueCard {...defaultProps} />);
+        render(<VaultValueCard {...defaultProps} />);
         const button = screen.getByText('Release Funds').closest('button');
         const svgIcon = button?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();

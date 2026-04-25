@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { TradeDetailPanel } from "@/components/trade/TradeDetailPanel";
 import { useAuth } from "@/hooks/useAuth";
@@ -172,7 +172,7 @@ export default function TradeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTrade = async () => {
+  const fetchTrade = useCallback(async () => {
     if (!token) return;
 
     setLoading(true);
@@ -201,7 +201,7 @@ export default function TradeDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, tradeId]);
 
   useEffect(() => {
     if (isAuthenticated && token) {
@@ -209,7 +209,7 @@ export default function TradeDetailPage() {
     } else {
       setLoading(false);
     }
-  }, [isAuthenticated, token, tradeId]);
+  }, [isAuthenticated, token, fetchTrade]);
 
   if (authLoading) {
     return <LoadingState />;

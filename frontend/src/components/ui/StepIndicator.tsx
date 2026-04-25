@@ -29,7 +29,6 @@ export const StepIndicator: React.FC<StepIndicatorProps> = ({
       {steps.map((step, index) => {
         const isCompleted = completedSteps.includes(index) || index < currentStep;
         const isCurrent = index === currentStep;
-        const isUpcoming = !isCompleted && !isCurrent;
         
         // Final circle style
         let circleClass = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base transition-all duration-200 z-10 ";

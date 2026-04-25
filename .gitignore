@@ -3,8 +3,17 @@ node_modules/
 dist/
 coverage/
 .env
+.env.staging
+.env.production
+.env.local
 .vscode/
 *.log
+
+# Pre-migration database backups
+backups/
+
+# Gitleaks SARIF reports (generated in CI, not committed)
+gitleaks-report.sarif
 
 .kiro/specs/avatar-component/.config.kiro
 .kiro/specs/avatar-component/design.md

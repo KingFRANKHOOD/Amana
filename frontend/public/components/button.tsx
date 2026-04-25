@@ -60,7 +60,9 @@ export function Button({
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
             )}
 
+            {leftIcon && <span className="mr-2">{leftIcon}</span>}
             <span>{children}</span>
+            {rightIcon && <span className="ml-2">{rightIcon}</span>}
         </button>
     );
 }
