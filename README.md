@@ -28,6 +28,7 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 - **Wallet Connection:** [Freighter](https://www.freighter.app/) / [Albedo](https://albedo.link/)
 - **Storage:** IPFS (via Pinata) for decentralized storage of video evidence.
 - **Database:** Supabase (Off-chain metadata, driver logs, and user profiles).
+- **Observability:** OpenTelemetry distributed tracing with correlation IDs for end-to-end request tracking.
 
 ## 🧪 Local Environments (Folder-Based)
 
@@ -45,7 +46,9 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 
 1. `cd backend`
 2. `cp .env.example .env`
-3. `npm run dev`
+3. `cp .env.tracing.example .env` (for distributed tracing configuration)
+4. `npm install` (to install new OpenTelemetry dependencies)
+5. `npm run dev`
 
 ### Contracts setup
 
@@ -86,6 +89,27 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 
 - [ ] Public pilot program with regional agricultural cooperatives.
 - [ ] Implementation of a "Trust Score" reputation system.
+
+---
+
+## 🔍 Distributed Tracing
+
+Amana includes comprehensive distributed tracing with OpenTelemetry for end-to-end request visibility and faster incident triage.
+
+### Features
+- **Correlation IDs**: Unique identifiers spanning frontend-backend requests
+- **Request Tracing**: Complete request lifecycle tracking
+- **Service Integration**: Automatic tracing for external services (IPFS, Stellar)
+- **Observability**: Jaeger, Zipkin, and Prometheus integration
+
+### Quick Start
+1. Configure tracing environment variables (see `backend/.env.tracing.example`)
+2. Start Jaeger for trace visualization: `docker run -p 16686:16686 jaegertracing/all-in-one`
+3. View traces at `http://localhost:16686`
+4. Check metrics at `http://localhost:9464/metrics`
+
+### Documentation
+See [DISTRIBUTED_TRACING_GUIDE.md](./DISTRIBUTED_TRACING_GUIDE.md) for detailed setup and usage instructions.
 
 ---
 

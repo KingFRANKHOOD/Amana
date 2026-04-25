@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import { errorHandler } from './middleware/errorHandler';
 import { correlationIdMiddleware } from './middleware/correlationId.middleware';
+import { tracingMiddleware } from './middleware/tracing.middleware';
 import loggerMiddleware, { appLogger } from './middleware/logger';
 import { createTradeRouter } from "./routes/trade.routes";
 import { createManifestRouter } from "./routes/manifest.routes";
@@ -15,6 +16,8 @@ export function createApp(): express.Application {
   // Correlation ID must be registered before the logger so every log line
   // produced by pino-http already carries the tracing IDs.
   app.use(correlationIdMiddleware);
+  // OpenTelemetry tracing middleware - integrates with correlation IDs
+  app.use(tracingMiddleware);
   app.use(loggerMiddleware);
   app.get("/health", (req, res) => {
     appLogger.info({ path: req.url }, 'Health check');
