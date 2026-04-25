@@ -18,3 +18,24 @@ soroban-sdk = "25.3.0"
 soroban-sdk = { version = "25.3.0", features = ["testutils"] }
 quickcheck = "1.0"
 quickcheck_macros = "1.0"
+rand = { version = "0.8", features = ["std", "std_rng"] }
+
+[[test]]
+name = "dispute_flow"
+path = "tests/dispute_flow.rs"
+
+[[test]]
+name = "property_tests"
+path = "tests/property_tests.rs"
+
+[[test]]
+name = "storage_golden_tests"
+path = "tests/storage_golden_tests.rs"
+
+[[test]]
+name = "auth_matrix_tests"
+path = "tests/auth_matrix_tests.rs"
+
+[[test]]
+name = "dispute_stress_tests"
+path = "tests/dispute_stress_tests.rs"
