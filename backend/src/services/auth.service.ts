@@ -129,6 +129,10 @@ export class AuthService {
         ignoreExpiration: true, // Allow refresh of expired tokens
       }) as JWTPayload;
 
+      if (!decoded.jti || !decoded.walletAddress) {
+        throw new AppError(ErrorCode.AUTH_ERROR, 'Token refresh failed: invalid token claims', 401);
+      }
+
       // But only within a grace period (e.g., 7 days)
       const now = Math.floor(Date.now() / 1000);
       const gracePeriod = 7 * 24 * 60 * 60;
@@ -202,5 +206,4 @@ export class AuthService {
     return jwt.sign(payload, secret, { algorithm: 'HS256' });
   }
 }
-
 

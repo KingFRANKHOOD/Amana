@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Shell from "@/components/Shell";
+import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { api, ApiError, TradeResponse } from "@/lib/api";
 
@@ -81,20 +81,29 @@ export default function TradeDetailPage() {
   }, [token, isAuthenticated, tradeId]);
 
   return (
-    <Shell
-      topBarAction={
-        <button
-          onClick={() => router.push("/trades")}
+    <div className="px-6 py-8 max-w-6xl mx-auto">
+      {/* Header with back button */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold text-text-primary">
+          Trade Details
+        </h1>
+        <Link
+          href="/trades"
           className="px-3 py-1.5 rounded-md border border-border-default hover:border-border-hover text-text-secondary hover:text-text-primary transition-colors"
         >
           Back to Trades
-        </button>
-      }
-    >
+        </Link>
+      </div>
       {/* Loading state */}
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <svg className="animate-spin w-8 h-8 text-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="animate-spin w-8 h-8 text-gold"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
             <path d="M12 2a10 10 0 0 1 10 10" />
           </svg>
@@ -112,12 +121,19 @@ export default function TradeDetailPage() {
       {!loading && !error && trade && (
         <div className="space-y-6">
           <div className="rounded-lg border border-border-default bg-bg-card p-5">
-            <p className="text-xs uppercase tracking-wide text-text-muted">Trade ID</p>
-            <p className="mt-2 text-xl font-semibold text-text-primary font-mono">{trade.tradeId}</p>
-            <p className="mt-3 text-sm text-text-secondary">
-              Status: <span className="font-medium capitalize">{trade.status}</span>
+            <p className="text-xs uppercase tracking-wide text-text-muted">
+              Trade ID
             </p>
-            <p className="mt-2 text-xs text-text-muted">Created: {formatDate(trade.createdAt)}</p>
+            <p className="mt-2 text-xl font-semibold text-text-primary font-mono">
+              {trade.tradeId}
+            </p>
+            <p className="mt-3 text-sm text-text-secondary">
+              Status:{" "}
+              <span className="font-medium capitalize">{trade.status}</span>
+            </p>
+            <p className="mt-2 text-xs text-text-muted">
+              Created: {formatDate(trade.createdAt)}
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -159,6 +175,6 @@ export default function TradeDetailPage() {
           <p className="text-text-muted">Trade not found</p>
         </div>
       )}
-    </Shell>
+    </div>
   );
 }

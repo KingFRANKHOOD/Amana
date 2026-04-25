@@ -107,10 +107,11 @@ export default function TradesPage() {
           <button
             key={f.value}
             onClick={() => handleFilter(f.value)}
-            className={`pb-3 px-1 text-sm transition-colors ${activeFilter === f.value
+            className={`pb-3 px-1 text-sm transition-colors ${
+              activeFilter === f.value
                 ? "text-gold underline underline-offset-8 decoration-gold decoration-2"
                 : "text-text-secondary hover:text-text-primary"
-              }`}
+            }`}
           >
             {f.label}
           </button>
@@ -120,7 +121,13 @@ export default function TradesPage() {
       {/* Loading state */}
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <svg className="animate-spin w-8 h-8 text-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="animate-spin w-8 h-8 text-gold"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
             <path d="M12 2a10 10 0 0 1 10 10" />
           </svg>
@@ -138,21 +145,41 @@ export default function TradesPage() {
       {!loading && !error && (
         <>
           {trades.length === 0 ? (
-            <div className="rounded-lg border border-border-default bg-bg-card py-16 px-6 text-center">
-              <div className="flex justify-center mb-4">
+            <div className="rounded-lg border border-border-default bg-bg-card py-20 px-6 text-center">
+              {/* Icon */}
+              <div className="flex justify-center mb-6">
                 <div className="w-16 h-16 rounded-lg bg-bg-elevated border border-border-default flex items-center justify-center">
-                  <svg className="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <svg
+                    className="w-8 h-8 text-text-muted"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="1.5"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
                   </svg>
                 </div>
               </div>
-              <h3 className="text-lg font-semibold text-text-primary mb-2">No trades yet</h3>
-              <p className="text-text-secondary text-sm mb-6">
-                Get started by creating your first trade to begin settling agricultural transactions.
+
+              {/* Heading */}
+              <h3 className="text-xl font-semibold text-text-primary mb-3">
+                No trades yet
+              </h3>
+
+              {/* Description */}
+              <p className="text-text-secondary text-sm mb-8 max-w-sm mx-auto leading-relaxed">
+                Get started by creating your first trade to begin settling
+                agricultural transactions securely on the blockchain.
               </p>
+
+              {/* CTA Button */}
               <Link
                 href="/trades/create"
-                className="inline-block px-4 py-2 rounded-md bg-gold text-text-inverse text-sm font-medium hover:bg-gold-hover transition-colors"
+                className="inline-block px-6 py-3 rounded-lg bg-gold text-text-inverse text-sm font-semibold hover:bg-gold-hover transition-colors"
               >
                 Create Your First Trade
               </Link>
@@ -162,22 +189,36 @@ export default function TradesPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border-default bg-bg-card">
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">ID</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Counterparty</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Amount</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Status</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Created</th>
+                    <th className="text-left px-4 py-3 text-text-muted font-medium">
+                      ID
+                    </th>
+                    <th className="text-left px-4 py-3 text-text-muted font-medium">
+                      Counterparty
+                    </th>
+                    <th className="text-left px-4 py-3 text-text-muted font-medium">
+                      Amount
+                    </th>
+                    <th className="text-left px-4 py-3 text-text-muted font-medium">
+                      Status
+                    </th>
+                    <th className="text-left px-4 py-3 text-text-muted font-medium">
+                      Created
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {trades.map((trade, i) => (
                     <tr
                       key={trade.tradeId}
-                      className={`border-b border-border-default last:border-0 hover:bg-bg-elevated transition-colors ${i % 2 === 0 ? "bg-bg-primary" : "bg-bg-card"
-                        }`}
+                      className={`border-b border-border-default last:border-0 hover:bg-bg-elevated transition-colors ${
+                        i % 2 === 0 ? "bg-bg-primary" : "bg-bg-card"
+                      }`}
                     >
                       <td className="px-4 py-3 text-gold font-mono">
-                        <Link href={`/trades/${trade.tradeId}`} className="hover:underline underline-offset-4">
+                        <Link
+                          href={`/trades/${trade.tradeId}`}
+                          className="hover:underline underline-offset-4"
+                        >
                           {trade.tradeId.slice(0, 8)}...
                         </Link>
                       </td>
@@ -189,8 +230,9 @@ export default function TradesPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[trade.status] ?? "text-text-muted"
-                            }`}
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
+                            STATUS_STYLES[trade.status] ?? "text-text-muted"
+                          }`}
                         >
                           {trade.status}
                         </span>

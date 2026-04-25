@@ -120,6 +120,46 @@ describe('AuthService', () => {
         statusCode: 401
       });
     });
+
+    it('burns the challenge after a failed signature attempt to block replay guessing', async () => {
+      const challenge = 'test-challenge';
+      const redisMock = getRedisMock();
+      redisMock.get.mockResolvedValueOnce(challenge).mockResolvedValueOnce(null);
+      redisMock.del.mockResolvedValue(1);
+
+      const invalidSignature = Buffer.from('invalid').toString('base64url');
+      await expect(AuthService.verifySignatureAndIssueJWT(realWallet, invalidSignature)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ERROR,
+        statusCode: 401
+      });
+
+      const validSignature = keypair.sign(Buffer.from(challenge, 'utf8')).toString('base64url');
+      await expect(AuthService.verifySignatureAndIssueJWT(realWallet, validSignature)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ERROR,
+        statusCode: 401
+      });
+      expect(redisMock.del).toHaveBeenCalledTimes(1);
+      expect(findOrCreateUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects nonce reuse after a successful verification', async () => {
+      const challenge = 'single-use-challenge';
+      const redisMock = getRedisMock();
+      redisMock.get.mockResolvedValueOnce(challenge).mockResolvedValueOnce(null);
+      redisMock.del.mockResolvedValue(1);
+      redisMock.exists.mockResolvedValue(0);
+      (findOrCreateUser as jest.Mock).mockResolvedValue({ id: 'user-1' });
+
+      const signedChallenge = keypair.sign(Buffer.from(challenge, 'utf8')).toString('base64url');
+      const token = await AuthService.verifySignatureAndIssueJWT(realWallet, signedChallenge);
+      expect(token).toBeDefined();
+
+      await expect(AuthService.verifySignatureAndIssueJWT(realWallet, signedChallenge)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ERROR,
+        statusCode: 401
+      });
+      expect(findOrCreateUser).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('validateToken', () => {
@@ -170,6 +210,42 @@ describe('AuthService', () => {
       await expect(AuthService.validateToken(token)).rejects.toMatchObject({
         code: ErrorCode.AUTH_ERROR,
         message: expect.stringMatching(/missing jti/)
+      });
+    });
+
+    it('rejects JWTs signed with an unexpected algorithm', async () => {
+      const payload = {
+        sub: realWallet.toLowerCase(),
+        walletAddress: realWallet.toLowerCase(),
+        jti: 'bad-alg-jti',
+        iss: 'amana',
+        aud: 'amana-api',
+      };
+      const token = jwt.sign(payload, 'test-secret', { algorithm: 'HS384' });
+      const redisMock = getRedisMock();
+      redisMock.exists.mockResolvedValue(0);
+
+      await expect(AuthService.validateToken(token)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ERROR,
+        message: 'Invalid token'
+      });
+    });
+
+    it('rejects JWTs minted for another audience', async () => {
+      const payload = {
+        sub: realWallet.toLowerCase(),
+        walletAddress: realWallet.toLowerCase(),
+        jti: 'wrong-audience-jti',
+        iss: 'amana',
+        aud: 'other-api',
+      };
+      const token = jwt.sign(payload, 'test-secret');
+      const redisMock = getRedisMock();
+      redisMock.exists.mockResolvedValue(0);
+
+      await expect(AuthService.validateToken(token)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ERROR,
+        message: 'Invalid token'
       });
     });
   });
@@ -242,6 +318,24 @@ describe('AuthService', () => {
       await expect(AuthService.refreshToken(token)).rejects.toMatchObject({
         code: ErrorCode.AUTH_ERROR
       });
+    });
+
+    it('rejects refresh tokens missing jti or walletAddress claims', async () => {
+      const token = jwt.sign(
+        {
+          sub: realWallet.toLowerCase(),
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        },
+        'test-secret'
+      );
+      const redisMock = getRedisMock();
+      redisMock.exists.mockResolvedValue(0);
+
+      await expect(AuthService.refreshToken(token)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ERROR,
+        statusCode: 401
+      });
+      expect(redisMock.exists).not.toHaveBeenCalled();
     });
   });
 

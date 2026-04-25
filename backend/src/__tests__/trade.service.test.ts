@@ -106,6 +106,58 @@ describe("TradeService", () => {
     );
   });
 
+  it("uses a stable default order with an id tie-breaker", async () => {
+    prisma.trade.findMany = jest.fn().mockResolvedValue([]);
+    prisma.trade.count = jest.fn().mockResolvedValue(0);
+
+    await service.listUserTrades("GA_CALLER", {
+      page: 1,
+      limit: 20,
+    });
+
+    expect(prisma.trade.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: 0,
+        take: 20,
+      })
+    );
+  });
+
+  it("keeps custom pagination sorts deterministic under identical sort values", async () => {
+    prisma.trade.findMany = jest.fn().mockResolvedValue([]);
+    prisma.trade.count = jest.fn().mockResolvedValue(0);
+
+    await service.listUserTrades("GA_CALLER", {
+      page: 2,
+      limit: 5,
+      sort: "createdAt:asc",
+    });
+
+    expect(prisma.trade.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        skip: 5,
+        take: 5,
+      })
+    );
+  });
+
+  it("falls back to stable default ordering for unsupported sort fields", async () => {
+    prisma.trade.findMany = jest.fn().mockResolvedValue([]);
+    prisma.trade.count = jest.fn().mockResolvedValue(0);
+
+    await service.listUserTrades("GA_CALLER", {
+      sort: "randomField:asc",
+    });
+
+    expect(prisma.trade.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      })
+    );
+  });
+
   it("GET /trades/:id returns 403 if caller is not party", async () => {
     prisma.trade.findFirst = jest.fn().mockResolvedValue({
       id: 10,

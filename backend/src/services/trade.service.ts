@@ -145,9 +145,9 @@ export class TradeService {
     };
   }
 
-  private parseSort(sort?: string): Prisma.TradeOrderByWithRelationInput {
+  private parseSort(sort?: string): Prisma.TradeOrderByWithRelationInput[] {
     if (!sort) {
-      return { createdAt: "desc" };
+      return [{ createdAt: "desc" }, { id: "desc" }];
     }
 
     const [fieldRaw, dirRaw] = sort.split(":");
@@ -166,10 +166,14 @@ export class TradeService {
     ]);
 
     if (!allowedFields.has(fieldRaw)) {
-      return { createdAt: "desc" };
+      return [{ createdAt: "desc" }, { id: "desc" }];
     }
 
-    return { [field]: direction };
+    if (fieldRaw === "id") {
+      return [{ id: direction }];
+    }
+
+    return [{ [field]: direction }, { id: direction }];
   }
 
   async initiateDispute(id: string, callerAddress: string, reason: string, category: string) {

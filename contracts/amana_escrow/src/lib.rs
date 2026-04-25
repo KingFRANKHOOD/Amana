@@ -14,6 +14,22 @@ const BPS_DIVISOR: i128 = 10_000;
 const INSTANCE_TTL_THRESHOLD: u32 = 50_000;
 const INSTANCE_TTL_EXTEND_TO: u32 = 50_000;
 
+fn checked_fee_amount(amount: i128, fee_bps: u32) -> i128 {
+    amount
+        .checked_mul(fee_bps as i128)
+        .expect("fee calculation overflow")
+        / BPS_DIVISOR
+}
+
+fn checked_loss_amount(total: i128, loss_bps: i128, seller_loss_bps: u32) -> i128 {
+    total
+        .checked_mul(loss_bps)
+        .expect("loss calculation overflow")
+        .checked_mul(seller_loss_bps as i128)
+        .expect("loss sharing calculation overflow")
+        / (BPS_DIVISOR * BPS_DIVISOR)
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -613,7 +629,7 @@ impl EscrowContract {
             .instance()
             .get(&DataKey::Treasury)
             .expect("Treasury not set");
-        let fee_amount = (trade.amount * (fee_bps as i128)) / BPS_DIVISOR;
+        let fee_amount = checked_fee_amount(trade.amount, fee_bps);
         let seller_amount = trade.amount - fee_amount;
         assert!(
             seller_amount + fee_amount == trade.amount,
@@ -788,15 +804,14 @@ impl EscrowContract {
 
         // Distribute loss according to agreed ratios
         // seller_loss = total * loss_bps * seller_loss_bps / (10_000 * 10_000)
-        let seller_loss_amount =
-            (total * loss_bps * (trade.seller_loss_bps as i128)) / (BPS_DIVISOR * BPS_DIVISOR);
+        let seller_loss_amount = checked_loss_amount(total, loss_bps, trade.seller_loss_bps);
 
         // Calculate raw payouts
         let seller_raw = total - seller_loss_amount;
         let buyer_refund = total - seller_raw;
 
         // Deduct platform fee from seller's portion only
-        let fee = (seller_raw * (fee_bps as i128)) / BPS_DIVISOR;
+        let fee = checked_fee_amount(seller_raw, fee_bps);
         let seller_net = seller_raw - fee;
 
         // Invariants: all payouts non-negative and sum to total cNGN escrowed
@@ -5547,6 +5562,121 @@ mod fee_and_evidence_tests {
         // 99 * 100 / 10_000 = 0.99 → floors to 0
         assert_eq!(tok.balance(&treasury), 0);
         assert_eq!(tok.balance(&seller), 99);
+    }
+
+    #[test]
+    fn test_release_fee_bps_boundaries_at_max_safe_amount() {
+        let max_safe_amount = i128::MAX / BPS_DIVISOR;
+        let fee_bps_cases = [0_u32, 1, 9_999, 10_000];
+
+        for fee_bps in fee_bps_cases {
+            let env = Env::default();
+            env.mock_all_auths();
+            let (contract_id, _buyer, seller, treasury, usdc_id, trade_id) =
+                setup_fee_trade(&env, max_safe_amount, fee_bps);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            client.confirm_delivery(&trade_id);
+            client.release_funds(&trade_id);
+
+            let tok = token::Client::new(&env, &usdc_id);
+            let expected_fee = (max_safe_amount * fee_bps as i128) / BPS_DIVISOR;
+            let expected_seller = max_safe_amount - expected_fee;
+            assert_eq!(tok.balance(&seller), expected_seller);
+            assert_eq!(tok.balance(&treasury), expected_fee);
+            assert_eq!(
+                tok.balance(&seller) + tok.balance(&treasury),
+                max_safe_amount
+            );
+            assert_eq!(tok.balance(&client.address), 0);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "fee calculation overflow")]
+    fn test_release_fee_panics_above_max_safe_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let overflowing_amount = (i128::MAX / BPS_DIVISOR) + 1;
+        let (contract_id, _buyer, _seller, _treasury, _usdc_id, trade_id) =
+            setup_fee_trade(&env, overflowing_amount, 10_000);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        client.confirm_delivery(&trade_id);
+        client.release_funds(&trade_id);
+    }
+
+    #[test]
+    fn test_dispute_payout_bps_boundaries_at_max_safe_amount() {
+        let max_safe_amount = i128::MAX / (BPS_DIVISOR * BPS_DIVISOR);
+        let fee_bps_cases = [0_u32, 1, 9_999, 10_000];
+        let seller_gets_bps_cases = [0_u32, 1, 9_999, 10_000];
+
+        for fee_bps in fee_bps_cases {
+            for seller_gets_bps in seller_gets_bps_cases {
+                let env = Env::default();
+                env.mock_all_auths();
+                let (contract_id, buyer, seller, treasury, usdc_id, trade_id) =
+                    setup_fee_trade(&env, max_safe_amount, fee_bps);
+                let client = EscrowContractClient::new(&env, &contract_id);
+                let reason = String::from_str(&env, "QmBoundaryPayout");
+                let mediator = Address::generate(&env);
+
+                client.initiate_dispute(&trade_id, &buyer, &reason);
+                client.set_mediator(&mediator);
+                client.resolve_dispute(&trade_id, &mediator, &seller_gets_bps);
+
+                let tok = token::Client::new(&env, &usdc_id);
+                let loss_bps = BPS_DIVISOR - seller_gets_bps as i128;
+                let seller_loss =
+                    (max_safe_amount * loss_bps * 5_000_i128) / (BPS_DIVISOR * BPS_DIVISOR);
+                let seller_raw = max_safe_amount - seller_loss;
+                let buyer_refund = max_safe_amount - seller_raw;
+                let expected_fee = (seller_raw * fee_bps as i128) / BPS_DIVISOR;
+                let expected_seller = seller_raw - expected_fee;
+
+                assert_eq!(tok.balance(&seller), expected_seller);
+                assert_eq!(tok.balance(&buyer), buyer_refund);
+                assert_eq!(tok.balance(&treasury), expected_fee);
+                assert_eq!(
+                    tok.balance(&seller) + tok.balance(&buyer) + tok.balance(&treasury),
+                    max_safe_amount
+                );
+                assert_eq!(tok.balance(&client.address), 0);
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dispute_payout_panics_above_max_safe_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let overflowing_amount = (i128::MAX / (BPS_DIVISOR * BPS_DIVISOR)) + 1;
+
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+
+        client.initialize(&admin, &usdc_id, &treasury, &10_000);
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &overflowing_amount);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &overflowing_amount, &0_u32, &10_000_u32);
+        client.deposit(&trade_id);
+
+        let reason = String::from_str(&env, "QmOverflowPayout");
+        let mediator = Address::generate(&env);
+
+        client.initiate_dispute(&trade_id, &buyer, &reason);
+        client.set_mediator(&mediator);
+        client.resolve_dispute(&trade_id, &mediator, &0_u32);
     }
 
     /// Loss ratio 3000/7000 with 50% seller ruling: verify exact math.
