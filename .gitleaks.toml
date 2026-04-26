@@ -32,6 +32,13 @@ paths = [
   "backend/prisma/migrations/",
 ]
 
+[[allowlists]]
+description = "Known false positives in prior PR commits"
+commits = [
+  "3c1383c9554eec1424a0ade639d77aa50b699ea3",
+  "3f109294350380548154ec5984e8f03b66f98c2d",
+]
+
 # ── Custom rules ──────────────────────────────────────────────────────────────
 
 [[rules]]
