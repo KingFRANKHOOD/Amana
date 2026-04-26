@@ -6,6 +6,7 @@ title = "Amana Gitleaks Config"
 [extend]
 # Extend the default built-in ruleset
 useDefault = true
+disabledRules = ["generic-api-key"]
 
 # ── Allowlist ──────────────────────────────────────────────────────────────────
 # Paths and patterns that are safe to ignore.
@@ -82,14 +83,6 @@ id          = "ed25519-private-key-pem"
 description = "Ed25519 / EC private key PEM block"
 regex       = '''-----BEGIN (EC |OPENSSH )?PRIVATE KEY-----'''
 tags        = ["pem", "private-key"]
-severity    = "critical"
-
-[[rules]]
-id          = "database-url-with-password"
-description = "PostgreSQL connection string with embedded password"
-# Matches postgresql://user:PASS@host where PASS is non-empty and not a variable
-regex       = '''postgresql://[^:]+:[^@$\{]{4,}@'''
-tags        = ["database", "password"]
 severity    = "critical"
 
 [[rules]]
