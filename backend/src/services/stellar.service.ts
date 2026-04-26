@@ -1,4 +1,4 @@
-import { Horizon, rpc, TransactionBuilder, BASE_FEE, xdr } from '@stellar/stellar-sdk';
+import { Horizon, rpc, TransactionBuilder, BASE_FEE, StrKey, xdr } from '@stellar/stellar-sdk';
 import { 
   horizonServer, 
   sorobanRpcClient, 
@@ -29,6 +29,9 @@ export class StellarService {
   }
 
   public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONFIG.symbol): Promise<string> {
+    if (!StrKey.isValidEd25519PublicKey(publicKey)) {
+      throw new Error("Invalid Stellar public key");
+    }
 
     try {
       const account = await retryAsync(() => this.horizonServer.loadAccount(publicKey));
@@ -40,6 +43,10 @@ export class StellarService {
       });
       return balance ? balance.balance : "0";
     } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 404) {
+        return "0";
+      }
       appLogger.error({ error, publicKey }, "Failed to get account balance");
       throw new Error("Unable to fetch balance");
     }

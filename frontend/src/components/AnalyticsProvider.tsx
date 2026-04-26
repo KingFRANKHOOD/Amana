@@ -1,7 +1,13 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
-import { trackAuthEvent, trackEvent, trackFailure, trackFunnelStep } from "@/lib/analytics";
+import {
+  trackApiFailure,
+  trackAuthEvent,
+  trackEvent,
+  trackFailure,
+  trackFunnelStep,
+} from "@/lib/analytics";
 
 interface AnalyticsContextValue {
   trackEvent: (eventName: string, payload?: Record<string, unknown>) => void;

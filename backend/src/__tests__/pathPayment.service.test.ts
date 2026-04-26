@@ -5,20 +5,22 @@ import { PathPaymentService } from "../services/pathPayment.service";
 describe("PathPaymentService network resilience", () => {
   const sleepMock = jest.fn().mockResolvedValue(undefined);
   let strictSendPathsCall: jest.Mock;
+  let strictSendPathsMock: jest.Mock;
 
   beforeEach(() => {
     __setRetrySleepForTests(sleepMock);
     strictSendPathsCall = jest.fn();
+    strictSendPathsMock = jest.fn(() => ({
+      call: strictSendPathsCall,
+    }));
 
     jest.spyOn(StellarService.prototype, "getServer").mockReturnValue({
-      strictSendPaths: jest.fn(() => ({
-        call: strictSendPathsCall,
-      })),
+      strictSendPaths: strictSendPathsMock,
     } as any);
 
     jest
       .spyOn(StellarService.prototype, "getNetworkPassphrase")
-      .mockReturnValue("Test SDF Network ; September 2015");
+      .mockReturnValue("Public Global Stellar Network ; September 2015");
   });
 
   afterEach(() => {
@@ -55,13 +57,42 @@ describe("PathPaymentService network resilience", () => {
     expect(sleepMock).not.toHaveBeenCalled();
   });
 
+  it("keeps multi-hop path metadata in mapped quote responses", async () => {
+    strictSendPathsCall.mockResolvedValue({
+      records: [
+        {
+          source_amount: "1000",
+          source_asset_type: "credit_alphanum4",
+          source_asset_code: "NGN",
+          destination_amount: "0.62",
+          destination_asset_type: "credit_alphanum4",
+          destination_asset_code: "USDC",
+          path: [{ asset_code: "XLM", asset_type: "native" }],
+        },
+      ],
+    });
+
+    const service = new PathPaymentService();
+    const [quote] = await service.getPathPaymentQuote("1000", "XLM");
+
+    expect(quote.path).toEqual([{ asset_code: "XLM", asset_type: "native" }]);
+    expect(quote.destination_asset_code).toBe("USDC");
+  });
+
+  it("returns an empty list when no path exists", async () => {
+    strictSendPathsCall.mockResolvedValue({ records: [] });
+
+    const service = new PathPaymentService();
+    await expect(service.getPathPaymentQuote("1000", "XLM")).resolves.toEqual([]);
+  });
+
   it("retries on 500 errors and succeeds", async () => {
     strictSendPathsCall
       .mockRejectedValueOnce({ response: { status: 500 } })
       .mockResolvedValueOnce({ records: [] });
 
     const service = new PathPaymentService();
-    await expect(service.getPathPaymentQuote("1000", "NGN")).resolves.toEqual([]);
+    await expect(service.getPathPaymentQuote("1000", "XLM")).resolves.toEqual([]);
     expect(strictSendPathsCall).toHaveBeenCalledTimes(2);
     expect(sleepMock).toHaveBeenCalledWith(1000);
   });
@@ -73,7 +104,7 @@ describe("PathPaymentService network resilience", () => {
       .mockResolvedValueOnce({ records: [] });
 
     const service = new PathPaymentService();
-    await expect(service.getPathPaymentQuote("1000", "NGN")).resolves.toEqual([]);
+    await expect(service.getPathPaymentQuote("1000", "XLM")).resolves.toEqual([]);
     expect(strictSendPathsCall).toHaveBeenCalledTimes(3);
     expect(sleepMock).toHaveBeenNthCalledWith(1, 1000);
     expect(sleepMock).toHaveBeenNthCalledWith(2, 2000);
@@ -83,18 +114,27 @@ describe("PathPaymentService network resilience", () => {
     strictSendPathsCall.mockRejectedValue({ response: { status: 400 } });
 
     const service = new PathPaymentService();
-    await expect(service.getPathPaymentQuote("1000", "NGN")).rejects.toThrow(
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
       "Failed to fetch path payment quotes",
     );
     expect(strictSendPathsCall).toHaveBeenCalledTimes(1);
     expect(sleepMock).not.toHaveBeenCalled();
   });
 
+  it("bubbles timeout-like network failures after retries", async () => {
+    strictSendPathsCall.mockRejectedValue(new Error("connect ETIMEDOUT"));
+
+    const service = new PathPaymentService();
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
+      "Failed to fetch path payment quotes",
+    );
+  });
+
   it("fails after exhausting retries on repeated 5xx errors", async () => {
     strictSendPathsCall.mockRejectedValue({ response: { status: 502 } });
 
     const service = new PathPaymentService();
-    await expect(service.getPathPaymentQuote("1000", "NGN")).rejects.toThrow(
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
       "Failed to fetch path payment quotes",
     );
     expect(strictSendPathsCall).toHaveBeenCalledTimes(4);

@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+const processEnv = { ...process.env };
+if (processEnv.NODE_ENV === 'test') {
+  processEnv.JWT_SECRET ||= 'test-jwt-secret-value-with-minimum-length-32';
+  processEnv.DATABASE_URL ||= 'postgresql://localhost:5432/test';
+  processEnv.AMANA_ESCROW_CONTRACT_ID ||= 'test-escrow-contract';
+  processEnv.USDC_CONTRACT_ID ||= 'test-usdc-contract';
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -20,5 +28,5 @@ const envSchema = z.object({
   AUDIT_SIGNING_PUBLIC_KEY_PEM: z.string().min(1).optional(),
 });
 
-export const env = envSchema.parse(process.env);
+export const env = envSchema.parse(processEnv);
 

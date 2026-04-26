@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useAnalytics } from "@/components/AnalyticsProvider";
 import { api, ApiError, TradeResponse } from "@/lib/api";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 type TradeStatus = "all" | "active" | "pending" | "completed" | "disputed";
 
@@ -25,6 +26,33 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const PAGE_SIZE = 10;
+
+function TradesTableSkeleton() {
+  return (
+    <div className="rounded-lg border border-border-default overflow-hidden">
+      <div className="border-b border-border-default bg-bg-card px-4 py-3">
+        <div className="grid grid-cols-5 gap-4">
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      </div>
+      <div className="divide-y divide-border-default bg-bg-primary">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="grid grid-cols-5 gap-4 px-4 py-4">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function TradesPage() {
   const { token, isAuthenticated } = useAuth();
@@ -111,7 +139,7 @@ export default function TradesPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2 border-b border-border-default pb-[1px] mb-6">
+      <div className="flex gap-2 border-b border-border-default pb-px mb-6">
         {FILTERS.map((f) => (
           <button
             key={f.value}
@@ -128,20 +156,7 @@ export default function TradesPage() {
       </div>
 
       {/* Loading state */}
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <svg
-            className="animate-spin w-8 h-8 text-gold"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" />
-          </svg>
-        </div>
-      )}
+      {loading && <TradesTableSkeleton />}
 
       {/* Error state */}
       {error && !loading && (

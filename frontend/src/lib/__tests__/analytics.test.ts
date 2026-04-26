@@ -30,6 +30,6 @@ describe("analytics scrubProperties", () => {
 
     expect(output.message).toBe("[REDACTED]");
     expect(output.ip).toBe("[REDACTED]");
-    expect((output.nested as any).wallet).toBe("[REDACTED]");
+    expect((output.nested as { wallet: string }).wallet).toBe("[REDACTED]");
   });
 });

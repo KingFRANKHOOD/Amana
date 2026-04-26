@@ -1,16 +1,8 @@
-type Primitive = string | number | boolean | null | undefined;
-
 type AnalyticsPayload = Record<string, unknown>;
 
 type AnalyticsEvent = {
   eventName: string;
   payload?: AnalyticsPayload;
-};
-
-type BufferedAnalyticsEvent = {
-  name: string;
-  properties?: Record<string, unknown>;
-  timestamp?: number;
 };
 
 const REDACTED = "[REDACTED]";
@@ -79,11 +71,11 @@ function getAnalyticsEndpoint(): string | undefined {
 }
 
 function sendToPlausible(eventName: string, payload: AnalyticsPayload) {
-  if (typeof window === "undefined" || typeof (window as any).plausible !== "function") {
+  if (typeof window === "undefined" || typeof window.plausible !== "function") {
     return;
   }
 
-  (window as any).plausible(eventName, {
+  window.plausible(eventName, {
     props: scrubProperties(payload),
   });
 }
@@ -165,7 +157,7 @@ export function trackAuthEvent(step: string, status: "started" | "success" | "fa
 
 export interface AnalyticsServiceEvent {
   name: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   timestamp?: number;
 }
 
@@ -216,7 +208,7 @@ class AnalyticsService {
   /**
    * Track a failure event (UI exceptions or API errors)
    */
-  trackFailure(type: 'ui_error' | 'api_error', error: string, context?: Record<string, any>) {
+  trackFailure(type: 'ui_error' | 'api_error', error: string, context?: Record<string, unknown>) {
     this.track('failure', {
       type,
       error: this.maskString(error),
@@ -227,7 +219,7 @@ class AnalyticsService {
   /**
    * Track a custom event
    */
-  track(eventName: string, properties?: Record<string, any>) {
+  track(eventName: string, properties?: Record<string, unknown>) {
     if (!this.config.enabled) return;
 
     const event: AnalyticsServiceEvent = {
@@ -281,8 +273,8 @@ class AnalyticsService {
   /**
    * Recursively mask sensitive data in objects
    */
-  private maskObject(obj: Record<string, any>): Record<string, any> {
-    const masked: Record<string, any> = {};
+  private maskObject(obj: Record<string, unknown>): Record<string, unknown> {
+    const masked: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === 'string') {
         masked[key] = this.maskString(value);
@@ -322,13 +314,13 @@ export function getAnalytics(): AnalyticsService | null {
 // React hook for analytics
 export function useAnalytics() {
   return {
-    track: (eventName: string, properties?: Record<string, any>) => {
+    track: (eventName: string, properties?: Record<string, unknown>) => {
       analyticsInstance?.track(eventName, properties);
     },
     trackFunnel: (step: string, from?: string, to?: string) => {
       analyticsInstance?.trackFunnel(step, from, to);
     },
-    trackFailure: (type: 'ui_error' | 'api_error', error: string, context?: Record<string, any>) => {
+    trackFailure: (type: 'ui_error' | 'api_error', error: string, context?: Record<string, unknown>) => {
       analyticsInstance?.trackFailure(type, error, context);
     },
   };
@@ -337,6 +329,6 @@ export function useAnalytics() {
 // Type declarations for Plausible
 declare global {
   interface Window {
-    plausible?: (event: string, options?: { props?: Record<string, any> }) => void;
+    plausible?: (event: string, options?: { props?: Record<string, unknown> }) => void;
   }
 }

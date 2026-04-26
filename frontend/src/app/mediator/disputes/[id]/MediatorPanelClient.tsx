@@ -14,6 +14,7 @@ import { signTransaction } from "@stellar/freighter-api";
 
 import { useFreighterIdentity } from "@/hooks/useFreighterIdentity";
 import { Badge } from "@/components/ui/Badge";
+import { WalletAddressBadge } from "@/components/ui/WalletAddressBadge";
 
 type Props = { disputeId: string };
 
@@ -59,6 +60,8 @@ export default function MediatorPanelClient({ disputeId }: Props) {
   }, []);
 
   const isMediator = Boolean(address && mediatorAddresses.includes(address));
+  const explorerNetwork =
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK === "public" ? "public" : "testnet";
 
   const cid = disputeId || "QmExampleCidForDemo";
   const pinataUrl = `${PINATA_GATEWAYS[activeGatewayIndex]}/${cid}`;
@@ -222,6 +225,22 @@ export default function MediatorPanelClient({ disputeId }: Props) {
               <p className="text-sm text-gray-500 mt-1">
                 Select a loss-ratio split to settle this trade on-chain.
               </p>
+            </div>
+            <div className="rounded-md border border-border-default bg-bg-elevated p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                Connected wallet
+              </p>
+              {address ? (
+                <WalletAddressBadge
+                  address={address}
+                  truncate="middle"
+                  showCopy
+                  showExplorer
+                  explorerNetwork={explorerNetwork}
+                />
+              ) : (
+                <p className="text-sm text-text-muted">No wallet connected.</p>
+              )}
             </div>
 
             {!isAuthorized && (

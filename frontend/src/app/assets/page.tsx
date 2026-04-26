@@ -18,6 +18,8 @@ import {
   NetworkBackboneCard,
   VaultFooter,
 } from "@/components/vault";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { SkeletonList } from "@/components/ui/SkeletonList";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -246,12 +248,6 @@ function AssetsSubNav() {
 
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
 
-function SkeletonBlock({ className = "" }: { className?: string }) {
-  return (
-    <div className={`rounded-xl bg-bg-elevated animate-pulse ${className}`} />
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AssetsPage() {
@@ -271,6 +267,10 @@ export default function AssetsPage() {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const estimatedFinalReleaseLabel = useState(
+    () =>
+      `Est. ${new Date(Date.now() + 14 * 86400000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+  )[0];
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -388,9 +388,9 @@ export default function AssetsPage() {
             {/* ── Hero ── */}
             {loading && !stats ? (
               <div className="space-y-3">
-                <SkeletonBlock className="h-6 w-40" />
-                <SkeletonBlock className="h-14 w-80" />
-                <SkeletonBlock className="h-10 w-64" />
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-14 w-80" />
+                <Skeleton className="h-10 w-64" />
               </div>
             ) : (
               <VaultHero
@@ -415,7 +415,7 @@ export default function AssetsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               <div className="lg:col-span-8">
                 {loading && !stats ? (
-                  <SkeletonBlock className="h-56" />
+                  <Skeleton className="h-56 rounded-xl" />
                 ) : (
                   <ReleaseSequenceCard
                     sequenceId={sequenceId}
@@ -439,7 +439,7 @@ export default function AssetsPage() {
                       {
                         label: "Final Release",
                         date: stats
-                          ? `Est. ${new Date(Date.now() + 14 * 86400000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                          ? estimatedFinalReleaseLabel
                           : "Est. Nov 04",
                         status: "pending",
                       },
@@ -450,7 +450,7 @@ export default function AssetsPage() {
 
               <div className="lg:col-span-4">
                 {loading && !stats ? (
-                  <SkeletonBlock className="h-56" />
+                  <Skeleton className="h-56 rounded-xl" />
                 ) : (
                   <VaultValueCard
                     value={vaultValue || 2480000}
@@ -466,7 +466,7 @@ export default function AssetsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               <div className="lg:col-span-7">
                 {loading && !recentTrades ? (
-                  <SkeletonBlock className="h-72" />
+                  <Skeleton className="h-72 rounded-xl" />
                 ) : (
                   <ContractManifestCard
                     contractId={firstTrade?.tradeId ?? "AMN-772-VLT-09"}
@@ -509,7 +509,7 @@ export default function AssetsPage() {
 
               <div className="lg:col-span-5">
                 {loading && !recentTrades ? (
-                  <SkeletonBlock className="h-72" />
+                  <Skeleton className="h-72 rounded-xl" />
                 ) : (
                   <AuditLogCard
                     entries={auditEntries}
@@ -546,12 +546,8 @@ export default function AssetsPage() {
               </div>
 
               {loading && !recentTrades ? (
-                <div className="divide-y divide-border-default">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="px-6 py-4 animate-pulse">
-                      <SkeletonBlock className="h-4 w-3/4" />
-                    </div>
-                  ))}
+                <div className="px-4 py-4">
+                  <SkeletonList rows={3} />
                 </div>
               ) : recentTrades && recentTrades.items.length > 0 ? (
                 <>

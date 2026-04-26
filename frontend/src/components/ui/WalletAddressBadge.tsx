@@ -8,6 +8,7 @@ export interface WalletAddressBadgeProps {
   truncate?: "start" | "middle" | "end";
   showCopy?: boolean;
   showExplorer?: boolean;
+  explorerNetwork?: "public" | "testnet";
   className?: string;
 }
 
@@ -36,6 +37,7 @@ export function WalletAddressBadge({
   truncate = "middle",
   showCopy = true,
   showExplorer = false,
+  explorerNetwork = "testnet",
   className,
 }: WalletAddressBadgeProps) {
   const [copied, setCopied] = useState(false);
@@ -78,7 +80,7 @@ export function WalletAddressBadge({
 
       {showExplorer && (
         <a
-          href={`https://stellar.expert/explorer/public/account/${address}`}
+          href={`https://stellar.expert/explorer/${explorerNetwork}/account/${address}`}
           target="_blank"
           rel="noopener noreferrer"
           className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-gold"
