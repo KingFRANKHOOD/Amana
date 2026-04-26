@@ -39,6 +39,13 @@ commits = [
   "3f109294350380548154ec5984e8f03b66f98c2d",
 ]
 
+[[allowlists]]
+description = "Test fixture literals that are not production secrets"
+regexes = [
+  '''TEST_PUBLIC_KEY_FOR_MOCK''',
+  '''postgresql://localhost:5432/test''',
+]
+
 # ── Custom rules ──────────────────────────────────────────────────────────────
 
 [[rules]]
