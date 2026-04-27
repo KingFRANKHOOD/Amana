@@ -1,6 +1,19 @@
 name: CI
 
 on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - ".github/workflows/ci.yml"
+      - "frontend/**"
+      - "backend/**"
+      - "contracts/**"
+      - "package-lock.json"
+      - "frontend/package-lock.json"
+      - "backend/package-lock.json"
   pull_request:
     branches:
       - main
@@ -13,6 +26,10 @@ on:
       - "package-lock.json"
       - "frontend/package-lock.json"
       - "backend/package-lock.json"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   changes:
