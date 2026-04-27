@@ -51,6 +51,12 @@ describe("EvidenceService", () => {
         } as any);
     });
 
+    afterEach(() => {
+        delete process.env.ADMIN_STELLAR_PUBKEYS;
+        delete process.env.EVIDENCE_METADATA_RETENTION_DAYS;
+        delete process.env.EVIDENCE_SCAN_REQUIRED;
+    });
+
     const makeMp4Buffer = () =>
         Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
 
@@ -149,6 +155,40 @@ describe("EvidenceService", () => {
         await expect(
             service.getEvidenceByTradeId(TRADE_ID, STRANGER)
         ).rejects.toBeInstanceOf(EvidenceAccessDeniedError);
+    });
+
+    it("allows admin caller to list trade evidence", async () => {
+        const ADMIN = "GCADMIN0000000000000000000000000000000000000000000000000";
+        process.env.ADMIN_STELLAR_PUBKEYS = ADMIN;
+        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
+        prisma.tradeEvidence.findMany = jest.fn().mockResolvedValue(mockEvidence);
+
+        const result = await service.getEvidenceByTradeId(TRADE_ID, ADMIN);
+        expect(result).toHaveLength(1);
+        delete process.env.ADMIN_STELLAR_PUBKEYS;
+    });
+
+    it("redacts stale evidence metadata outside retention window", async () => {
+        process.env.EVIDENCE_METADATA_RETENTION_DAYS = "1";
+        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
+        prisma.tradeEvidence.findMany = jest.fn().mockResolvedValue([
+            {
+                id: 99,
+                tradeId: TRADE_ID,
+                cid: "bafyold",
+                filename: "old-proof.mp4",
+                mimeType: "video/mp4",
+                uploadedBy: BUYER,
+                createdAt: new Date("2024-01-01T00:00:00.000Z"),
+            },
+        ]);
+
+        const listed = await service.getEvidenceByTradeId(TRADE_ID, BUYER);
+        expect(listed[0].cid).toBe("redacted");
+        expect(listed[0].filename).toBe("redacted");
+        expect(listed[0].uploadedBy).toBe("redacted");
+        expect(listed[0].retentionExpired).toBe(true);
+        delete process.env.EVIDENCE_METADATA_RETENTION_DAYS;
     });
 
     it("throws EvidenceTradeNotFoundError when trade does not exist", async () => {

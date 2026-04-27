@@ -50,6 +50,26 @@ class NoopEvidenceScanner implements EvidenceScanner {
     }
 }
 
+function parseAdminPubkeys(): Set<string> {
+    const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
+    return new Set(
+        raw
+            .split(",")
+            .map((value) => value.trim().toLowerCase())
+            .filter(Boolean),
+    );
+}
+
+function getEvidenceMetadataRetentionDays(): number {
+    const parsed = parseInt(process.env.EVIDENCE_METADATA_RETENTION_DAYS || "90", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+}
+
+function isEvidenceMetadataExpired(createdAt: Date): boolean {
+    const retentionMs = getEvidenceMetadataRetentionDays() * 24 * 60 * 60 * 1000;
+    return Date.now() - createdAt.getTime() > retentionMs;
+}
+
 type EvidenceDatabase = {
     trade: Pick<PrismaClient["trade"], "findUnique">;
     tradeEvidence: Pick<PrismaClient["tradeEvidence"], "findMany" | "create">;
@@ -81,9 +101,11 @@ export class EvidenceService {
         if (!trade) throw new EvidenceTradeNotFoundError();
 
         const caller = callerAddress.toLowerCase();
+        const isAdmin = parseAdminPubkeys().has(caller);
         if (
             trade.buyerAddress.toLowerCase() !== caller &&
-            trade.sellerAddress.toLowerCase() !== caller
+            trade.sellerAddress.toLowerCase() !== caller &&
+            !isAdmin
         ) {
             throw new EvidenceAccessDeniedError();
         }
@@ -93,15 +115,19 @@ export class EvidenceService {
             orderBy: { createdAt: "asc" },
         });
 
-        return records.map((r) => ({
-            id: r.id,
-            cid: r.cid,
-            filename: r.filename,
-            mimeType: r.mimeType,
-            uploadedBy: r.uploadedBy,
-            url: this.resolveGatewayUrl(r.cid),
-            createdAt: r.createdAt,
-        }));
+        return records.map((r) => {
+            const retentionExpired = isEvidenceMetadataExpired(r.createdAt);
+            return {
+                id: r.id,
+                cid: retentionExpired ? "redacted" : r.cid,
+                filename: retentionExpired ? "redacted" : r.filename,
+                mimeType: r.mimeType,
+                uploadedBy: retentionExpired && !isAdmin ? "redacted" : r.uploadedBy,
+                url: retentionExpired ? null : this.resolveGatewayUrl(r.cid),
+                createdAt: r.createdAt,
+                retentionExpired,
+            };
+        });
     }
 
     /**

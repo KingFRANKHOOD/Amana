@@ -159,3 +159,20 @@ Mutation endpoints support idempotency via the `Idempotency-Key` header.
 - `IPFS_UPLOAD_TIMEOUT_MS`: upload timeout for Pinata calls (default `10000`)
 - `IPFS_PINATA_CIRCUIT_FAILURE_THRESHOLD`: failures before opening upload circuit (default `3`)
 - `IPFS_PINATA_CIRCUIT_COOLDOWN_MS`: upload circuit open duration (default `30000`)
+
+## 12. PII Minimization and Retention
+
+- Manifest and evidence metadata now enforce retention windows on read:
+  - stale evidence metadata is redacted (`cid`, `filename`, selective actor details)
+  - stale manifest seller PII is redacted to `REDACTED` while preserving hashes
+- Audit history metadata is minimized for non-admin callers:
+  - vehicle registrations are masked
+  - expired evidence metadata is redacted and tagged with `retentionExpired`
+- Admin-safe access controls:
+  - callers in `ADMIN_STELLAR_PUBKEYS` can access protected trade metadata views
+  - access remains explicit and authenticated; uploads still require buyer/seller roles
+
+### PII Retention Environment Variables
+
+- `MANIFEST_PII_RETENTION_DAYS`: seller raw manifest PII retention window (default `30`)
+- `EVIDENCE_METADATA_RETENTION_DAYS`: evidence metadata retention window (default `90`)
