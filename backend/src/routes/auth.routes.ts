@@ -16,7 +16,7 @@ const limiter = rateLimit({
 const router = Router();
 
 const challengeSchema = z.object({
-  walletAddress: z.string().refine((val) => StrKey.isValidEd25519PublicKey(val), {
+  walletAddress: z.string().refine((val: string) => StrKey.isValidEd25519PublicKey(val), {
     message: 'Invalid Stellar public key',
   }),
 });
@@ -36,7 +36,7 @@ router.post('/challenge', limiter, async (req, res) => {
 });
 
 const verifySchema = z.object({
-  walletAddress: z.string().refine((val) => StrKey.isValidEd25519PublicKey(val), {
+  walletAddress: z.string().refine((val: string) => StrKey.isValidEd25519PublicKey(val), {
     message: 'Invalid Stellar public key',
   }),
   signedChallenge: z.string(),

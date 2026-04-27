@@ -3,9 +3,17 @@ import { findOrCreateUser, updateUser, getPublicProfile } from "../user.service"
 import { AppError, ErrorCode } from "../../errors/errorCodes";
 import { Keypair } from "@stellar/stellar-sdk";
 
+const mockSafeParse = jest.fn();
+
 // Mock Supabase lib
 jest.mock("../../lib/supabase", () => ({
   getSupabaseClient: jest.fn(),
+}));
+
+jest.mock("../../validators/user.validators", () => ({
+  updateProfileSchema: {
+    safeParse: (input: any) => mockSafeParse(input),
+  },
 }));
 
 describe("UserService", () => {
@@ -18,6 +26,19 @@ describe("UserService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockSafeParse.mockImplementation((input: any) => {
+      const validDisplayName =
+        input.displayName === undefined ||
+        (typeof input.displayName === "string" && input.displayName.length >= 2);
+      const validAvatarUrl =
+        input.avatarUrl === undefined ||
+        (typeof input.avatarUrl === "string" && input.avatarUrl.startsWith("http"));
+
+      return validDisplayName && validAvatarUrl
+        ? { success: true, data: input }
+        : { success: false, error: { issues: [] } };
+    });
     
     // Setup deep mock for supabase chaining
     mockSupabase = {
@@ -66,6 +87,57 @@ describe("UserService", () => {
       expect(mockSupabase.insert).toHaveBeenCalledWith({ address: realWallet.toLowerCase() });
     });
 
+    it("creates a user on first login and returns the same user on subsequent logins", async () => {
+      const createdUser = { address: realWallet.toLowerCase(), id: "stable-user" };
+
+      mockSupabase.single
+        .mockResolvedValueOnce({
+          data: null,
+          error: { code: "PGRST116" },
+        })
+        .mockResolvedValueOnce({
+          data: createdUser,
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: createdUser,
+          error: null,
+        });
+
+      const firstLogin = await findOrCreateUser(realWallet);
+      const secondLogin = await findOrCreateUser(realWallet);
+
+      expect(firstLogin.id).toBe("stable-user");
+      expect(secondLogin.id).toBe("stable-user");
+      expect(mockSupabase.insert).toHaveBeenCalledTimes(1);
+      expect(mockSupabase.eq).toHaveBeenNthCalledWith(1, "address", realWallet.toLowerCase());
+      expect(mockSupabase.eq).toHaveBeenNthCalledWith(2, "address", realWallet.toLowerCase());
+    });
+
+    it("returns the existing user when insert hits a unique constraint race", async () => {
+      const existingUser = { address: realWallet.toLowerCase(), id: "raced-user" };
+
+      mockSupabase.single
+        .mockResolvedValueOnce({
+          data: null,
+          error: { code: "PGRST116" },
+        })
+        .mockResolvedValueOnce({
+          data: null,
+          error: { code: "23505" },
+        })
+        .mockResolvedValueOnce({
+          data: existingUser,
+          error: null,
+        });
+
+      const user = await findOrCreateUser(realWallet);
+
+      expect(user).toEqual(existingUser);
+      expect(mockSupabase.insert).toHaveBeenCalledWith({ address: realWallet.toLowerCase() });
+      expect(mockSupabase.eq).toHaveBeenLastCalledWith("address", realWallet.toLowerCase());
+    });
+
     it("should throw validation error for invalid address", async () => {
       await expect(findOrCreateUser("invalid")).rejects.toMatchObject({
         code: ErrorCode.VALIDATION_ERROR,
@@ -95,6 +167,15 @@ describe("UserService", () => {
 
       await expect(findOrCreateUser(realWallet)).rejects.toMatchObject({
         code: ErrorCode.INFRA_ERROR,
+      });
+    });
+
+    it("should wrap thrown network errors as dependency failures", async () => {
+      mockSupabase.single.mockRejectedValue(new Error("network down"));
+
+      await expect(findOrCreateUser(realWallet)).rejects.toMatchObject({
+        code: ErrorCode.INFRA_ERROR,
+        statusCode: 503,
       });
     });
   });
