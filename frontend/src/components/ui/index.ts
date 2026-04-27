@@ -20,3 +20,7 @@ export { ErrorState } from "./ErrorState";
 export type { ErrorStateProps } from "./ErrorState";
 export { OfflineState } from "./OfflineState";
 export type { OfflineStateProps } from "./OfflineState";
+export { Tabs } from "./Tabs";
+export type { TabItem, TabsProps } from "./Tabs";
+export { Button } from "./Button";
+export type { ButtonProps } from "./Button";
