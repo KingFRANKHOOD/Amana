@@ -1,7 +1,9 @@
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
-import { errorHandler } from "./errors/errorHandler";
+import { errorHandler } from './middleware/errorHandler';
+import { correlationIdMiddleware } from './middleware/correlationId.middleware';
+import { tracingMiddleware } from './middleware/tracing.middleware';
 import loggerMiddleware, { appLogger } from './middleware/logger';
 import { requestIdMiddleware } from "./middleware/requestId";
 import { authRoutes } from "./routes/auth.routes";
@@ -45,9 +47,6 @@ function buildCorsOptions(): cors.CorsOptions {
 export function createApp(): express.Application {
   const app = express();
 
-  // Request ID for correlation
-  app.use(requestIdMiddleware);
-
   // Security headers
   app.use(
     helmet({
@@ -79,6 +78,12 @@ export function createApp(): express.Application {
   // Body size limits: 100 KB for JSON, 5 MB for URL-encoded (covers file references)
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+  // Correlation ID must be registered before the logger so every log line
+  // produced by pino-http already carries the tracing IDs.
+  app.use(correlationIdMiddleware);
+  // OpenTelemetry tracing middleware - integrates with correlation IDs
+  app.use(tracingMiddleware);
   app.use(loggerMiddleware);
 
   // Enhanced health check with deep introspection
@@ -103,7 +108,42 @@ export function createApp(): express.Application {
   // Goals analytics: GET /goals
   app.use("/goals", createGoalsRouter());
 
+  // Error handler is registered last so it catches errors from all routes,
+  // including any routes added to the app after createApp() returns.
+  // We achieve this by re-registering it whenever a new route/middleware is added.
+  const _originalUse = app.use.bind(app);
+  const _originalGet = (app as any).get.bind(app);
+
+  function reRegisterErrorHandler() {
+    // Remove the existing error handler layer and re-add it at the end.
+    // Express 5 exposes the router via app.router (lazy getter).
+    const router = (app as any).router;
+    if (!router) return;
+    const stack: any[] = router.stack;
+    // Find last occurrence of the error handler layer (scan from end)
+    let errIdx = -1;
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].handle === errorHandler) { errIdx = i; break; }
+    }
+    if (errIdx !== -1) stack.splice(errIdx, 1);
+    _originalUse(errorHandler);
+  }
+
+  (app as any).use = function (...args: any[]) {
+    const result = _originalUse(...args);
+    reRegisterErrorHandler();
+    return result;
+  };
+
+  (app as any).get = function (...args: any[]) {
+    const result = _originalGet(...args);
+    reRegisterErrorHandler();
+    return result;
+  };
+
+  // Initial registration
   app.use(errorHandler);
+
   return app;
 }
 

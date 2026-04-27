@@ -2,7 +2,38 @@ openapi: 3.0.0
 info:
   title: Amana Backend API
   version: 1.0.0
-  description: Backend API for the Amana protocol.
+  description: |
+    Backend API for the Amana protocol (Phase 1 endpoints).
+
+    ## Distributed Tracing
+
+    Every response includes two tracing headers for end-to-end observability:
+
+    | Header | Direction | Description |
+    |---|---|---|
+    | `x-correlation-id` | Request → Response | Logical trace ID that spans multiple services. Callers may supply this header; if absent or invalid a UUID v4 is generated server-side. |
+    | `x-request-id` | Response only | Unique ID for this specific HTTP request/response pair. Always server-generated; never trusted from the caller. |
+
+    Both IDs appear in every structured log line produced by the backend,
+    making it straightforward to correlate a client error with the
+    corresponding server-side log entries.
+
+    ### Propagating `x-correlation-id`
+    Include the header in your request to tie together a chain of calls:
+    ```
+    GET /trades HTTP/1.1
+    x-correlation-id: 550e8400-e29b-41d4-a716-446655440000
+    ```
+    The same value is echoed back in the response and stamped on every log
+    record produced while handling that request.
+
+    ### Validation rules for caller-supplied IDs
+    - Must be a non-empty string of alphanumeric characters, hyphens, or
+      underscores (`[\w\-]+`).
+    - Maximum length: 128 characters.
+    - Values that fail validation are silently replaced with a server-generated
+      UUID v4.
+
 servers:
   - url: http://localhost:4000
 components:
@@ -11,14 +42,44 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  headers:
+    X-Correlation-Id:
+      description: >
+        Logical trace ID propagated across service boundaries.
+        Supplied by the caller or generated server-side.
+      schema:
+        type: string
+        example: 550e8400-e29b-41d4-a716-446655440000
+    X-Request-Id:
+      description: >
+        Unique ID for this specific HTTP request/response pair.
+        Always server-generated.
+      schema:
+        type: string
+        format: uuid
+        example: 7f3e1a2b-4c5d-4e6f-8a9b-0c1d2e3f4a5b
 paths:
   /health:
     get:
       summary: Health check
       description: Returns service status and timestamp.
+      parameters:
+        - in: header
+          name: x-correlation-id
+          required: false
+          schema:
+            type: string
+          description: >
+            Optional caller-supplied correlation ID. If valid it is echoed back;
+            otherwise a new UUID v4 is generated.
       responses:
         "200":
           description: OK
+          headers:
+            x-correlation-id:
+              $ref: '#/components/headers/X-Correlation-Id'
+            x-request-id:
+              $ref: '#/components/headers/X-Request-Id'
           content:
             application/json:
               schema:
@@ -44,18 +105,46 @@ paths:
                 timestamp: "2026-03-23T12:00:00.000Z"
         "500":
           description: Server error
+          headers:
+            x-correlation-id:
+              $ref: '#/components/headers/X-Correlation-Id'
+            x-request-id:
+              $ref: '#/components/headers/X-Request-Id'
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  error:
+                    type: boolean
+                    example: true
+                  status:
+                    type: integer
+                    example: 500
                   message:
                     type: string
                     example: Internal server error
+                  correlationId:
+                    type: string
+                    description: Echoed from the request for log correlation.
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  requestId:
+                    type: string
+                    format: uuid
+                    description: Server-generated request ID.
+                    example: 7f3e1a2b-4c5d-4e6f-8a9b-0c1d2e3f4a5b
                 required:
+                  - error
+                  - status
                   - message
               example:
+                error: true
+                status: 500
                 message: Internal server error
+<<<<<<< HEAD
+                correlationId: 550e8400-e29b-41d4-a716-446655440000
+                requestId: 7f3e1a2b-4c5d-4e6f-8a9b-0c1d2e3f4a5b
+=======
   /wallet/balance:
     get:
       summary: Get wallet token balance
@@ -169,3 +258,4 @@ paths:
           description: Missing signature
         "401":
           description: Unauthorized
+>>>>>>> origin/main

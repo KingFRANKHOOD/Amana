@@ -6,6 +6,7 @@ import {
 } from '../config/stellar';
 import { retryAsync } from "../lib/retry";
 import { appLogger } from "../middleware/logger";
+import { TracingHelper } from "../config/tracing";
 import { TOKEN_CONFIG } from "../config/token";
 
 export class StellarService {
@@ -28,28 +29,83 @@ export class StellarService {
     return this.networkPassphrase;
   }
 
-  public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONFIG.symbol): Promise<string> {
+public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONFIG.symbol): Promise<string> {
     if (!StrKey.isValidEd25519PublicKey(publicKey)) {
       throw new Error("Invalid Stellar public key");
     }
 
-    try {
-      const account = await retryAsync(() => this.horizonServer.loadAccount(publicKey));
-      const balance = account.balances.find((b: any) => {
-        if (assetCode === "XLM") {
-          return b.asset_type === "native";
+    return TracingHelper.withSpan(
+      "stellar.get_account_balance",
+      async (span) => {
+        span.setAttributes({
+          'stellar.operation': 'get_account_balance',
+          'stellar.public_key': publicKey,
+          'stellar.asset_code': assetCode,
+          'stellar.network': this.networkPassphrase,
+        });
+
+        TracingHelper.addEvent('stellar_balance_query_start', { 
+          publicKey: publicKey.substring(0, 8) + '...', // Partial for privacy
+          assetCode 
+        });
+
+        try {
+          const account = await retryAsync(() => this.horizonServer.loadAccount(publicKey));
+          const balance = account.balances.find((b: any) => {
+            if (assetCode === "XLM") {
+              return b.asset_type === "native";
+            }
+            return b.asset_code === assetCode;
+          });
+
+          const balanceAmount = balance ? balance.balance : "0";
+
+          span.setAttributes({
+            'stellar.balance_found': !!balance,
+            'stellar.balance_amount': balanceAmount,
+          });
+
+          TracingHelper.addEvent('stellar_balance_success', { 
+            balanceFound: !!balance,
+            balanceAmount 
+          });
+
+          appLogger.info(
+            { 
+              publicKey: publicKey.substring(0, 8) + '...', 
+              assetCode, 
+              balance: balanceAmount 
+            }, 
+            "[StellarService] Account balance retrieved successfully"
+          );
+
+          return balanceAmount;
+        } catch (error) {
+          const status = (error as { response?: { status?: number } })?.response?.status;
+          if (status === 404) {
+            return "0";
+          }
+
+          span.setAttributes({
+            'stellar.balance_found': false,
+            'stellar.error': error instanceof Error ? error.message : 'Unknown error',
+          });
+
+          TracingHelper.addEvent('stellar_balance_error', { 
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+
+          appLogger.error({ error, publicKey: publicKey.substring(0, 8) + '...' }, "Failed to get account balance");
+          throw new Error("Unable to fetch balance");
         }
-        return b.asset_code === assetCode;
-      });
-      return balance ? balance.balance : "0";
-    } catch (error) {
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 404) {
-        return "0";
+      },
+      {
+        attributes: {
+          'service.name': 'stellar',
+          'operation.type': 'external_service',
+        }
       }
-      appLogger.error({ error, publicKey }, "Failed to get account balance");
-      throw new Error("Unable to fetch balance");
-    }
+    );
   }
 
   public async buildTransaction(sourceAccount: string, operations: xdr.Operation[]): Promise<string> {

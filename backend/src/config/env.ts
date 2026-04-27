@@ -23,6 +23,14 @@ const envSchema = z.object({
   STELLAR_RPC_URL: z.string().optional(),
   AMANA_ESCROW_CONTRACT_ID: z.string().min(1),
   USDC_CONTRACT_ID: z.string().min(1),
+  // Distributed tracing configuration
+  JAEGER_ENDPOINT: z.string().optional(),
+  ZIPKIN_ENDPOINT: z.string().optional(),
+  PROMETHEUS_PORT: z.coerce.number().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
+  OTEL_EXPORTER_JAEGER_AGENT_HOST: z.string().optional(),
+  OTEL_EXPORTER_JAEGER_AGENT_PORT: z.coerce.number().optional(),
+  // Audit signing configuration
   AUDIT_SIGNING_KEY_ID: z.string().min(1).optional(),
   AUDIT_SIGNING_PRIVATE_KEY_PEM: z.string().min(1).optional(),
   AUDIT_SIGNING_PUBLIC_KEY_PEM: z.string().min(1).optional(),

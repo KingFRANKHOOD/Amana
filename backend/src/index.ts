@@ -9,8 +9,12 @@ import { EventListenerService } from "./services/eventListener.service";
 import { createApp } from "./app";
 import { env } from "./config/env";
 import { appLogger } from "./middleware/logger";
+import { initializeTracing } from "./config/tracing";
 
 env; // Validate early
+
+// Initialize distributed tracing before any other imports
+initializeTracing();
 
 const app = createApp();
 const port = Number(process.env.PORT || 4000);
