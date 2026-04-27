@@ -4,8 +4,12 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// #445 — include Trades so the canonical shell highlights the active route;
+// this eliminates the need for a redundant page-level title that duplicated
+// the navigation context.
 const TOP_NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/trades", label: "Trades" },
   { href: "/assets", label: "Assets" },
   { href: "/vault", label: "Vault" },
 ];

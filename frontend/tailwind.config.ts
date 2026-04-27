@@ -105,17 +105,20 @@ const config: Config = {
           "monospace",
         ],
       },
+      // #444 — Figma type scale tokens: display → 3xl → 2xl → xl for headings;
+      // lg → base → sm for body and metadata. Sizes are referenced only via
+      // these tokens; no ad-hoc values should appear in component files.
       fontSize: {
-        xs: "12px",
-        sm: "14px",
-        base: "16px",
-        lg: "18px",
-        xl: "20px",
-        "2xl": "24px",
-        "3xl": "30px",
-        "4xl": "36px",
-        "5xl": "48px",
-        display: "60px",
+        xs: ["12px", { lineHeight: "1.5" }],
+        sm: ["14px", { lineHeight: "1.5" }],
+        base: ["16px", { lineHeight: "1.5" }],
+        lg: ["18px", { lineHeight: "1.6" }],
+        xl: ["20px", { lineHeight: "1.4" }],
+        "2xl": ["24px", { lineHeight: "1.3" }],
+        "3xl": ["30px", { lineHeight: "1.25" }],
+        "4xl": ["36px", { lineHeight: "1.2" }],
+        "5xl": ["48px", { lineHeight: "1.15" }],
+        display: ["60px", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
       },
       lineHeight: {
         tight: "1.2",

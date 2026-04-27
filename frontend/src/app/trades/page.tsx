@@ -127,9 +127,13 @@ export default function TradesPage() {
 
   return (
     <div className="px-6 py-8 max-w-6xl mx-auto">
-      {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-text-primary">Trades</h1>
+      {/*
+       * #445 — Shell is canonical: AppTopNav (layout.tsx) now includes Trades
+       * and highlights the active route, so this page no longer renders a
+       * duplicate "Trades" heading. The Create Trade action and filter tabs
+       * remain as page-specific controls within the single shell.
+       */}
+      <div className="flex items-center justify-end mb-6">
         <Link
           href="/trades/create"
           className="px-4 py-2 rounded-md bg-gold text-text-inverse text-sm font-medium hover:bg-gold-hover transition-colors"
