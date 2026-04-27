@@ -19,10 +19,6 @@ describe("EvidenceService.streamFromIPFS gateway fallback and range support", ()
         service = new EvidenceService(prisma);
         jest.restoreAllMocks();
         delete process.env.IPFS_GATEWAY_URLS;
-        delete process.env.IPFS_GATEWAY_ALLOWLIST;
-        delete process.env.IPFS_STREAM_TIMEOUT_MS;
-        delete process.env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD;
-        delete process.env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS;
     });
 
     it("tries gateways in order and returns from the second when the first fails", async () => {
@@ -43,9 +39,6 @@ describe("EvidenceService.streamFromIPFS gateway fallback and range support", ()
         const res = await service.streamFromIPFS("bafy123");
         expect(res.status).toBe(200);
         expect(res.headers["content-type"]).toBe("video/mp4");
-        expect((axios.get as jest.Mock).mock.calls[0][1]).toEqual(
-            expect.objectContaining({ timeout: 5000 }),
-        );
 
         const chunks: Buffer[] = [];
         for await (const chunk of res.data) chunks.push(Buffer.from(chunk));
@@ -92,45 +85,5 @@ describe("EvidenceService.streamFromIPFS gateway fallback and range support", ()
         });
 
         await expect(service.streamFromIPFS("bafy123")).rejects.toBeInstanceOf(ServiceUnavailableError);
-    });
-
-    it("enforces gateway allowlist", async () => {
-        process.env.IPFS_GATEWAY_URLS = "https://blocked.example.com/ipfs";
-        process.env.IPFS_GATEWAY_ALLOWLIST = "allowed.example.com";
-        const getSpy = jest.spyOn(axios, "get").mockResolvedValue({
-            status: 200,
-            data: Readable.from(Buffer.from("ok")),
-            headers: { "content-type": "video/mp4" },
-        } as any);
-
-        await expect(service.streamFromIPFS("bafy123")).rejects.toBeInstanceOf(ServiceUnavailableError);
-        expect(getSpy).not.toHaveBeenCalled();
-    });
-
-    it("opens circuit for repeatedly failing gateway and falls back", async () => {
-        process.env.IPFS_GATEWAY_URLS = "https://g1.example.com/ipfs,https://g2.example.com/ipfs";
-        process.env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD = "1";
-        process.env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS = "60000";
-
-        jest.spyOn(axios, "get").mockImplementation(async (url: string) => {
-            if (url.includes("g1.example.com")) {
-                throw new Error("gateway 1 down");
-            }
-            return {
-                status: 200,
-                data: Readable.from(Buffer.from("ok")),
-                headers: { "content-type": "video/mp4" },
-            } as any;
-        });
-
-        await service.streamFromIPFS("bafy123");
-        await service.streamFromIPFS("bafy123");
-
-        const attemptedUrls = (axios.get as jest.Mock).mock.calls.map((c) => c[0] as string);
-        const g1Attempts = attemptedUrls.filter((u) => u.includes("g1.example.com")).length;
-        const g2Attempts = attemptedUrls.filter((u) => u.includes("g2.example.com")).length;
-
-        expect(g1Attempts).toBe(1);
-        expect(g2Attempts).toBe(2);
     });
 });

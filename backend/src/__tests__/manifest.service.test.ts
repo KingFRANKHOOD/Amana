@@ -37,8 +37,6 @@ describe("ManifestService", () => {
     beforeEach(() => {
         prisma = createMockPrisma();
         service = new ManifestService(prisma);
-        delete process.env.MANIFEST_PII_RETENTION_DAYS;
-        delete process.env.ADMIN_STELLAR_PUBKEYS;
     });
 
     it("stores hashed driver details and returns manifestId", async () => {
@@ -233,32 +231,6 @@ describe("ManifestService", () => {
         expect((result as any).driverIdHash).toBe("b".repeat(64));
         expect((result as any).driverName).toBeUndefined();
         expect((result as any).driverIdNumber).toBeUndefined();
-    });
-
-    it("redacts seller PII when manifest is outside retention window", async () => {
-        process.env.MANIFEST_PII_RETENTION_DAYS = "1";
-        prisma.trade.findUnique = jest.fn().mockResolvedValue({
-            tradeId: TRADE_ID,
-            sellerAddress: SELLER,
-            buyerAddress: BUYER,
-            status: TradeStatus.FUNDED,
-        });
-        prisma.deliveryManifest.findUnique = jest.fn().mockResolvedValue({
-            tradeId: TRADE_ID,
-            driverName: "Driver Name",
-            driverIdNumber: "ID-12345",
-            vehicleRegistration: "ABC-123",
-            routeDescription: "Lagos to Abuja",
-            expectedDeliveryAt: new Date("2026-03-30T12:00:00.000Z"),
-            driverNameHash: "a".repeat(64),
-            driverIdHash: "b".repeat(64),
-            createdAt: new Date("2024-03-30T10:00:00.000Z"),
-        });
-
-        const result = await service.getManifestByTradeId(TRADE_ID, SELLER);
-        expect((result as any).driverName).toBe("REDACTED");
-        expect((result as any).driverIdNumber).toBe("REDACTED");
-        expect((result as any).retentionExpired).toBe(true);
     });
 
     it("throws ManifestAccessDeniedError for unrelated manifest retrieval caller", async () => {

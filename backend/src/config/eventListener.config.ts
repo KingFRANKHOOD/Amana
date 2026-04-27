@@ -16,8 +16,6 @@ export interface EventListenerConfig {
   backoffMaxMs: number;
   /** Maximum number of processed ledgers to keep in memory */
   processedLedgersCacheSize: number;
-  /** Maximum number of outbox processing attempts before dead-lettering */
-  outboxMaxAttempts: number;
 }
 
 export function getEventListenerConfig(): EventListenerConfig {
@@ -28,6 +26,5 @@ export function getEventListenerConfig(): EventListenerConfig {
     backoffInitialMs: parseInt(process.env.BACKOFF_INITIAL_MS || "1000", 10),
     backoffMaxMs: parseInt(process.env.BACKOFF_MAX_MS || "30000", 10),
     processedLedgersCacheSize: parseInt(process.env.PROCESSED_LEDGERS_CACHE_SIZE || "10000", 10),
-    outboxMaxAttempts: parseInt(process.env.EVENT_OUTBOX_MAX_ATTEMPTS || "5", 10),
   };
 }

@@ -50,7 +50,6 @@ const TEST_CONFIG = {
   backoffInitialMs: 100,
   backoffMaxMs: 5000,
   processedLedgersCacheSize: 200,
-  outboxMaxAttempts: 5,
 };
 
 function createMockPrisma() {

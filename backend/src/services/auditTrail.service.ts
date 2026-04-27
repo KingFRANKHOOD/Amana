@@ -70,32 +70,6 @@ type AuditDatabase = {
     dispute: Pick<PrismaClient["dispute"], "findUnique">;
 };
 
-function parseAdminPubkeys(): Set<string> {
-    const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
-    return new Set(
-        raw
-            .split(",")
-            .map((value) => value.trim().toLowerCase())
-            .filter(Boolean),
-    );
-}
-
-function getEvidenceMetadataRetentionDays(): number {
-    const parsed = parseInt(process.env.EVIDENCE_METADATA_RETENTION_DAYS || "90", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
-}
-
-function isEvidenceMetadataExpired(createdAt: Date): boolean {
-    const retentionMs = getEvidenceMetadataRetentionDays() * 24 * 60 * 60 * 1000;
-    return Date.now() - createdAt.getTime() > retentionMs;
-}
-
-function maskVehicleRegistration(value: string): string {
-    const trimmed = value.trim();
-    if (trimmed.length <= 3) return "***";
-    return `${trimmed.slice(0, 3)}***`;
-}
-
 export class AuditTrailService {
     constructor(private readonly prisma: AuditDatabase = defaultPrisma as unknown as AuditDatabase) { }
 
@@ -107,11 +81,9 @@ export class AuditTrailService {
         if (!trade) throw new AuditTrailTradeNotFoundError();
 
         const caller = callerAddress.toLowerCase();
-        const isAdmin = parseAdminPubkeys().has(caller);
         if (
             trade.buyerAddress.toLowerCase() !== caller &&
-            trade.sellerAddress.toLowerCase() !== caller &&
-            !isAdmin
+            trade.sellerAddress.toLowerCase() !== caller
         ) {
             throw new AuditTrailAccessDeniedError();
         }
@@ -152,9 +124,7 @@ export class AuditTrailService {
                 timestamp: manifest.createdAt,
                 actor: trade.sellerAddress,
                 metadata: {
-                    vehicleRegistration: isAdmin
-                        ? manifest.vehicleRegistration
-                        : maskVehicleRegistration(manifest.vehicleRegistration),
+                    vehicleRegistration: manifest.vehicleRegistration,
                     expectedDeliveryAt: manifest.expectedDeliveryAt,
                 },
             });
@@ -167,17 +137,11 @@ export class AuditTrailService {
         });
         for (const ev of evidenceRecords) {
             const isVideo = ev.mimeType.startsWith("video/");
-            const expired = isEvidenceMetadataExpired(ev.createdAt);
             events.push({
                 eventType: isVideo ? "VIDEO_SUBMITTED" : "EVIDENCE_SUBMITTED",
                 timestamp: ev.createdAt,
-                actor: expired && !isAdmin ? "redacted" : ev.uploadedBy,
-                metadata: {
-                    mimeType: ev.mimeType,
-                    cid: expired ? "redacted" : ev.cid,
-                    filename: expired ? "redacted" : ev.filename,
-                    retentionExpired: expired,
-                },
+                actor: ev.uploadedBy,
+                metadata: { cid: ev.cid, filename: ev.filename, mimeType: ev.mimeType },
             });
         }
 

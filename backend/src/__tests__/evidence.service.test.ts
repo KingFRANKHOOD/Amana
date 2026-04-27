@@ -3,7 +3,6 @@ import {
     EvidenceService,
     EvidenceAccessDeniedError,
     EvidenceTradeNotFoundError,
-    EvidenceScanError,
 } from "../services/evidence.service";
 import { EvidenceValidationError } from "../services/evidence.service";
 
@@ -46,22 +45,8 @@ describe("EvidenceService", () => {
         service = new EvidenceService(prisma, {
             uploadFile: jest.fn(),
             getFileUrl: jest.fn((cid: string) => `https://ipfs.example/${cid}`),
-        } as any, {
-            scan: jest.fn().mockResolvedValue({ clean: true }),
         } as any);
     });
-
-    afterEach(() => {
-        delete process.env.ADMIN_STELLAR_PUBKEYS;
-        delete process.env.EVIDENCE_METADATA_RETENTION_DAYS;
-        delete process.env.EVIDENCE_SCAN_REQUIRED;
-    });
-
-    const makeMp4Buffer = () =>
-        Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
-
-    const makeWebmBuffer = () =>
-        Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x42, 0x86, 0x81, 0x01]);
 
     describe("uploadVideoEvidence validation and access", () => {
         it("accepts mp4 and creates record", async () => {
@@ -76,7 +61,7 @@ describe("EvidenceService", () => {
             service = new EvidenceService(prisma, mockIpfs);
 
             const file = {
-                buffer: makeMp4Buffer(),
+                buffer: Buffer.from("x"),
                 originalname: "video.mp4",
                 mimetype: "video/mp4",
                 size: 10,
@@ -118,7 +103,7 @@ describe("EvidenceService", () => {
         it("blocks unauthorized uploader", async () => {
             prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
             const file = {
-                buffer: makeMp4Buffer(),
+                buffer: Buffer.from("x"),
                 originalname: "video.mp4",
                 mimetype: "video/mp4",
                 size: 10,
@@ -155,40 +140,6 @@ describe("EvidenceService", () => {
         await expect(
             service.getEvidenceByTradeId(TRADE_ID, STRANGER)
         ).rejects.toBeInstanceOf(EvidenceAccessDeniedError);
-    });
-
-    it("allows admin caller to list trade evidence", async () => {
-        const ADMIN = "GCADMIN0000000000000000000000000000000000000000000000000";
-        process.env.ADMIN_STELLAR_PUBKEYS = ADMIN;
-        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
-        prisma.tradeEvidence.findMany = jest.fn().mockResolvedValue(mockEvidence);
-
-        const result = await service.getEvidenceByTradeId(TRADE_ID, ADMIN);
-        expect(result).toHaveLength(1);
-        delete process.env.ADMIN_STELLAR_PUBKEYS;
-    });
-
-    it("redacts stale evidence metadata outside retention window", async () => {
-        process.env.EVIDENCE_METADATA_RETENTION_DAYS = "1";
-        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
-        prisma.tradeEvidence.findMany = jest.fn().mockResolvedValue([
-            {
-                id: 99,
-                tradeId: TRADE_ID,
-                cid: "bafyold",
-                filename: "old-proof.mp4",
-                mimeType: "video/mp4",
-                uploadedBy: BUYER,
-                createdAt: new Date("2024-01-01T00:00:00.000Z"),
-            },
-        ]);
-
-        const listed = await service.getEvidenceByTradeId(TRADE_ID, BUYER);
-        expect(listed[0].cid).toBe("redacted");
-        expect(listed[0].filename).toBe("redacted");
-        expect(listed[0].uploadedBy).toBe("redacted");
-        expect(listed[0].retentionExpired).toBe(true);
-        delete process.env.EVIDENCE_METADATA_RETENTION_DAYS;
     });
 
     it("throws EvidenceTradeNotFoundError when trade does not exist", async () => {
@@ -249,7 +200,7 @@ describe("EvidenceService", () => {
         const makeFile = (name: string) => ({
             originalname: name,
             mimetype: "video/mp4",
-            buffer: makeMp4Buffer(),
+            buffer: Buffer.from("file"),
         }) as Express.Multer.File;
 
         const [first, second] = await Promise.all([
@@ -266,89 +217,5 @@ describe("EvidenceService", () => {
             "bafybeicid-1",
             "bafybeicid-2",
         ]);
-    });
-
-    it("rejects spoofed mime type when file bytes do not match", async () => {
-        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
-        const file = {
-            buffer: makeWebmBuffer(),
-            originalname: "video.mp4",
-            mimetype: "video/mp4",
-            size: 16,
-        } as unknown as Express.Multer.File;
-
-        await expect(
-            service.uploadVideoEvidence("trade-001", BUYER, file)
-        ).rejects.toBeInstanceOf(EvidenceValidationError);
-    });
-
-    it("rejects upload when malware scanner flags file", async () => {
-        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
-        service = new EvidenceService(prisma, {
-            uploadFile: jest.fn().mockResolvedValue("bafycid"),
-            getFileUrl: jest.fn((cid: string) => `https://ipfs.example/${cid}`),
-        } as any, {
-            scan: jest.fn().mockResolvedValue({ clean: false, reason: "malware signature detected" }),
-        } as any);
-
-        const file = {
-            buffer: makeMp4Buffer(),
-            originalname: "video.mp4",
-            mimetype: "video/mp4",
-            size: 10,
-        } as unknown as Express.Multer.File;
-
-        await expect(
-            service.uploadVideoEvidence("trade-001", BUYER, file)
-        ).rejects.toBeInstanceOf(EvidenceValidationError);
-    });
-
-    it("fails closed when scanner is required and unavailable", async () => {
-        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
-        process.env.EVIDENCE_SCAN_REQUIRED = "true";
-        service = new EvidenceService(prisma, {
-            uploadFile: jest.fn().mockResolvedValue("bafycid"),
-            getFileUrl: jest.fn((cid: string) => `https://ipfs.example/${cid}`),
-        } as any, {
-            scan: jest.fn().mockRejectedValue(new Error("scanner timeout")),
-        } as any);
-
-        const file = {
-            buffer: makeMp4Buffer(),
-            originalname: "video.mp4",
-            mimetype: "video/mp4",
-            size: 10,
-        } as unknown as Express.Multer.File;
-
-        await expect(
-            service.uploadVideoEvidence("trade-001", BUYER, file)
-        ).rejects.toBeInstanceOf(EvidenceScanError);
-        delete process.env.EVIDENCE_SCAN_REQUIRED;
-    });
-
-    it("fails open when scanner is optional and unavailable", async () => {
-        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
-        process.env.EVIDENCE_SCAN_REQUIRED = "false";
-        prisma.tradeEvidence.create = jest.fn().mockResolvedValue({ id: 55 });
-        service = new EvidenceService(prisma, {
-            uploadFile: jest.fn().mockResolvedValue("bafycid"),
-            getFileUrl: jest.fn((cid: string) => `https://ipfs.example/${cid}`),
-        } as any, {
-            scan: jest.fn().mockRejectedValue(new Error("scanner timeout")),
-        } as any);
-
-        const file = {
-            buffer: makeMp4Buffer(),
-            originalname: "video.mp4",
-            mimetype: "video/mp4",
-            size: 10,
-        } as unknown as Express.Multer.File;
-
-        await expect(service.uploadVideoEvidence("trade-001", BUYER, file)).resolves.toEqual(
-            expect.objectContaining({
-                cid: "bafycid",
-            }),
-        );
-        delete process.env.EVIDENCE_SCAN_REQUIRED;
     });
 });

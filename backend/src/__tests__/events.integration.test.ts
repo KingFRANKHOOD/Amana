@@ -33,7 +33,6 @@ jest.mock("../config/eventListener.config", () => ({
     backoffInitialMs: 100,
     backoffMaxMs: 5000,
     processedLedgersCacheSize: 100,
-    outboxMaxAttempts: 5,
   }),
 }));
 
