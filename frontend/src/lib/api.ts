@@ -1,5 +1,6 @@
 import { authApi } from "./api/auth";
 import { ApiError } from "./api/client";
+import { disputesApi } from "./api/disputes";
 import { getApiBaseUrl, getStellarNetworkPassphrase, getStellarRpcUrl } from "./api/env";
 import { tradesApi } from "./api/trades";
 import { walletApi } from "./api/wallet";
@@ -9,6 +10,8 @@ export type {
   CreateTradeRequest,
   CreateTradeResponse,
   DepositResponse,
+  DisputeListResponse,
+  DisputeResponse,
   EvidenceRecord,
   EvidenceResponse,
   PathPaymentQuote,
@@ -22,6 +25,7 @@ export type {
 
 export const api = {
   auth: authApi,
+  disputes: disputesApi,
   trades: tradesApi,
   wallet: walletApi,
 };
