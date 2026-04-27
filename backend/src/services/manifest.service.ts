@@ -97,6 +97,16 @@ function maskDriverIdNumber(): string {
     return "ID-****";
 }
 
+function getManifestRetentionDays(): number {
+    const parsed = parseInt(process.env.MANIFEST_PII_RETENTION_DAYS || "30", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+}
+
+function isOutsideRetentionWindow(createdAt: Date): boolean {
+    const retentionMs = getManifestRetentionDays() * 24 * 60 * 60 * 1000;
+    return Date.now() - createdAt.getTime() > retentionMs;
+}
+
 export class ManifestService {
     constructor(private readonly prisma: ManifestDatabase = defaultPrisma as unknown as ManifestDatabase) { }
 
@@ -168,6 +178,8 @@ export class ManifestService {
         });
         if (!manifest) throw new ManifestNotFoundError();
 
+        const retentionExpired = isOutsideRetentionWindow(manifest.createdAt);
+
         if (isBuyer) {
             return {
                 tradeId,
@@ -178,6 +190,7 @@ export class ManifestService {
                 routeDescription: manifest.routeDescription,
                 expectedDeliveryAt: manifest.expectedDeliveryAt,
                 createdAt: manifest.createdAt,
+                retentionExpired,
             };
         }
 
@@ -191,6 +204,23 @@ export class ManifestService {
                 routeDescription: manifest.routeDescription,
                 expectedDeliveryAt: manifest.expectedDeliveryAt,
                 createdAt: manifest.createdAt,
+                retentionExpired,
+            };
+        }
+
+        if (retentionExpired) {
+            return {
+                tradeId,
+                roleView: "seller" as const,
+                driverName: "REDACTED",
+                driverIdNumber: "REDACTED",
+                driverNameHash: manifest.driverNameHash,
+                driverIdHash: manifest.driverIdHash,
+                vehicleRegistration: manifest.vehicleRegistration,
+                routeDescription: manifest.routeDescription,
+                expectedDeliveryAt: manifest.expectedDeliveryAt,
+                createdAt: manifest.createdAt,
+                retentionExpired,
             };
         }
 
@@ -205,6 +235,7 @@ export class ManifestService {
             routeDescription: manifest.routeDescription,
             expectedDeliveryAt: manifest.expectedDeliveryAt,
             createdAt: manifest.createdAt,
+            retentionExpired,
         };
     }
 }

@@ -22,6 +22,10 @@ describe("IPFSService", () => {
     afterEach(() => {
         __resetPinataClient();
         __resetRetrySleepForTests();
+        IPFSService.__resetCircuitForTests();
+        delete process.env.IPFS_UPLOAD_TIMEOUT_MS;
+        delete process.env.IPFS_PINATA_CIRCUIT_FAILURE_THRESHOLD;
+        delete process.env.IPFS_PINATA_CIRCUIT_COOLDOWN_MS;
     });
 
     describe("uploadFile", () => {
@@ -126,6 +130,31 @@ describe("IPFSService", () => {
             expect(results).toHaveLength(5);
             expect(new Set(results).size).toBe(5);
             expect(mockPinFileToIPFS).toHaveBeenCalledTimes(5);
+        });
+
+        it("enforces upload timeout", async () => {
+            process.env.IPFS_UPLOAD_TIMEOUT_MS = "5";
+            mockPinFileToIPFS.mockImplementation(() => new Promise(() => undefined));
+
+            await expect(
+                service.uploadFile(Buffer.from("data"), "slow.mp4")
+            ).rejects.toBeInstanceOf(ServiceUnavailableError);
+        });
+
+        it("opens upload circuit after threshold failures", async () => {
+            process.env.IPFS_PINATA_CIRCUIT_FAILURE_THRESHOLD = "1";
+            process.env.IPFS_PINATA_CIRCUIT_COOLDOWN_MS = "60000";
+            mockPinFileToIPFS.mockRejectedValue({ response: { status: 503 } });
+
+            await expect(
+                service.uploadFile(Buffer.from("data"), "first.mp4")
+            ).rejects.toBeInstanceOf(ServiceUnavailableError);
+            await expect(
+                service.uploadFile(Buffer.from("data"), "second.mp4")
+            ).rejects.toBeInstanceOf(ServiceUnavailableError);
+
+            // First upload performs retry attempts, second is short-circuited.
+            expect(mockPinFileToIPFS).toHaveBeenCalledTimes(4);
         });
     });
 

@@ -6,6 +6,7 @@ import {
     EvidenceService,
     EvidenceAccessDeniedError,
     EvidenceTradeNotFoundError,
+    EvidenceScanError,
 } from "../services/evidence.service";
 import { appLogger } from "../middleware/logger";
 import { validateRequest } from "../middleware/validateRequest";
@@ -17,7 +18,7 @@ import {
 import { tradeIdParamSchema } from "../schemas/trade.schemas";
 
 const ALLOWED_MIME_TYPES = ["video/mp4", "video/webm"];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE = parseInt(process.env.EVIDENCE_MAX_BYTES || "52428800", 10);
 
 const videoUpload = multer({
     storage: multer.memoryStorage(),
@@ -149,6 +150,10 @@ export function createEvidenceRouter(evidenceService = new EvidenceService()) {
                 }
                 if (err instanceof EvidenceAccessDeniedError) {
                     res.status(403).json({ error: err.message });
+                    return;
+                }
+                if (err instanceof EvidenceScanError) {
+                    res.status(err.status).json({ error: err.message });
                     return;
                 }
                 throw err;

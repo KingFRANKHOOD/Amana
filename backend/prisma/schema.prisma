@@ -35,6 +35,13 @@ enum GoalStatus {
   CANCELLED
 }
 
+enum ChainEventSyncStatus {
+  PENDING
+  RETRYING
+  PROCESSED
+  DEAD_LETTER
+}
+
 /// User model representing a participant in the Amana platform
 /// - walletAddress: Stellar wallet address (stored as lowercase for consistency)
 /// - displayName: User's display name
@@ -168,6 +175,29 @@ model ProcessedEvent {
   processedAt     DateTime @default(now())
 
   @@unique([ledgerSequence, contractId, eventId])
+  @@index([ledgerSequence])
+}
+
+/// ChainEventOutbox model for durable event processing state and retries
+model ChainEventOutbox {
+  id              Int                  @id @default(autoincrement())
+  ledgerSequence  Int
+  contractId      String               @db.VarChar(255)
+  eventId         String               @db.VarChar(255)
+  eventType       String               @db.VarChar(100)
+  tradeId         String               @db.VarChar(255)
+  payload         Json
+  status          ChainEventSyncStatus @default(PENDING)
+  attempts        Int                  @default(0)
+  nextAttemptAt   DateTime             @default(now())
+  lastError       String?              @db.Text
+  deadLetteredAt  DateTime?
+  processedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([ledgerSequence, contractId, eventId])
+  @@index([status, nextAttemptAt])
   @@index([ledgerSequence])
 }
 

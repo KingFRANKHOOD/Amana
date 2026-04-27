@@ -45,6 +45,8 @@ describe("AuditTrailService", () => {
         prisma.tradeEvidence.findMany = jest.fn().mockResolvedValue([]);
         prisma.deliveryManifest.findUnique = jest.fn().mockResolvedValue(null);
         prisma.dispute.findUnique = jest.fn().mockResolvedValue(null);
+        delete process.env.ADMIN_STELLAR_PUBKEYS;
+        delete process.env.EVIDENCE_METADATA_RETENTION_DAYS;
     });
 
     afterEach(() => {
@@ -82,6 +84,14 @@ describe("AuditTrailService", () => {
         ).rejects.toBeInstanceOf(AuditTrailAccessDeniedError);
     });
 
+    it("allows admin user to access trade history", async () => {
+        const ADMIN = "GCADMIN0000000000000000000000000000000000000000000000000";
+        process.env.ADMIN_STELLAR_PUBKEYS = ADMIN;
+        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
+
+        await expect(service.getTradeHistory(TRADE_ID, ADMIN)).resolves.toBeInstanceOf(Array);
+    });
+
     it("returns 404 when trade does not exist", async () => {
         prisma.trade.findUnique = jest.fn().mockResolvedValue(null);
 
@@ -102,6 +112,32 @@ describe("AuditTrailService", () => {
         const events = await service.getTradeHistory(TRADE_ID, SELLER);
         const types = events.map((e) => e.eventType);
         expect(types).toContain("MANIFEST_SUBMITTED");
+    });
+
+    it("redacts stale evidence metadata outside retention window", async () => {
+        process.env.EVIDENCE_METADATA_RETENTION_DAYS = "1";
+        prisma.trade.findUnique = jest.fn().mockResolvedValue(mockTrade);
+        prisma.tradeEvidence.findMany = jest.fn().mockResolvedValue([
+            {
+                id: 1,
+                tradeId: TRADE_ID,
+                cid: "bafyold",
+                filename: "proof.mp4",
+                mimeType: "video/mp4",
+                uploadedBy: BUYER,
+                createdAt: new Date("2024-01-01T00:00:00Z"),
+            },
+        ]);
+
+        const events = await service.getTradeHistory(TRADE_ID, BUYER);
+        const evidence = events.find((event) => event.eventType === "VIDEO_SUBMITTED");
+        expect(evidence?.metadata).toEqual(
+            expect.objectContaining({
+                cid: "redacted",
+                filename: "redacted",
+                retentionExpired: true,
+            }),
+        );
     });
 
     it("includes DISPUTE_INITIATED event when dispute exists", async () => {

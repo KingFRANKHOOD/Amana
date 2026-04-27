@@ -8,6 +8,15 @@ import { EventType, ParsedEvent } from "../types/events";
 import { dispatchEvent } from "./eventHandlers";
 import { appLogger } from "../middleware/logger";
 
+type OutboxStatus = "PENDING" | "RETRYING" | "PROCESSED" | "DEAD_LETTER";
+
+type OutboxRecord = {
+  id: number;
+  status: OutboxStatus;
+  attempts: number;
+  nextAttemptAt: Date;
+};
+
 /**
  * Check whether a `ProcessedEvent` record already exists for the given composite key.
  * Returns `true` if the event has been processed before, `false` otherwise.
@@ -185,8 +194,36 @@ export class EventListenerService {
       return;
     }
 
+    if (!this.supportsOutboxPersistence()) {
+      try {
+        await processEventAtomically(this.prisma, parsed, dispatchEvent);
+        this.processedEvents.add(cacheKey);
+        this.evictOldEvents();
+        if (ledgerSequence > this.lastLedger) {
+          this.lastLedger = ledgerSequence;
+        }
+        appLogger.debug(
+          {
+            eventType: parsed.eventType,
+            tradeId: parsed.tradeId,
+            ledger: ledgerSequence,
+          },
+          "[EventListener] Processed event",
+        );
+      } catch (error) {
+        appLogger.error({ error, eventId }, "[EventListener] Failed to process event");
+        throw error;
+      }
+      return;
+    }
+
+    const outbox = await this.ensureOutboxRecord(parsed);
+    if (!this.isOutboxReadyForAttempt(outbox)) {
+      return;
+    }
+
     try {
-      await processEventAtomically(this.prisma, parsed, dispatchEvent);
+      await this.processOutboxEventAtomically(outbox.id, parsed);
       this.processedEvents.add(cacheKey);
       this.evictOldEvents();
       if (ledgerSequence > this.lastLedger) {
@@ -201,8 +238,167 @@ export class EventListenerService {
         "[EventListener] Processed event",
       );
     } catch (error) {
-      appLogger.error({ error, eventId }, "[EventListener] Failed to process event");
-      throw error;
+      await this.recordOutboxFailure(outbox, error);
+      appLogger.error({ error, eventId }, "[EventListener] Failed to process event; scheduled for retry");
+    }
+  }
+
+  private supportsOutboxPersistence(): boolean {
+    const outbox = (this.prisma as any).chainEventOutbox;
+    return Boolean(outbox && typeof outbox.findUnique === "function");
+  }
+
+  private async ensureOutboxRecord(event: ParsedEvent): Promise<OutboxRecord> {
+    const key = {
+      ledgerSequence: event.ledgerSequence,
+      contractId: event.contractId,
+      eventId: event.eventId,
+    };
+
+    const existing = await (this.prisma as any).chainEventOutbox.findUnique({
+      where: {
+        ledgerSequence_contractId_eventId: key,
+      },
+      select: {
+        id: true,
+        status: true,
+        attempts: true,
+        nextAttemptAt: true,
+      },
+    });
+
+    if (existing) {
+      return existing as OutboxRecord;
+    }
+
+    try {
+      const created = await (this.prisma as any).chainEventOutbox.create({
+        data: {
+          ledgerSequence: event.ledgerSequence,
+          contractId: event.contractId,
+          eventId: event.eventId,
+          eventType: event.eventType,
+          tradeId: event.tradeId,
+          payload: event.data,
+          status: "PENDING",
+        },
+        select: {
+          id: true,
+          status: true,
+          attempts: true,
+          nextAttemptAt: true,
+        },
+      });
+      return created as OutboxRecord;
+    } catch (error) {
+      if (!isPrismaUniqueConstraintError(error)) {
+        throw error;
+      }
+      const concurrent = await (this.prisma as any).chainEventOutbox.findUnique({
+        where: {
+          ledgerSequence_contractId_eventId: key,
+        },
+        select: {
+          id: true,
+          status: true,
+          attempts: true,
+          nextAttemptAt: true,
+        },
+      });
+      if (!concurrent) {
+        throw error;
+      }
+      return concurrent as OutboxRecord;
+    }
+  }
+
+  private isOutboxReadyForAttempt(outbox: OutboxRecord): boolean {
+    if (outbox.status === "PROCESSED") {
+      return false;
+    }
+    if (outbox.status === "DEAD_LETTER") {
+      appLogger.warn({ outboxId: outbox.id }, "[EventListener] Skipping dead-letter event");
+      return false;
+    }
+    const now = Date.now();
+    if (new Date(outbox.nextAttemptAt).getTime() > now) {
+      return false;
+    }
+    return true;
+  }
+
+  private async processOutboxEventAtomically(outboxId: number, event: ParsedEvent): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await dispatchEvent(tx, event);
+        await (tx as any).processedEvent.create({
+          data: {
+            ledgerSequence: event.ledgerSequence,
+            contractId: event.contractId,
+            eventId: event.eventId,
+          },
+        });
+        await (tx as any).chainEventOutbox.update({
+          where: { id: outboxId },
+          data: {
+            status: "PROCESSED",
+            attempts: { increment: 1 },
+            nextAttemptAt: new Date(),
+            lastError: null,
+            deadLetteredAt: null,
+            processedAt: new Date(),
+          },
+        });
+      });
+    } catch (error) {
+      if (!isPrismaUniqueConstraintError(error)) {
+        throw error;
+      }
+      await (this.prisma as any).chainEventOutbox.update({
+        where: { id: outboxId },
+        data: {
+          status: "PROCESSED",
+          nextAttemptAt: new Date(),
+          lastError: null,
+          deadLetteredAt: null,
+          processedAt: new Date(),
+        },
+      });
+    }
+  }
+
+  private computeRetryDelay(attemptNumber: number): number {
+    const exponent = Math.max(attemptNumber - 1, 0);
+    const baseDelay = this.config.backoffInitialMs * Math.pow(2, exponent);
+    return Math.min(baseDelay, this.config.backoffMaxMs);
+  }
+
+  private async recordOutboxFailure(outbox: OutboxRecord, error: unknown): Promise<void> {
+    const nextAttempts = outbox.attempts + 1;
+    const canRetry = nextAttempts < this.config.outboxMaxAttempts;
+    const retryDelayMs = this.computeRetryDelay(nextAttempts);
+    const now = Date.now();
+    const message = error instanceof Error ? error.message : String(error);
+
+    await (this.prisma as any).chainEventOutbox.update({
+      where: { id: outbox.id },
+      data: {
+        attempts: nextAttempts,
+        status: canRetry ? "RETRYING" : "DEAD_LETTER",
+        nextAttemptAt: canRetry ? new Date(now + retryDelayMs) : new Date(now),
+        lastError: message.slice(0, 2000),
+        deadLetteredAt: canRetry ? null : new Date(now),
+      },
+    });
+
+    if (!canRetry) {
+      appLogger.error(
+        {
+          outboxId: outbox.id,
+          attempts: nextAttempts,
+        },
+        "[EventListener] Event moved to dead-letter state",
+      );
     }
   }
 
