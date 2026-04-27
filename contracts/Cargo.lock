@@ -29,6 +29,7 @@ version = "0.1.0"
 dependencies = [
  "quickcheck",
  "quickcheck_macros",
+ "rand 0.8.5",
  "soroban-sdk",
 ]
 
