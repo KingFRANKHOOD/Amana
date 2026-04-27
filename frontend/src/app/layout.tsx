@@ -4,8 +4,7 @@ import { Manrope } from "next/font/google";
 
 import "./globals.css";
 import { Geist, Geist_Mono } from "next/font/google";
-import { AppTopNav } from "@/components/layout/AppTopNav";
-import { AppSidebar } from "@/components/layout/AppSidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 
@@ -42,13 +41,7 @@ export default function RootLayout({
       >
         <AnalyticsProvider>
           <AuthProvider>
-            <div className="flex flex-col h-screen">
-              <AppTopNav />
-              <div className="flex flex-1 overflow-hidden">
-                <AppSidebar />
-                <main className="flex-1 overflow-y-auto h-full">{children}</main>
-              </div>
-            </div>
+            <AppShell>{children}</AppShell>
           </AuthProvider>
         </AnalyticsProvider>
       </body>
