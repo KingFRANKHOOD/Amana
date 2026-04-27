@@ -137,3 +137,25 @@ Mutation endpoints support idempotency via the `Idempotency-Key` header.
 
 - `EVIDENCE_MAX_BYTES`: max upload size in bytes (default `52428800`)
 - `EVIDENCE_SCAN_REQUIRED`: set `true` to fail-closed when scanner is unavailable
+
+## 11. IPFS Egress Hardening
+
+- Streaming requests now enforce:
+  - outbound request timeout
+  - optional gateway hostname allowlist
+  - per-gateway in-process circuit breaker
+  - automatic fallback across configured gateway list
+- Upload requests now enforce:
+  - strict upload timeout for Pinata calls
+  - in-process circuit breaker to protect backend stability during upstream incidents
+
+### IPFS Egress Environment Variables
+
+- `IPFS_GATEWAY_URLS`: comma-separated gateway base URLs to try for stream fallback
+- `IPFS_GATEWAY_ALLOWLIST`: comma-separated allowed gateway hostnames
+- `IPFS_STREAM_TIMEOUT_MS`: per-stream request timeout (default `5000`)
+- `IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD`: failures before opening stream gateway circuit (default `3`)
+- `IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS`: stream circuit open duration (default `30000`)
+- `IPFS_UPLOAD_TIMEOUT_MS`: upload timeout for Pinata calls (default `10000`)
+- `IPFS_PINATA_CIRCUIT_FAILURE_THRESHOLD`: failures before opening upload circuit (default `3`)
+- `IPFS_PINATA_CIRCUIT_COOLDOWN_MS`: upload circuit open duration (default `30000`)
