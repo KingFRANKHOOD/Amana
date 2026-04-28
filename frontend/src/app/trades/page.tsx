@@ -19,20 +19,24 @@ const FILTERS: { label: string; value: TradeStatus }[] = [
   { label: "Disputed", value: "disputed" },
 ];
 
+// Status chip tokens: text = status color, bg = status/10, border = status/20.
+// "completed" and "draft" use neutral surface tokens (no alert color).
 const STATUS_STYLES: Record<string, string> = {
-  active: "text-status-success bg-status-success/10",
-  pending: "text-status-warning bg-status-warning/10",
-  completed: "text-text-secondary bg-bg-elevated",
-  disputed: "text-status-danger bg-status-danger/10",
-  locked: "text-status-locked bg-status-locked/10",
+  active:    "text-status-success bg-status-success/10 border border-status-success/20",
+  pending:   "text-status-warning bg-status-warning/10 border border-status-warning/20",
+  completed: "text-text-secondary bg-surface-2 border border-border-default",
+  disputed:  "text-status-danger  bg-status-danger/10  border border-status-danger/20",
+  locked:    "text-status-locked  bg-status-locked/10  border border-status-locked/20",
+  draft:     "text-status-draft   bg-surface-1         border border-border-default",
 };
 
 const PAGE_SIZE = 10;
 
 function TradesTableSkeleton() {
   return (
-    <div className="rounded-lg border border-border-default overflow-hidden">
-      <div className="border-b border-border-default bg-bg-card px-4 py-3">
+    <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">
+      {/* Header: surface-1 (card level) */}
+      <div className="border-b border-border-default bg-surface-1 px-4 py-3">
         <div className="grid grid-cols-5 gap-4">
           <Skeleton className="h-3 w-14" />
           <Skeleton className="h-3 w-24" />
@@ -41,7 +45,8 @@ function TradesTableSkeleton() {
           <Skeleton className="h-3 w-20" />
         </div>
       </div>
-      <div className="divide-y divide-border-default bg-bg-primary">
+      {/* Rows: surface-0 (canvas) */}
+      <div className="divide-y divide-border-default bg-surface-0">
         {Array.from({ length: 6 }).map((_, index) => (
           <div key={index} className="grid grid-cols-5 gap-4 px-4 py-4">
             <Skeleton className="h-4 w-20" />
@@ -164,10 +169,10 @@ export default function TradesPage() {
       {!loading && !error && (
         <>
           {trades.length === 0 ? (
-            <div className="rounded-lg border border-border-default bg-bg-card py-20 px-6 text-center">
+            <div className="rounded-lg border border-border-default bg-surface-1 py-20 px-6 text-center shadow-elev-1">
               {/* Icon */}
               <div className="flex justify-center mb-6">
-                <div className="w-16 h-16 rounded-lg bg-bg-elevated border border-border-default flex items-center justify-center">
+                <div className="w-16 h-16 rounded-lg bg-surface-2 border border-border-default flex items-center justify-center">
                   <svg
                     className="w-8 h-8 text-text-muted"
                     fill="none"
@@ -201,10 +206,11 @@ export default function TradesPage() {
               </Link>
             </div>
           ) : (
-            <div className="rounded-lg border border-border-default overflow-hidden">
+            <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border-default bg-bg-card">
+                  {/* Header: surface-1 (card level), subtle bottom border */}
+                  <tr className="border-b border-border-default bg-surface-1">
                     <th className="text-left px-4 py-3 text-text-muted font-medium">
                       ID
                     </th>
@@ -226,8 +232,10 @@ export default function TradesPage() {
                   {trades.map((trade, i) => (
                     <tr
                       key={trade.tradeId}
-                      className={`border-b border-border-default last:border-0 hover:bg-bg-elevated transition-colors ${
-                        i % 2 === 0 ? "bg-bg-primary" : "bg-bg-card"
+                      // Even rows: surface-0 (canvas), odd rows: surface-1 (card).
+                      // Hover lifts to surface-2 + elev-2 shadow for clear depth feedback.
+                      className={`border-b border-border-default last:border-0 hover:bg-surface-2 hover:shadow-elev-2 transition-colors ${
+                        i % 2 === 0 ? "bg-surface-0" : "bg-surface-1"
                       }`}
                     >
                       <td className="px-4 py-3 text-gold font-mono">

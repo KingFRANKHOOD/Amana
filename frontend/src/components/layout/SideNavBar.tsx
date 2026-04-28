@@ -120,7 +120,7 @@ export function SideNavBar({
     <aside
       className={`${
         collapsed ? "w-20" : "w-64"
-      } flex-shrink-0 bg-card border-r border-border-default flex flex-col min-h-screen`}
+      } flex-shrink-0 bg-surface-1 border-r border-border-default shadow-elev-1 flex flex-col min-h-screen`}
       aria-label="Primary sidebar"
     >
       <div className="h-16 px-4 border-b border-border-default flex items-center justify-between">
@@ -144,7 +144,7 @@ export function SideNavBar({
           <button
             type="button"
             onClick={onClose}
-            className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-elevated transition-all"
+            className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-all"
             aria-label="Close menu"
           >
             <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
@@ -177,8 +177,10 @@ export function SideNavBar({
                     collapsed ? "justify-center px-2" : "px-4"
                   } py-3 border-l-4 transition-all focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2 ${
                     isActive
-                      ? "border-l-gold bg-elevated text-gold hover:bg-elevated/80"
-                      : "border-transparent text-text-secondary hover:text-text-primary hover:bg-white/5"
+                      // Active: surface-2 lift + gold left border + elev-2 shadow
+                      ? "border-l-gold bg-surface-2 text-gold shadow-elev-2 hover:bg-surface-2/80"
+                      // Inactive: hover lifts to surface-2/30
+                      : "border-transparent text-text-secondary hover:text-text-primary hover:bg-surface-2/30"
                   }`}
                   title={collapsed ? item.label : undefined}
                 >
@@ -196,7 +198,7 @@ export function SideNavBar({
       <div className="p-4 border-t border-border-default">
         {isConnected ? (
           <div
-            className={`rounded-lg bg-bg-elevated border border-border-default ${
+            className={`rounded-lg bg-surface-2 border border-border-raised ${
               collapsed ? "px-2 py-3 text-center" : "px-3 py-3"
             }`}
           >
