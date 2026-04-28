@@ -6,7 +6,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAnalytics } from "@/components/AnalyticsProvider";
 import { api, ApiError, TradeResponse } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 
 type TradeStatus = "all" | "active" | "pending" | "completed" | "disputed";
@@ -18,6 +17,11 @@ const FILTERS: { label: string; value: TradeStatus }[] = [
   { label: "Completed", value: "completed" },
   { label: "Disputed", value: "disputed" },
 ];
+
+const NAV_ITEM_BASE =
+  "rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2";
+const NAV_ITEM_ACTIVE = "bg-surface-2 text-gold shadow-elev-1";
+const NAV_ITEM_INACTIVE = "text-text-secondary hover:text-text-primary hover:bg-surface-2/60";
 
 // Status chip tokens: text = status color, bg = status/10, border = status/20.
 // "completed" and "draft" use neutral surface tokens (no alert color).
@@ -147,13 +151,26 @@ export default function TradesPage() {
       </div>
 
       {/* Filter tabs */}
-      <Tabs
-        items={FILTERS}
-        activeValue={activeFilter}
-        onChange={handleFilter}
-        variant="underline"
-        className="mb-6"
-      />
+      <div className="mb-6" role="tablist" aria-label="Trade filters">
+        <div className="flex items-center gap-2">
+          {FILTERS.map((filter) => {
+            const isActive = activeFilter === filter.value;
+
+            return (
+              <button
+                key={filter.value}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => handleFilter(filter.value)}
+                className={`${NAV_ITEM_BASE} ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_INACTIVE}`}
+              >
+                {filter.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Loading state */}
       {loading && <TradesTableSkeleton />}
