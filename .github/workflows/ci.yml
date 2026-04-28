@@ -79,12 +79,10 @@ jobs:
 
       - name: Lint
         if: needs.changes.outputs.frontend == 'true'
-        continue-on-error: true
         run: npm run lint
 
       - name: Build
         if: needs.changes.outputs.frontend == 'true'
-        continue-on-error: true
         run: npm run build
 
       - name: Skip note (no frontend changes)
@@ -125,7 +123,18 @@ jobs:
           DATABASE_URL: postgresql://localhost:5432/test
           AMANA_ESCROW_CONTRACT_ID: test-escrow-contract
           USDC_CONTRACT_ID: test-usdc-contract
-        run: npx jest --config jest.config.js src/__tests__/stellar.service.test.ts src/__tests__/pathPayment.service.test.ts src/__tests__/wallet.service.test.ts
+        # Representative smoke suite covering auth, trade lifecycle, events, and validation.
+        # Runtime budget: ~60 s. Add new domains here when coverage gaps are identified.
+        run: npx jest --config jest.config.js
+          src/__tests__/stellar.service.test.ts
+          src/__tests__/pathPayment.service.test.ts
+          src/__tests__/wallet.service.test.ts
+          src/__tests__/auth.middleware.test.ts
+          src/__tests__/auth.routes.test.ts
+          src/__tests__/trade.lifecycle.test.ts
+          src/__tests__/trade.service.test.ts
+          src/__tests__/events.integration.test.ts
+          src/__tests__/input.validation.test.ts
 
       - name: Skip note (no backend changes)
         if: needs.changes.outputs.backend != 'true'
