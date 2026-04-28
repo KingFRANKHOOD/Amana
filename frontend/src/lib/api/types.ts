@@ -16,6 +16,8 @@ export interface TradeResponse {
   status: string;
   createdAt: string;
   updatedAt: string;
+  eta?: string;
+  carrier?: string;
 }
 
 export interface TradeListResponse {

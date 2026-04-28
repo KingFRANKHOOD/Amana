@@ -75,9 +75,9 @@ function buildTradeDetail(
     incoterms: "FOB",
     originPort: "Origin",
     destinationPort: "Destination",
-    eta: "TBD",
-    etaLabel: "Pending",
-    carrier: "TBD",
+    eta: trade.eta || "Unknown",
+    etaLabel: trade.eta ? "Expected" : "Pending",
+    carrier: trade.carrier || "Pending Assignment",
     timeline: timeline.length > 0 ? timeline : [
       {
         id: "1",

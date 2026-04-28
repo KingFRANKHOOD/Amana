@@ -8,7 +8,6 @@ on:
     paths:
       - "backend/prisma/migrations/**"
       - "backend/prisma/schema.prisma"
-      - "backend/prisma/migration_lock.toml"
 
 jobs:
   migration-safety:
@@ -116,7 +115,7 @@ jobs:
         run: |
           npx prisma migrate status --schema=prisma/schema.prisma 2>&1 || true
           # Ensure the lock file matches the declared provider
-          PROVIDER=$(grep 'provider' ./prisma/migration_lock.toml | head -1)
+          PROVIDER=$(grep 'provider' ./prisma/migrations/migration_lock.toml | head -1)
           echo "Lock file: $PROVIDER"
           if ! echo "$PROVIDER" | grep -q "postgresql"; then
             echo "::error::migration_lock.toml provider mismatch — expected postgresql"
