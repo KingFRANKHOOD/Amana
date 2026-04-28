@@ -70,6 +70,23 @@ type AuditDatabase = {
     dispute: Pick<PrismaClient["dispute"], "findUnique">;
 };
 
+/** Shape of a Trade row as used by the audit service. */
+interface AuditTrade {
+    tradeId: string;
+    buyerAddress: string;
+    sellerAddress: string;
+    amountUsdc: string;
+    status: string;
+    createdAt: Date;
+    updatedAt: Date;
+    /** Canonical timestamp written once when the trade transitions to FUNDED. */
+    fundedAt: Date | null;
+    /** Canonical timestamp written once when the trade transitions to DELIVERED. */
+    deliveredAt: Date | null;
+    /** Canonical timestamp written once when the trade transitions to COMPLETED. */
+    completedAt: Date | null;
+}
+
 function parseAdminPubkeys(): Set<string> {
     const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
     return new Set(
@@ -102,7 +119,7 @@ export class AuditTrailService {
     async getTradeHistory(tradeId: string, callerAddress: string): Promise<TradeEvent[]> {
         const trade = await this.prisma.trade.findUnique({
             where: { tradeId },
-        });
+        }) as AuditTrade | null;
 
         if (!trade) throw new AuditTrailTradeNotFoundError();
 
@@ -137,13 +154,14 @@ export class AuditTrailService {
             },
         });
 
-        // FUNDED — infer from status history; use updatedAt when status is FUNDED
+        // FUNDED — use canonical fundedAt; fall back to updatedAt for rows that
+        // pre-date the AUDIT-001 migration (fundedAt will be null on those rows).
         if (
             ["FUNDED", "DELIVERED", "COMPLETED", "DISPUTED", "CANCELLED"].includes(trade.status)
         ) {
             events.push({
                 eventType: "FUNDED",
-                timestamp: trade.updatedAt,
+                timestamp: trade.fundedAt ?? trade.updatedAt,
                 actor: trade.buyerAddress,
                 metadata: {},
             });
@@ -188,11 +206,11 @@ export class AuditTrailService {
             });
         }
 
-        // DELIVERY_CONFIRMED
+        // DELIVERY_CONFIRMED — use canonical deliveredAt; fall back to updatedAt for legacy rows.
         if (["DELIVERED", "COMPLETED"].includes(trade.status)) {
             events.push({
                 eventType: "DELIVERY_CONFIRMED",
-                timestamp: trade.updatedAt,
+                timestamp: trade.deliveredAt ?? trade.updatedAt,
                 actor: trade.buyerAddress,
                 metadata: {},
             });
@@ -217,11 +235,11 @@ export class AuditTrailService {
             }
         }
 
-        // COMPLETED
+        // COMPLETED — use canonical completedAt; fall back to updatedAt for legacy rows.
         if (trade.status === "COMPLETED") {
             events.push({
                 eventType: "COMPLETED",
-                timestamp: trade.updatedAt,
+                timestamp: trade.completedAt ?? trade.updatedAt,
                 actor: trade.sellerAddress,
                 metadata: {},
             });
