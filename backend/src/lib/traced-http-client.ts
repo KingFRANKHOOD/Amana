@@ -33,14 +33,14 @@ export class TracedHttpClient {
           attributes: {
             'http.method': config.method?.toUpperCase(),
             'http.url': config.url,
-            'net.peer.name': new URL(config.baseURL || config.url || '').hostname,
+            'net.peer.name': (() => { try { return new URL(config.baseURL || config.url || '').hostname; } catch { return ''; } })(),
             'correlation.service': this.serviceName,
           },
         });
 
         // Get current correlation ID from active span or context
         const activeSpan = trace.getActiveSpan();
-        const correlationId = activeSpan?.attributes['correlation.id'] as string;
+        const correlationId = (activeSpan as any)?.attributes?.['correlation.id'] as string | undefined;
         
         if (correlationId) {
           config.headers[CORRELATION_ID_HEADER] = correlationId;
@@ -185,9 +185,17 @@ export class TracedHttpClient {
 }
 
 /**
- * Default traced HTTP client instance
+ * Default traced HTTP client instance (lazy singleton)
  */
-export const tracedHttpClient = new TracedHttpClient();
+let _tracedHttpClient: TracedHttpClient | undefined;
+export function getTracedHttpClient(): TracedHttpClient {
+  if (!_tracedHttpClient) {
+    _tracedHttpClient = new TracedHttpClient();
+  }
+  return _tracedHttpClient;
+}
+// Keep backward-compatible export — resolved lazily on first property access
+export { getTracedHttpClient as tracedHttpClient };
 
 /**
  * Create a traced HTTP client for a specific service
@@ -207,7 +215,7 @@ export function withTracing<T>(
     `external_service_call: ${operationName}`,
     async (span) => {
       span.setAttribute('operation.name', operationName);
-      return fn(tracedHttpClient);
+      return fn(getTracedHttpClient());
     },
     {
       kind: SpanKind.CLIENT,

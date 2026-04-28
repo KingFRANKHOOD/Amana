@@ -392,4 +392,16 @@ export class ContractService {
 
     return String(StellarSdk.scValToNative(simulation.result.retval));
   }
+
+  /** Static delegate so tests can mock via ContractService.buildConfirmDeliveryTx */
+  static buildConfirmDeliveryTx = buildConfirmDeliveryTx;
+
+  /** Static delegate so tests can mock via ContractService.buildReleaseFundsTx */
+  static buildReleaseFundsTx = buildReleaseFundsTx;
+
+  /** Instance delegate for tests that call via service instance */
+  buildConfirmDeliveryTx = buildConfirmDeliveryTx;
+
+  /** Instance delegate for tests that call via service instance */
+  buildReleaseFundsTx = buildReleaseFundsTx;
 }

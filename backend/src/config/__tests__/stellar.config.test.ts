@@ -30,6 +30,12 @@ jest.mock('@stellar/stellar-sdk', () => ({
       sendTransaction: jest.fn(),
     })),
   },
+  rpc: {
+    Server: jest.fn().mockImplementation((url: string) => ({
+      url,
+      sendTransaction: jest.fn(),
+    })),
+  },
   Networks: {
     TESTNET: 'Test SDF Network ; September 2015',
     PUBLIC: 'Public Global Stellar Network ; September 2015',

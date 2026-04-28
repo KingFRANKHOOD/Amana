@@ -5,30 +5,33 @@ import { createApp } from '../app';
 import { trace } from '@opentelemetry/api';
 
 // Mock OpenTelemetry for testing
-jest.mock('@opentelemetry/api', () => ({
-  trace: {
-    getTracer: jest.fn(() => ({
-      startSpan: jest.fn(() => ({
-        setAttributes: jest.fn(),
-        addEvent: jest.fn(),
-        recordException: jest.fn(),
-        setStatus: jest.fn(),
-        end: jest.fn(),
-      })),
-    })),
-    getActiveSpan: jest.fn(),
-    setSpan: jest.fn(() => ({})),
-    active: jest.fn(),
-  },
-  SpanKind: {
-    SERVER: 'SERVER',
-  },
-  SpanStatusCode: {
-    OK: 'OK',
-    ERROR: 'ERROR',
-  },
-  context: jest.fn(),
-}));
+jest.mock('@opentelemetry/api', () => {
+  const mockSpan = {
+    setAttributes: jest.fn(),
+    setAttribute: jest.fn(),
+    addEvent: jest.fn(),
+    recordException: jest.fn(),
+    setStatus: jest.fn(),
+    end: jest.fn(),
+  };
+  const mockTracer = { startSpan: jest.fn(() => mockSpan) };
+  const mockGetTracer = jest.fn(() => mockTracer);
+  return {
+    trace: {
+      getTracer: mockGetTracer,
+      getActiveSpan: jest.fn(),
+      setSpan: jest.fn(() => ({})),
+      active: jest.fn(),
+    },
+    getTracer: mockGetTracer,
+    SpanKind: { SERVER: 'SERVER' },
+    SpanStatusCode: { OK: 'OK', ERROR: 'ERROR' },
+    context: {
+      active: jest.fn(() => ({})),
+      with: jest.fn((_ctx: unknown, fn: () => void) => fn()),
+    },
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

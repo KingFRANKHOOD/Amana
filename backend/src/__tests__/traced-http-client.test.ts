@@ -8,6 +8,7 @@ jest.mock('@opentelemetry/api', () => ({
     getTracer: jest.fn(() => ({
       startSpan: jest.fn(() => ({
         setAttributes: jest.fn(),
+        setAttribute: jest.fn(),
         addEvent: jest.fn(),
         recordException: jest.fn(),
         setStatus: jest.fn(),
@@ -38,6 +39,9 @@ jest.mock('../config/tracing', () => ({
 }));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+// Module-level mock instance for tests that need it outside describe blocks
+let mockAxiosInstance: any;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -71,13 +75,12 @@ function createMockAxiosInstance() {
 
 describe('TracedHttpClient', () => {
   let client: TracedHttpClient;
-  let mockAxiosInstance: any;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     mockAxiosInstance = createMockAxiosInstance();
     (axios.create as jest.Mock).mockReturnValue(mockAxiosInstance);
     client = new TracedHttpClient('http://test.com', 'test-service');
-    jest.clearAllMocks();
   });
 
   describe('Constructor', () => {
@@ -169,7 +172,7 @@ describe('TracedHttpClient', () => {
     });
 
     it('should handle error responses', async () => {
-      const errorHandler = mockAxiosInstance.interceptors.response.use.mock.calls[1][0];
+      const errorHandler = mockAxiosInstance.interceptors.response.use.mock.calls[0][1];
       const error = {
         config: { otelSpan: { setAttributes: jest.fn(), setStatus: jest.fn(), end: jest.fn(), recordException: jest.fn() } },
         response: { status: 500, statusText: 'Internal Server Error' },
@@ -300,7 +303,7 @@ describe('withTracing', () => {
     const { TracingHelper } = require('../config/tracing');
 
     // Mock the implementation to call the function
-    TracingHelper.withSpan.mockImplementation((name, fn) => {
+    TracingHelper.withSpan.mockImplementation((name: string, fn: (span: unknown) => unknown) => {
       return fn({}); // Mock span
     });
 
@@ -312,13 +315,12 @@ describe('withTracing', () => {
 
 describe('Error handling', () => {
   let client: TracedHttpClient;
-  let mockAxiosInstance: any;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     mockAxiosInstance = createMockAxiosInstance();
     (axios.create as jest.Mock).mockReturnValue(mockAxiosInstance);
     client = new TracedHttpClient('http://test.com');
-    jest.clearAllMocks();
   });
 
   it('should handle request errors', async () => {
@@ -329,14 +331,14 @@ describe('Error handling', () => {
   });
 
   it('should handle network errors', async () => {
-    const errorHandler = mockAxiosInstance.interceptors.response.use.mock.calls[1][1];
+    const errorHandler = mockAxiosInstance.interceptors.response.use.mock.calls[0][1];
     const error = new Error('Network error');
 
     await expect(errorHandler(error)).rejects.toThrow('Network error');
   });
 
   it('should handle timeouts', async () => {
-    const errorHandler = mockAxiosInstance.interceptors.response.use.mock.calls[1][1];
+    const errorHandler = mockAxiosInstance.interceptors.response.use.mock.calls[0][1];
     const error = new Error('timeout of 5000ms exceeded');
 
     await expect(errorHandler(error)).rejects.toThrow('timeout of 5000ms exceeded');
@@ -344,6 +346,11 @@ describe('Error handling', () => {
 });
 
 describe('Performance and memory', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAxiosInstance = createMockAxiosInstance();
+    (axios.create as jest.Mock).mockReturnValue(mockAxiosInstance);
+  });
   it('should not create memory leaks with multiple instances', () => {
     const clients = Array.from({ length: 100 }, () => 
       new TracedHttpClient('http://test.com')

@@ -1007,7 +1007,7 @@ describe("TradeController", () => {
             ];
 
             for (const endpoint of endpoints) {
-                const res = await request(app)[endpoint.method](endpoint.path);
+                const res = await (request(app) as any)[endpoint.method](endpoint.path);
                 expect(res.status).toBe(401);
                 expect(res.body.error).toBe("Unauthorized");
             }

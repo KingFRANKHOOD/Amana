@@ -216,4 +216,7 @@ export class TradeService {
 
     return { unsignedXdr };
   }
+
+  /** Alias for listUserTrades — used by trade.controller.test.ts */
+  listTrades = this.listUserTrades.bind(this);
 }

@@ -61,7 +61,7 @@ describe("ContractService network resilience", () => {
     const result = await service.buildCreateTradeTx({
       buyerAddress,
       sellerAddress,
-      amountUsdc: "12.5",
+      amount: "12.5",
       buyerLossBps: 5000,
       sellerLossBps: 5000,
     });
@@ -173,7 +173,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress: "INVALID_ADDRESS",
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -187,7 +187,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress: "INVALID_ADDRESS",
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -200,7 +200,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 3000,
         sellerLossBps: 7000,
       });
@@ -215,7 +215,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 7000,
         sellerLossBps: 3000,
       });
@@ -230,7 +230,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -245,7 +245,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 0,
         sellerLossBps: 10000,
       });
@@ -260,7 +260,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 10000,
         sellerLossBps: 0,
       });
@@ -275,7 +275,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "999999999999.9999999",
+        amount: "999999999999.9999999",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -290,7 +290,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "0",
+        amount: "0",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -305,7 +305,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "12.5",
+        amount: "12.5",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -336,7 +336,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -349,7 +349,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -474,7 +474,7 @@ describe("ContractService XDR builders", () => {
 
       await expect(
         service.buildConfirmDeliveryTx(
-          { tradeId: "7", status: "PENDING" },
+          { tradeId: "7", status: "PENDING_SIGNATURE" },
           buyerAddress,
         ),
       ).rejects.toThrow("Trade must be FUNDED before confirm_delivery");
@@ -543,7 +543,7 @@ describe("ContractService XDR builders", () => {
 
       await expect(
         service.buildReleaseFundsTx(
-          { tradeId: "7", status: "PENDING" },
+          { tradeId: "7", status: "PENDING_SIGNATURE" },
           buyerAddress,
         ),
       ).rejects.toThrow("Trade must be DELIVERED before release_funds");
@@ -801,7 +801,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -828,7 +828,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -855,7 +855,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -882,7 +882,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -896,7 +896,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress: "INVALID",
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -926,7 +926,7 @@ describe("ContractService XDR builders", () => {
         service.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amountUsdc: "100",
+          amount: "100",
           buyerLossBps: 5000,
           sellerLossBps: 5000,
         }),
@@ -941,7 +941,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -957,7 +957,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1033,7 +1033,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1047,7 +1047,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1061,7 +1061,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1075,7 +1075,7 @@ describe("ContractService XDR builders", () => {
       const result = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
@@ -1092,7 +1092,7 @@ describe("ContractService XDR builders", () => {
       const createResult = await service.buildCreateTradeTx({
         buyerAddress,
         sellerAddress,
-        amountUsdc: "100",
+        amount: "100",
         buyerLossBps: 5000,
         sellerLossBps: 5000,
       });
