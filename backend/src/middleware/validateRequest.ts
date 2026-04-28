@@ -1,10 +1,34 @@
 import { Request, Response, NextFunction } from "express";
-import { ZodTypeAny, ZodError } from "zod";
+
+type ParseAsyncSchema = {
+  parseAsync: (input: unknown) => Promise<unknown>;
+};
+
+type ZodLikeIssue = {
+  path: Array<string | number>;
+  message: string;
+};
+
+function getZodLikeIssues(error: unknown): ZodLikeIssue[] | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const err = error as any;
+  if (Array.isArray(err.issues)) {
+    return err.issues;
+  }
+  if (Array.isArray(err.errors)) {
+    return err.errors;
+  }
+
+  return null;
+}
 
 export const validateRequest = (schema: {
-  body?: ZodTypeAny;
-  query?: ZodTypeAny;
-  params?: ZodTypeAny;
+  body?: ParseAsyncSchema;
+  query?: ParseAsyncSchema;
+  params?: ParseAsyncSchema;
 }) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -19,8 +43,9 @@ export const validateRequest = (schema: {
       }
       next();
     } catch (error) {
-      if (error instanceof ZodError) {
-        const firstError = error.errors[0];
+      const issues = getZodLikeIssues(error);
+      if (issues?.length) {
+        const firstError = issues[0];
         const fieldName = firstError.path.join(".");
         const message = fieldName ? `${fieldName}: ${firstError.message}` : firstError.message;
         return res.status(400).json({ error: message });

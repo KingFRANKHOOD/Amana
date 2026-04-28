@@ -1,4 +1,5 @@
 import { __resetRetrySleepForTests, __setRetrySleepForTests } from "../lib/retry";
+import * as StellarSdk from "@stellar/stellar-sdk";
 import { StellarService } from "../services/stellar.service";
 import { PathPaymentService } from "../services/pathPayment.service";
 
@@ -110,6 +111,17 @@ describe("PathPaymentService network resilience", () => {
     expect(sleepMock).toHaveBeenNthCalledWith(2, 2000);
   });
 
+  it("retries timeout-like 504 responses and then succeeds", async () => {
+    strictSendPathsCall
+      .mockRejectedValueOnce({ response: { status: 504 } })
+      .mockResolvedValueOnce({ records: [] });
+
+    const service = new PathPaymentService();
+    await expect(service.getPathPaymentQuote("1000", "XLM")).resolves.toEqual([]);
+    expect(strictSendPathsCall).toHaveBeenCalledTimes(2);
+    expect(sleepMock).toHaveBeenCalledWith(1000);
+  });
+
   it("does not retry 400 errors", async () => {
     strictSendPathsCall.mockRejectedValue({ response: { status: 400 } });
 
@@ -121,6 +133,21 @@ describe("PathPaymentService network resilience", () => {
     expect(sleepMock).not.toHaveBeenCalled();
   });
 
+  it("stops retrying when a terminal non-retryable error is encountered", async () => {
+    strictSendPathsCall
+      .mockRejectedValueOnce({ response: { status: 503 } })
+      .mockRejectedValueOnce({ response: { status: 503 } })
+      .mockRejectedValueOnce({ response: { status: 400 } });
+
+    const service = new PathPaymentService();
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
+      "Failed to fetch path payment quotes",
+    );
+    expect(strictSendPathsCall).toHaveBeenCalledTimes(3);
+    expect(sleepMock).toHaveBeenNthCalledWith(1, 1000);
+    expect(sleepMock).toHaveBeenNthCalledWith(2, 2000);
+  });
+
   it("bubbles timeout-like network failures after retries", async () => {
     strictSendPathsCall.mockRejectedValue(new Error("connect ETIMEDOUT"));
 
@@ -128,6 +155,27 @@ describe("PathPaymentService network resilience", () => {
     await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
       "Failed to fetch path payment quotes",
     );
+  });
+
+  it("fails clearly on malformed upstream responses", async () => {
+    strictSendPathsCall.mockResolvedValue({} as any);
+
+    const service = new PathPaymentService();
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
+      "Failed to fetch path payment quotes",
+    );
+  });
+
+  it("uses caller-provided issuer for non-native source assets", async () => {
+    strictSendPathsCall.mockResolvedValue({ records: [] });
+    const issuer = StellarSdk.Keypair.random().publicKey();
+
+    const service = new PathPaymentService();
+    await service.getPathPaymentQuote("50", "NGN", issuer);
+
+    const sourceAsset = strictSendPathsMock.mock.calls[0][0] as StellarSdk.Asset;
+    expect(sourceAsset.getCode()).toBe("NGN");
+    expect(sourceAsset.getIssuer()).toBe(issuer);
   });
 
   it("fails after exhausting retries on repeated 5xx errors", async () => {
