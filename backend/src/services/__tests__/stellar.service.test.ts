@@ -1,5 +1,5 @@
 import { StellarService } from '../stellar.service';
-import { Horizon, SorobanRpc, TransactionBuilder } from '@stellar/stellar-sdk';
+import { Horizon, rpc as SorobanRpc, TransactionBuilder } from '@stellar/stellar-sdk';
 
 /**
  * Mock Setup for Stellar SDK Integration Tests
@@ -29,6 +29,11 @@ jest.mock('@stellar/stellar-sdk', () => ({
       sendTransaction: jest.fn(),
     })),
   },
+  rpc: {
+    Server: jest.fn().mockImplementation(() => ({
+      sendTransaction: jest.fn(),
+    })),
+  },
   Networks: {
     TESTNET: 'Test SDF Network ; September 2015',
     PUBLIC: 'Public Global Stellar Network ; September 2015',
@@ -36,6 +41,12 @@ jest.mock('@stellar/stellar-sdk', () => ({
   TransactionBuilder: {
     fromXDR: jest.fn(),
   },
+  StrKey: {
+    isValidEd25519PublicKey: jest.fn((key: string) => /^G[A-Z2-7]{55}$/.test(key)),
+    isValidEd25519SecretSeed: jest.fn((key: string) => /^S[A-Z2-7]{55}$/.test(key)),
+  },
+  BASE_FEE: '100',
+  xdr: {},
 }));
 
 // Mock the stellar config module

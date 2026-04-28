@@ -1,11 +1,4 @@
-import { trace, SpanKind, SpanStatusCode } from '@opentelemetry/api';
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { Resource } from '@opentelemetry/resources';
-import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
-import { JaegerExporter } from '@opentelemetry/exporter-jaeger';
-import { ZipkinExporter } from '@opentelemetry/exporter-zipkin';
-import { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
+import { trace, SpanKind, SpanStatusCode, Span } from '@opentelemetry/api';
 import { env } from './env';
 
 /**
@@ -21,55 +14,68 @@ import { env } from './env';
 const service_name = 'amana-backend';
 const service_version = process.env.npm_package_version || '1.0.0';
 
-// Configure exporters based on environment
-const exporters = [];
+// Initialize the OpenTelemetry SDK lazily (dynamic require avoids module-load side effects)
+let sdk: { start(): void; shutdown(): Promise<void> } | undefined;
 
-// Jaeger exporter (primary)
-if (env.JAEGER_ENDPOINT || env.NODE_ENV === 'production') {
-  const jaegerExporter = new JaegerExporter({
-    endpoint: env.JAEGER_ENDPOINT || 'http://localhost:14268/api/traces',
+function buildSdk() {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { NodeSDK } = require('@opentelemetry/sdk-node');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Resource } = require('@opentelemetry/resources');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { JaegerExporter } = require('@opentelemetry/exporter-jaeger');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ZipkinExporter } = require('@opentelemetry/exporter-zipkin');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
+
+  const exporters: any[] = [];
+
+  if (env.JAEGER_ENDPOINT || env.NODE_ENV === 'production') {
+    exporters.push(new JaegerExporter({
+      endpoint: env.JAEGER_ENDPOINT || 'http://localhost:14268/api/traces',
+    }));
+  }
+
+  if (env.ZIPKIN_ENDPOINT) {
+    exporters.push(new ZipkinExporter({ url: env.ZIPKIN_ENDPOINT }));
+  }
+
+  let prometheusExporter: any;
+  if (env.PROMETHEUS_PORT || env.NODE_ENV === 'production') {
+    prometheusExporter = new PrometheusExporter({
+      port: Number(env.PROMETHEUS_PORT) || 9464,
+      endpoint: '/metrics',
+    });
+  }
+
+  return new NodeSDK({
+    resource: new Resource({
+      [SemanticResourceAttributes.SERVICE_NAME]: service_name,
+      [SemanticResourceAttributes.SERVICE_VERSION]: service_version,
+      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: env.NODE_ENV || 'development',
+    }),
+    traceExporter: exporters.length > 0 ? exporters[0] : undefined,
+    metricReader: prometheusExporter,
+    instrumentations: [getNodeAutoInstrumentations()],
   });
-  exporters.push(jaegerExporter);
 }
-
-// Zipkin exporter (fallback)
-if (env.ZIPKIN_ENDPOINT) {
-  const zipkinExporter = new ZipkinExporter({
-    url: env.ZIPKIN_ENDPOINT,
-  });
-  exporters.push(zipkinExporter);
-}
-
-// Prometheus metrics exporter
-let prometheusExporter: PrometheusExporter | undefined;
-if (env.PROMETHEUS_PORT || env.NODE_ENV === 'production') {
-  prometheusExporter = new PrometheusExporter({
-    port: Number(env.PROMETHEUS_PORT) || 9464,
-    endpoint: '/metrics',
-  });
-  exporters.push(prometheusExporter);
-}
-
-// Initialize the OpenTelemetry SDK
-const sdk = new NodeSDK({
-  resource: new Resource({
-    [SemanticResourceAttributes.SERVICE_NAME]: service_name,
-    [SemanticResourceAttributes.SERVICE_VERSION]: service_version,
-    [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: env.NODE_ENV || 'development',
-  }),
-  traceExporter: exporters.length > 0 ? exporters[0] : undefined,
-  metricReader: prometheusExporter,
-  instrumentations: [getNodeAutoInstrumentations()],
-});
 
 // Initialize tracing
 export function initializeTracing(): void {
   try {
-    sdk.start();
+    const newSdk = buildSdk();
+    sdk = newSdk;
+    newSdk.start();
     console.log('OpenTelemetry initialized successfully');
-    
-    if (prometheusExporter) {
-      console.log(`Prometheus metrics available at http://localhost:${env.PROMETHEUS_PORT || 9464}/metrics`);
+
+    const prometheusPort = env.PROMETHEUS_PORT || 9464;
+    if (env.PROMETHEUS_PORT || env.NODE_ENV === 'production') {
+      console.log(`Prometheus metrics available at http://localhost:${prometheusPort}/metrics`);
     }
   } catch (error) {
     console.error('Failed to initialize OpenTelemetry:', error);
@@ -87,7 +93,7 @@ export class TracingHelper {
    */
   static async withSpan<T>(
     name: string,
-    fn: (span: trace.Span) => Promise<T>,
+    fn: (span: Span) => Promise<T>,
     options?: {
       kind?: SpanKind;
       attributes?: Record<string, string | number | boolean>;
@@ -119,7 +125,7 @@ export class TracingHelper {
    */
   static withSyncSpan<T>(
     name: string,
-    fn: (span: trace.Span) => T,
+    fn: (span: Span) => T,
     options?: {
       kind?: SpanKind;
       attributes?: Record<string, string | number | boolean>;
@@ -183,14 +189,14 @@ export class TracingHelper {
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  sdk.shutdown().then(
+  sdk?.shutdown().then(
     () => console.log('OpenTelemetry shut down successfully'),
     (err) => console.error('Error shutting down OpenTelemetry', err)
   );
 });
 
 process.on('SIGINT', () => {
-  sdk.shutdown().then(
+  sdk?.shutdown().then(
     () => console.log('OpenTelemetry shut down successfully'),
     (err) => console.error('Error shutting down OpenTelemetry', err)
   );

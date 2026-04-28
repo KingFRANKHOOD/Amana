@@ -51,8 +51,10 @@ import { EventType, EVENT_TO_STATUS } from "../types/events";
 function createMockPrisma() {
   const mockTrade = {
     upsert: jest.fn().mockResolvedValue({}),
+    create: jest.fn().mockResolvedValue({}),
     findUnique: jest.fn().mockResolvedValue(null),
     findMany: jest.fn().mockResolvedValue([]),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   };
 
   const mockProcessedLedger = {
@@ -61,12 +63,26 @@ function createMockPrisma() {
     create: jest.fn().mockResolvedValue({}),
   };
 
-  return {
+  const mockProcessedEvent = {
+    findUnique: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue({}),
+    upsert: jest.fn().mockResolvedValue({}),
+  };
+
+  const mockObj = {
     trade: mockTrade,
     processedLedger: mockProcessedLedger,
+    processedEvent: mockProcessedEvent,
+    $transaction: jest.fn().mockImplementation(async (fn: (tx: any) => Promise<any>) => fn({
+      trade: mockTrade,
+      processedLedger: mockProcessedLedger,
+      processedEvent: mockProcessedEvent,
+    })),
     $connect: jest.fn().mockResolvedValue(undefined),
     $disconnect: jest.fn().mockResolvedValue(undefined),
   } as any;
+
+  return mockObj;
 }
 
 /**

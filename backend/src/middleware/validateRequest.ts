@@ -1,11 +1,10 @@
 import { Request, Response, NextFunction } from "express";
-import { AnyZodObject, ZodError } from "zod";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ZodTypeAny, ZodError } from "zod";
 
 export const validateRequest = (schema: {
-  body?: AnyZodObject;
-  query?: AnyZodObject;
-  params?: AnyZodObject;
+  body?: ZodTypeAny;
+  query?: ZodTypeAny;
+  params?: ZodTypeAny;
 }) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -21,17 +20,10 @@ export const validateRequest = (schema: {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        return next(
-          new AppError(
-            ErrorCode.VALIDATION_ERROR,
-            "Validation failed",
-            400,
-            error.errors.map((e) => ({
-              path: e.path.join("."),
-              message: e.message,
-            }))
-          )
-        );
+        const firstError = error.errors[0];
+        const fieldName = firstError.path.join(".");
+        const message = fieldName ? `${fieldName}: ${firstError.message}` : firstError.message;
+        return res.status(400).json({ error: message });
       }
       next(error);
     }

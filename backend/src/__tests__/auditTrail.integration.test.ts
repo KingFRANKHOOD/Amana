@@ -17,9 +17,22 @@ const STRANGER = "GCSTRANGER00000000000000000000000000000000000000000000000";
 const TRADE_ID = "trade-001";
 
 const JWT_SECRET = "test-secret-at-least-32-characters-long";
+const JWT_ISSUER = "amana";
+const JWT_AUDIENCE = "amana-api";
 
 function makeToken(walletAddress: string) {
-    return jwt.sign({ walletAddress }, JWT_SECRET);
+    const now = Math.floor(Date.now() / 1000);
+    return jwt.sign(
+        {
+            walletAddress,
+            jti: `jti-${walletAddress}-${Math.random()}`,
+            iss: JWT_ISSUER,
+            aud: JWT_AUDIENCE,
+            nbf: now - 1,
+        },
+        JWT_SECRET,
+        { algorithm: "HS256" },
+    );
 }
 
 const t1 = new Date("2026-03-01T10:00:00.000Z");
@@ -40,6 +53,8 @@ describe("Audit Trail Routes — GET /trades/:id/history", () => {
 
     beforeAll(() => {
         process.env.JWT_SECRET = JWT_SECRET;
+        process.env.JWT_ISSUER = JWT_ISSUER;
+        process.env.JWT_AUDIENCE = JWT_AUDIENCE;
     });
 
     beforeEach(() => {

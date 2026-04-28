@@ -1,4 +1,4 @@
-import { trace, SpanKind, SpanStatusCode, context } from '@opentelemetry/api';
+import { trace, SpanKind, SpanStatusCode, context, Span } from '@opentelemetry/api';
 import { NextFunction, Request, Response } from 'express';
 import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, TracedRequest } from './correlationId.middleware';
 import { TracingHelper } from '../config/tracing';
@@ -53,8 +53,8 @@ export function tracingMiddleware(
   const ctx = trace.setSpan(context.active(), span);
   
   // Store original end method to intercept response completion
-  const originalEnd = res.end;
-  res.end = function(this: Response, ...args: any[]) {
+  const originalEnd = res.end.bind(res) as typeof res.end;
+  (res as any).end = function(this: Response, ...args: any[]) {
     // Add response attributes to span
     span.setAttributes({
       'http.status_code': res.statusCode,
@@ -87,12 +87,12 @@ export function tracingMiddleware(
     span.end();
 
     // Call original end
-    originalEnd.apply(this, args);
+    return originalEnd.apply(this, args as Parameters<typeof res.end>);
   };
 
   // Store original res.json method to intercept JSON responses
-  const originalJson = res.json;
-  res.json = function(this: Response, ...args: any[]) {
+  const originalJson = res.json.bind(res) as typeof res.json;
+  (res as any).json = function(this: Response, ...args: any[]) {
     // Add response body size for monitoring (only if reasonable size)
     if (args[0] && typeof args[0] === 'object') {
       try {
@@ -102,7 +102,7 @@ export function tracingMiddleware(
         // Ignore serialization errors
       }
     }
-    return originalJson.apply(this, args);
+    return originalJson.apply(this, args as [body?: any]);
   };
 
   // Handle request errors
@@ -123,7 +123,7 @@ export function tracingMiddleware(
 /**
  * Utility to get the current span from the request
  */
-export function getRequestSpan(req: Request): trace.Span | undefined {
+export function getRequestSpan(req: Request): Span | undefined {
   return (req as any).otelSpan;
 }
 
@@ -157,10 +157,10 @@ export function businessLogicTracing(operationName: string) {
       span.addEvent(`business_logic_start`, { operation: operationName });
       
       // Store original end to mark business logic completion
-      const originalEnd = res.end;
-      res.end = function(this: Response, ...args: any[]) {
+      const originalEnd = res.end.bind(res) as typeof res.end;
+      (res as any).end = function(this: Response, ...args: any[]) {
         span.addEvent(`business_logic_end`, { operation: operationName });
-        originalEnd.apply(this, args);
+        return originalEnd.apply(this, args as Parameters<typeof res.end>);
       };
     }
     next();

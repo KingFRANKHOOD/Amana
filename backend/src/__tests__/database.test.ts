@@ -13,6 +13,10 @@
 type UserRecord = { id: number; walletAddress: string; displayName: string; createdAt: Date; updatedAt: Date };
 type TradeRecord = { id: number; tradeId: string; buyerAddress: string; sellerAddress: string; amountUsdc: string; status: string; buyerLossBps: number; sellerLossBps: number; createdAt: Date; updatedAt: Date };
 type DisputeRecord = { id: number; tradeId: string; initiator: string; reason: string; status: string; resolvedAt: Date | null; createdAt: Date; updatedAt: Date };
+type ManifestRecord = { id: number; tradeId: string; [key: string]: unknown };
+type EvidenceRecord = { id: number; tradeId: string; [key: string]: unknown };
+type VaultRecord = { id: number; vaultId: string; ownerAddress: string; [key: string]: unknown };
+type GoalRecord = { id: number; goalId: string; vaultId: string; [key: string]: unknown };
 
 /**
  * Simulates the $use middleware from db.ts that lowercases wallet addresses.
@@ -38,9 +42,17 @@ function createInMemoryDb() {
   let userIdSeq = 1;
   let tradeIdSeq = 1;
   let disputeIdSeq = 1;
+  let manifestIdSeq = 1;
+  let evidenceIdSeq = 1;
+  let vaultIdSeq = 1;
+  let goalIdSeq = 1;
   const users: UserRecord[] = [];
   const trades: TradeRecord[] = [];
   const disputes: DisputeRecord[] = [];
+  const manifests: ManifestRecord[] = [];
+  const evidences: EvidenceRecord[] = [];
+  const vaults: VaultRecord[] = [];
+  const goals: GoalRecord[] = [];
 
   const now = () => new Date();
 
@@ -78,6 +90,12 @@ function createInMemoryDb() {
     trade: {
       create: ({ data }: { data: Partial<TradeRecord> }) => {
         const processed = applyLowercaseMiddleware('Trade', data as Record<string, unknown>);
+        // FK constraint: buyer and seller must exist
+        const buyerExists = users.find(u => u.walletAddress === processed.buyerAddress);
+        const sellerExists = users.find(u => u.walletAddress === processed.sellerAddress);
+        if (!buyerExists || !sellerExists) {
+          return Promise.reject(new Error('Foreign key constraint failed: buyer or seller not found'));
+        }
         const record: TradeRecord = {
           id: tradeIdSeq++,
           tradeId: processed.tradeId as string,
@@ -102,11 +120,25 @@ function createInMemoryDb() {
         if (include.seller) result.seller = users.find(u => u.walletAddress === trade.sellerAddress) ?? null;
         return Promise.resolve(result);
       },
+      delete: ({ where }: { where: { tradeId?: string } }) => {
+        const idx = trades.findIndex(t => t.tradeId === where.tradeId);
+        if (idx === -1) return Promise.reject(new Error('Record not found'));
+        const [removed] = trades.splice(idx, 1);
+        // cascade: remove related records
+        const tid = removed.tradeId;
+        for (let i = manifests.length - 1; i >= 0; i--) { if (manifests[i].tradeId === tid) manifests.splice(i, 1); }
+        for (let i = evidences.length - 1; i >= 0; i--) { if (evidences[i].tradeId === tid) evidences.splice(i, 1); }
+        for (let i = disputes.length - 1; i >= 0; i--) { if (disputes[i].tradeId === tid) disputes.splice(i, 1); }
+        return Promise.resolve(removed);
+      },
       deleteMany: () => { trades.length = 0; return Promise.resolve({ count: 0 }); },
     },
     dispute: {
       create: ({ data }: { data: Partial<DisputeRecord> }) => {
         const processed = applyLowercaseMiddleware('Dispute', data as Record<string, unknown>);
+        // Unique constraint: one dispute per trade
+        const existing = disputes.find(d => d.tradeId === processed.tradeId);
+        if (existing) return Promise.reject(new Error('Unique constraint failed: one dispute per trade'));
         const record: DisputeRecord = {
           id: disputeIdSeq++,
           tradeId: processed.tradeId as string,
@@ -120,7 +152,63 @@ function createInMemoryDb() {
         disputes.push(record);
         return Promise.resolve(record);
       },
+      findUnique: ({ where }: { where: { tradeId?: string } }) => {
+        const found = disputes.find(d => d.tradeId === where.tradeId);
+        return Promise.resolve(found ?? null);
+      },
       deleteMany: () => { disputes.length = 0; return Promise.resolve({ count: 0 }); },
+    },
+    deliveryManifest: {
+      create: ({ data }: { data: Partial<ManifestRecord> }) => {
+        const record: ManifestRecord = { id: manifestIdSeq++, tradeId: data.tradeId as string, ...data };
+        manifests.push(record);
+        return Promise.resolve(record);
+      },
+      findUnique: ({ where }: { where: { tradeId?: string } }) => {
+        const found = manifests.find(m => m.tradeId === where.tradeId);
+        return Promise.resolve(found ?? null);
+      },
+      deleteMany: () => { manifests.length = 0; return Promise.resolve({ count: 0 }); },
+    },
+    tradeEvidence: {
+      create: ({ data }: { data: Partial<EvidenceRecord> }) => {
+        const record: EvidenceRecord = { id: evidenceIdSeq++, tradeId: data.tradeId as string, ...data };
+        evidences.push(record);
+        return Promise.resolve(record);
+      },
+      findMany: ({ where }: { where: { tradeId?: string } }) => {
+        const found = evidences.filter(e => e.tradeId === where.tradeId);
+        return Promise.resolve(found);
+      },
+      deleteMany: () => { evidences.length = 0; return Promise.resolve({ count: 0 }); },
+    },
+    vault: {
+      create: ({ data }: { data: Partial<VaultRecord> }) => {
+        const record: VaultRecord = { id: vaultIdSeq++, vaultId: data.vaultId as string, ownerAddress: data.ownerAddress as string, balanceUsdc: data.balanceUsdc ?? '0', ...data };
+        vaults.push(record);
+        return Promise.resolve(record);
+      },
+      delete: ({ where }: { where: { vaultId?: string } }) => {
+        const idx = vaults.findIndex(v => v.vaultId === where.vaultId);
+        if (idx === -1) return Promise.reject(new Error('Record not found'));
+        const [removed] = vaults.splice(idx, 1);
+        // cascade: remove goals
+        for (let i = goals.length - 1; i >= 0; i--) { if (goals[i].vaultId === removed.vaultId) goals.splice(i, 1); }
+        return Promise.resolve(removed);
+      },
+      deleteMany: () => { vaults.length = 0; return Promise.resolve({ count: 0 }); },
+    },
+    goal: {
+      create: ({ data }: { data: Partial<GoalRecord> }) => {
+        const record: GoalRecord = { id: goalIdSeq++, goalId: data.goalId as string, vaultId: data.vaultId as string, status: data.status ?? 'ACTIVE', currentAmountUsdc: data.currentAmountUsdc ?? '0', ...data };
+        goals.push(record);
+        return Promise.resolve(record);
+      },
+      findUnique: ({ where }: { where: { goalId?: string } }) => {
+        const found = goals.find(g => g.goalId === where.goalId);
+        return Promise.resolve(found ?? null);
+      },
+      deleteMany: () => { goals.length = 0; return Promise.resolve({ count: 0 }); },
     },
     $disconnect: () => Promise.resolve(),
   };
