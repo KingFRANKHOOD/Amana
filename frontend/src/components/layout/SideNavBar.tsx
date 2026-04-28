@@ -104,6 +104,11 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+const NAV_ITEM_BASE =
+  "flex items-center py-3 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2";
+const NAV_ITEM_ACTIVE = "bg-surface-2 text-gold shadow-elev-1";
+const NAV_ITEM_INACTIVE = "text-text-secondary hover:text-text-primary hover:bg-surface-2/60";
+
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-6)}`;
 }
@@ -163,7 +168,7 @@ export function SideNavBar({
         role="navigation"
         aria-label="Main navigation"
       >
-        <ul className="space-y-1">
+        <ul className="space-y-1 px-2">
           {NAV_ITEMS.map((item) => {
             const isActive =
               activePath === item.href || activePath.startsWith(`${item.href}/`);
@@ -173,15 +178,9 @@ export function SideNavBar({
                 <Link
                   href={item.href}
                   aria-current={isActive ? "page" : undefined}
-                  className={`flex items-center ${
+                  className={`${NAV_ITEM_BASE} ${
                     collapsed ? "justify-center px-2" : "px-4"
-                  } py-3 border-l-4 transition-all focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2 ${
-                    isActive
-                      // Active: surface-2 lift + gold left border + elev-2 shadow
-                      ? "border-l-gold bg-surface-2 text-gold shadow-elev-2 hover:bg-surface-2/80"
-                      // Inactive: hover lifts to surface-2/30
-                      : "border-transparent text-text-secondary hover:text-text-primary hover:bg-surface-2/30"
-                  }`}
+                  } ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_INACTIVE}`}
                   title={collapsed ? item.label : undefined}
                 >
                   <span className="w-5 h-5 flex items-center justify-center">
