@@ -14,6 +14,7 @@ import { createEvidenceRouter } from "./routes/evidence.routes";
 import { createAuditTrailRouter } from "./routes/auditTrail.routes";
 import { createGoalsRouter } from "./routes/goals.routes";
 import { createHealthRouter } from "./routes/health.routes";
+import { disputeRoutes } from "./routes/dispute.routes";
 import userRoutes from "./routes/user.routes";
 
 /** Parse the CORS_ORIGINS env var into a usable allowlist.
@@ -107,6 +108,9 @@ export function createApp(): express.Application {
 
   // Goals analytics: GET /goals
   app.use("/goals", createGoalsRouter());
+
+  // Disputes: GET /disputes
+  app.use("/disputes", disputeRoutes);
 
   // Error handler is registered last so it catches errors from all routes,
   // including any routes added to the app after createApp() returns.

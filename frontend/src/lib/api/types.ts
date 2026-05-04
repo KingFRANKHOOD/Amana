@@ -84,3 +84,28 @@ export interface PathPaymentQuote {
   destination_asset_code?: string;
   path: unknown[];
 }
+
+export interface DisputeResponse {
+  id: number;
+  tradeId: string;
+  initiator: string;
+  reason: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  trade: {
+    buyerAddress: string;
+    sellerAddress: string;
+    amountUsdc: string;
+  };
+}
+
+export interface DisputeListResponse {
+  items: DisputeResponse[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
