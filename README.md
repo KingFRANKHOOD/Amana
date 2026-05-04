@@ -50,6 +50,14 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 4. `npm install` (to install new OpenTelemetry dependencies)
 5. `npm run dev`
 
+### Backend API docs
+
+- Source of truth: `backend/src/docs/openapi.yaml`
+- Dev Swagger UI: `http://localhost:4000/api/docs`
+- JSON export: `http://localhost:4000/api/docs/openapi.json`
+
+The backend writes `backend/src/docs/openapi.json` from the YAML spec in non-production runs so reviewers can inspect either format.
+
 ### Contracts setup
 
 1. `cd contracts/amana_escrow`
