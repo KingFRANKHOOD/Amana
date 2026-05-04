@@ -13,6 +13,8 @@ interface FormFieldProps {
   children: React.ReactElement;
 }
 
+export type { FormFieldProps };
+
 interface FieldChildProps {
   id?: string;
   "aria-invalid"?: boolean;
