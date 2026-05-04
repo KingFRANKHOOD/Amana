@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useAnalytics } from "@/components/AnalyticsProvider";
+import { useToast } from "@/hooks/useToast";
 import { api, ApiError, TradeResponse } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
@@ -68,6 +69,7 @@ function TradesTableSkeleton() {
 export default function TradesPage() {
   const { token, isAuthenticated } = useAuth();
   const { trackApiFailure, trackFunnelStep } = useAnalytics();
+  const { addToast } = useToast();
   const [activeFilter, setActiveFilter] = useState<TradeStatus>("all");
   const [page, setPage] = useState(1);
   const [trades, setTrades] = useState<TradeResponse[]>([]);
@@ -144,7 +146,37 @@ export default function TradesPage() {
        * duplicate "Trades" heading. The Create Trade action and filter tabs
        * remain as page-specific controls within the single shell.
        */}
-      <div className="flex items-center justify-end mb-6">
+      <div className="flex items-center justify-end gap-2 mb-6">
+        <div className="hidden md:flex items-center gap-2 mr-2 border-r border-border-default pr-4">
+          <button
+            type="button"
+            onClick={() => addToast({ type: "success", title: "Success", message: "Trade completed successfully!" })}
+            className="px-3 py-1.5 rounded-md bg-status-success/10 border border-status-success/30 text-status-success text-xs font-medium hover:bg-status-success/20 transition-colors"
+          >
+            Success
+          </button>
+          <button
+            type="button"
+            onClick={() => addToast({ type: "error", title: "Error", message: "Failed to complete trade." })}
+            className="px-3 py-1.5 rounded-md bg-status-danger/10 border border-status-danger/30 text-status-danger text-xs font-medium hover:bg-status-danger/20 transition-colors"
+          >
+            Error
+          </button>
+          <button
+            type="button"
+            onClick={() => addToast({ type: "warning", title: "Warning", message: "Trade is disputed." })}
+            className="px-3 py-1.5 rounded-md bg-status-warning/10 border border-status-warning/30 text-status-warning text-xs font-medium hover:bg-status-warning/20 transition-colors"
+          >
+            Warning
+          </button>
+          <button
+            type="button"
+            onClick={() => addToast({ type: "info", title: "Info", message: "New message received." })}
+            className="px-3 py-1.5 rounded-md bg-status-info/10 border border-status-info/30 text-status-info text-xs font-medium hover:bg-status-info/20 transition-colors"
+          >
+            Info
+          </button>
+        </div>
         <Link href="/trades/create">
           <Button variant="primary">Create Trade</Button>
         </Link>
