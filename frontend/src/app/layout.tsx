@@ -7,6 +7,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AnalyticsProvider } from "@/components/AnalyticsProvider";
+import { ToastContainer } from "@/components/ui/ToastContainer";
+import { ToastProvider } from "@/hooks/useToast";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,7 +43,10 @@ export default function RootLayout({
       >
         <AnalyticsProvider>
           <AuthProvider>
-            <AppShell>{children}</AppShell>
+            <ToastProvider>
+              <AppShell>{children}</AppShell>
+              <ToastContainer />
+            </ToastProvider>
           </AuthProvider>
         </AnalyticsProvider>
       </body>
