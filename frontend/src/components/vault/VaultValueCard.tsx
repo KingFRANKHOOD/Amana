@@ -1,5 +1,8 @@
+"use client";
+import { useState } from "react";
 import { BentoCard } from "@/components/ui/BentoCard";
 import { Shield, Key } from "lucide-react";
+import { LegalDisclaimerModal } from "@/components/ui/LegalDisclaimerModal";
 
 interface VaultValueCardProps {
   value: number;
@@ -14,6 +17,8 @@ export function VaultValueCard({
   isInsured,
   onReleaseFunds,
 }: VaultValueCardProps) {
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+
   const formattedValue = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currency,
@@ -23,6 +28,13 @@ export function VaultValueCard({
 
   return (
     <BentoCard title="" icon={null} glowVariant="emerald" className="h-full">
+      <LegalDisclaimerModal
+        isOpen={showDisclaimer}
+        onAccept={() => { setShowDisclaimer(false); onReleaseFunds?.(); }}
+        onDecline={() => setShowDisclaimer(false)}
+        lossRatio={{ buyer: 5000, seller: 5000 }}
+        tradeValueUsdc={String(value)}
+      />
       <div className="flex flex-col w-76 h-[335.13px]">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-semibold tracking-widest text-text-secondary uppercase">
@@ -56,7 +68,7 @@ export function VaultValueCard({
         )}
 
         <button
-          onClick={onReleaseFunds}
+          onClick={() => setShowDisclaimer(true)}
           className="mt-auto w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold-hover text-text-inverse font-semibold py-3 px-6 rounded-xl transition-colors"
         >
           <Key className="w-5 h-5" />

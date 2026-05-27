@@ -7,6 +7,7 @@ import { useTrade } from "../TradeContext";
 import { useAuth } from "@/hooks/useAuth";
 import { api, apiConfig, ApiError } from "@/lib/api";
 import Link from "next/link";
+import { LegalDisclaimerModal } from "@/components/ui/LegalDisclaimerModal";
 
 type Row = { label: string; value: string };
 
@@ -27,6 +28,7 @@ export default function Step3Review() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [tradeId, setTradeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   const qty = parseFloat(data.quantity);
   const price = parseFloat(data.pricePerUnit);
@@ -49,6 +51,11 @@ export default function Step3Review() {
 
   const buyerLossBps = Math.round(data.buyerRatio * 100);
   const sellerLossBps = Math.round(data.sellerRatio * 100);
+
+  const handleDisclaimerAccept = () => {
+    setShowDisclaimer(false);
+    void handleSubmit();
+  };
 
   const handleSubmit = async () => {
     if (!isAuthenticated || !token) {
@@ -208,6 +215,14 @@ export default function Step3Review() {
         <p className="text-status-danger text-sm text-center">{error}</p>
       )}
 
+      <LegalDisclaimerModal
+        isOpen={showDisclaimer}
+        onAccept={handleDisclaimerAccept}
+        onDecline={() => setShowDisclaimer(false)}
+        lossRatio={{ buyer: data.buyerRatio * 100, seller: data.sellerRatio * 100 }}
+        tradeValueCngn={amountCngn}
+      />
+
       <div className="flex gap-3">
         <button
           disabled={loading}
@@ -218,7 +233,7 @@ export default function Step3Review() {
         </button>
         <button
           disabled={loading || !isFormValid}
-          onClick={handleSubmit}
+          onClick={() => setShowDisclaimer(true)}
           className="flex-1 h-12 rounded-full bg-gradient-gold-cta text-text-inverse font-semibold disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {loading ? (

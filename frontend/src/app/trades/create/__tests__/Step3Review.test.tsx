@@ -14,6 +14,11 @@ jest.mock('@/hooks/useAuth', () => ({
     }),
 }));
 
+jest.mock('@radix-ui/react-dialog', () => {
+    const actual = jest.requireActual('@radix-ui/react-dialog');
+    return { ...actual };
+});
+
 jest.mock('@/lib/api', () => ({
     api: {
         trades: {
@@ -157,6 +162,29 @@ describe('Step3Review', () => {
             await user.click(backButton);
 
             expect(backButton).toBeInTheDocument();
+        });
+    });
+
+    describe('legal disclaimer modal', () => {
+        it('should open disclaimer modal when submit button is clicked', async () => {
+            const user = userEvent.setup();
+            renderWithProvider();
+
+            const submitButton = screen.getByRole('button', { name: /lock funds & create trade/i });
+            await user.click(submitButton);
+
+            expect(screen.getByText(/loss-sharing terms/i)).toBeInTheDocument();
+        });
+
+        it('should close disclaimer modal when decline is clicked', async () => {
+            const user = userEvent.setup();
+            renderWithProvider();
+
+            await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
+            expect(screen.getByText(/loss-sharing terms/i)).toBeInTheDocument();
+
+            await user.click(screen.getByRole('button', { name: /decline/i }));
+            expect(screen.queryByText(/loss-sharing terms/i)).not.toBeInTheDocument();
         });
     });
 
