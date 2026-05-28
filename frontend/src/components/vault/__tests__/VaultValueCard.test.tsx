@@ -11,6 +11,16 @@ jest.mock('@/components/ui/BentoCard', () => ({
     ),
 }));
 
+jest.mock('@/components/ui/LegalDisclaimerModal', () => ({
+    LegalDisclaimerModal: ({ isOpen, onAccept, onDecline }: { isOpen: boolean; onAccept: () => void; onDecline: () => void }) =>
+        isOpen ? (
+            <div data-testid="legal-disclaimer-modal">
+                <button onClick={onAccept}>Accept &amp; Proceed</button>
+                <button onClick={onDecline}>Decline</button>
+            </div>
+        ) : null,
+}));
+
 describe('VaultValueCard Component', () => {
     const defaultProps = {
         value: 2480000,
@@ -80,7 +90,24 @@ describe('VaultValueCard Component', () => {
         const button = screen.getByText('Release Funds');
         fireEvent.click(button);
 
+        // Clicking opens the disclaimer modal first — onReleaseFunds not called yet
+        expect(onReleaseFunds).not.toHaveBeenCalled();
+        expect(screen.getByTestId('legal-disclaimer-modal')).toBeInTheDocument();
+
+        // Accepting the modal triggers onReleaseFunds
+        fireEvent.click(screen.getByText('Accept & Proceed'));
         expect(onReleaseFunds).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call onReleaseFunds when disclaimer is declined', () => {
+        const onReleaseFunds = jest.fn();
+        render(<VaultValueCard {...defaultProps} onReleaseFunds={onReleaseFunds} />);
+
+        fireEvent.click(screen.getByText('Release Funds'));
+        fireEvent.click(screen.getByText('Decline'));
+
+        expect(onReleaseFunds).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('legal-disclaimer-modal')).not.toBeInTheDocument();
     });
 
     it('renders the key icon in the Release Funds button', () => {
