@@ -31,6 +31,23 @@ export const listTradesQuerySchema = z.object({
   sort: z.string().optional(),
 });
 
-export const initiateDisputeSchema = z.object({
-  reason: z.string().min(10, "Reason must be at least 10 characters"),
-});
+export const initiateDisputeSchema = z
+  .object({
+    reason: z.string().min(10, "Reason must be at least 10 characters"),
+    category: z
+      .string()
+      .trim()
+      .min(1, "Category string is required")
+      .max(100, "Category must be 100 characters or fewer")
+      .optional(),
+    categoryId: z.number().int().positive("categoryId must be a positive integer").optional(),
+  })
+  .superRefine((data: { category?: string; categoryId?: number }, ctx: z.RefinementCtx) => {
+    if (!data.category && data.categoryId === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Category string is required",
+        path: ["category"],
+      });
+    }
+  });

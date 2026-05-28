@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 
 import Link from "next/link";
+import { signTransaction } from "@stellar/freighter-api";
 import {
   AuditLogCard,
   ContractManifestCard,
@@ -15,6 +16,8 @@ import { DriverManifestForm, type DriverManifestData } from "@/components/ui";
 import { useAuth } from "@/hooks/useAuth";
 import {
   api,
+  apiConfig,
+  ApiError,
   type TradeStatsResponse,
   type TradeListResponse,
 } from "@/lib/api";
@@ -66,6 +69,8 @@ export default function VaultPage() {
   const [manifestData, setManifestData] = useState<DriverManifestData | null>(
     null,
   );
+  const [manifestSubmitting, setManifestSubmitting] = useState(false);
+  const [manifestStatus, setManifestStatus] = useState<string | null>(null);
 
   const fetchVaultData = useCallback(async () => {
     if (!token) return;
@@ -126,6 +131,71 @@ export default function VaultPage() {
       metadata: "Connect wallet to view",
     },
   ];
+
+  const manifestTrade =
+    recentTrades?.items.find((trade) => ["FUNDED", "DELIVERED"].includes(trade.status)) ??
+    recentTrades?.items[0];
+
+  const handleManifestComplete = async (data: DriverManifestData) => {
+    if (!token || !manifestTrade) {
+      setManifestStatus("Connect your wallet and open a funded trade first.");
+      return;
+    }
+
+    setManifestSubmitting(true);
+    setManifestStatus(null);
+
+    try {
+      const expectedDeliveryAt =
+        manifestTrade.eta ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const response = await api.trades.submitManifest(token, manifestTrade.tradeId, {
+        driverName: data.driverName,
+        driverIdNumber: data.driverPhone,
+        vehicleRegistration: data.licensePlate,
+        routeDescription: "Driver manifest submitted from vault.",
+        expectedDeliveryAt,
+      });
+
+      const signResult = await signTransaction(response.unsignedXdr, {
+        networkPassphrase: apiConfig.getStellarNetworkPassphrase(),
+      });
+
+      if (signResult.error !== undefined) {
+        throw new Error(signResult.error.message || "Failed to sign manifest transaction");
+      }
+      if (!signResult.signedTxXdr) {
+        throw new Error("No signed manifest transaction returned");
+      }
+
+      const submitResponse = await fetch(apiConfig.getStellarRpcUrl(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "sendTransaction",
+          params: { transaction: signResult.signedTxXdr },
+        }),
+      });
+      const submitResult = await submitResponse.json();
+
+      if (submitResult.error) {
+        throw new Error(submitResult.error.message || "Manifest transaction submission failed");
+      }
+
+      setManifestData(data);
+      setManifestStatus(`Manifest submitted for trade ${manifestTrade.tradeId}.`);
+      setIsManifestOpen(false);
+    } catch (err) {
+      setManifestStatus(
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : "Failed to submit manifest",
+      );
+    } finally {
+      setManifestSubmitting(false);
+    }
+  };
 
   return (
     <section className="min-h-full bg-bg-primary px-6 py-8 lg:px-10">
@@ -206,11 +276,15 @@ export default function VaultPage() {
             </p>
             <button
               onClick={() => setIsManifestOpen(true)}
-              className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-gold-hover"
+              disabled={!token || !manifestTrade || manifestSubmitting}
+              className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Log Driver Details
+              {manifestSubmitting ? "Submitting..." : "Log Driver Details"}
             </button>
           </div>
+          {manifestStatus && (
+            <p className="mt-3 text-sm text-text-secondary">{manifestStatus}</p>
+          )}
           {manifestData && (
             <div className="mt-4 rounded-lg border border-border-default bg-bg-elevated p-3 text-sm text-text-primary">
               <p>
@@ -334,10 +408,7 @@ export default function VaultPage() {
         <DriverManifestForm
           isOpen={isManifestOpen}
           onDismiss={() => setIsManifestOpen(false)}
-          onComplete={(data) => {
-            setManifestData(data);
-            setIsManifestOpen(false);
-          }}
+          onComplete={handleManifestComplete}
         />
 
         <VaultFooter

@@ -103,29 +103,51 @@ model Trade {
   @@index([status])
 }
 
+/// DisputeCategory model for classifying disputes
+/// - name: Human-readable category name (unique)
+/// - description: Optional description of the category
+model DisputeCategory {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique @db.VarChar(100)
+  description String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  disputes    Dispute[]
+
+  @@index([name])
+  @@index([isActive])
+}
+
 /// Dispute model representing a dispute on a trade
 /// - tradeId: Reference to the associated trade
 /// - initiator: Wallet address of the user initiating the dispute (stored as lowercase)
 /// - reason: Reason for the dispute
 /// - status: Current status of the dispute
 /// - resolvedAt: Timestamp when the dispute was resolved
+/// - categoryId: Optional reference to a DisputeCategory
 model Dispute {
-  id           Int           @id @default(autoincrement())
-  tradeId      String        @unique @db.VarChar(255)
-  initiator    String        @db.VarChar(255)
-  reason       String        @db.Text
-  status       DisputeStatus @default(OPEN)
+  id           Int              @id @default(autoincrement())
+  tradeId      String           @unique @db.VarChar(255)
+  initiator    String           @db.VarChar(255)
+  reason       String           @db.Text
+  status       DisputeStatus    @default(OPEN)
   resolvedAt   DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  categoryId   Int?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   // Relations
-  trade        Trade         @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
-  initiatorUser User         @relation("initiator", fields: [initiator], references: [walletAddress])
+  trade        Trade            @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
+  initiatorUser User            @relation("initiator", fields: [initiator], references: [walletAddress])
+  category     DisputeCategory? @relation(fields: [categoryId], references: [id])
 
   @@index([tradeId])
   @@index([initiator])
   @@index([status])
+  @@index([categoryId])
 }
 
 /// DeliveryManifest — submitted by the seller before shipping.

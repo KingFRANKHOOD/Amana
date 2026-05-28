@@ -23,7 +23,7 @@ export type TradeListFilters = {
   sort?: string;
 };
 
-type TradeDatabase = Pick<PrismaClient, "trade">;
+type TradeDatabase = Pick<PrismaClient, "trade" | "dispute" | "disputeCategory">;
 
 export class TradeAccessDeniedError extends Error {
   constructor() {
@@ -37,6 +37,15 @@ export class DisputeTradeStatusError extends Error {
   constructor(status: string) {
     super(`Trade must be in FUNDED or DELIVERED status to initiate a dispute (current: ${status})`);
     this.name = "DisputeTradeStatusError";
+  }
+}
+
+export class DisputeCategoryValidationError extends Error {
+  status = 400;
+
+  constructor(category: string | number) {
+    super(`Invalid dispute category: ${category}`);
+    this.name = "DisputeCategoryValidationError";
   }
 }
 
@@ -176,7 +185,13 @@ export class TradeService {
     return [{ [field]: direction }, { id: direction }];
   }
 
-  async initiateDispute(id: string, callerAddress: string, reason: string, category: string) {
+  async initiateDispute(
+    id: string,
+    callerAddress: string,
+    reason: string,
+    category: string,
+    categoryId?: number,
+  ) {
     const trade = await this.getTradeById(id, callerAddress);
     if (!trade) {
       throw new Error("Trade not found");
@@ -192,6 +207,7 @@ export class TradeService {
       throw new DisputeTradeStatusError(trade.status);
     }
 
+    const resolvedCategoryId = await this.resolveDisputeCategoryId(category, categoryId);
     const reasonHash = sha256(reason);
 
     // Build contract transaction
@@ -205,16 +221,48 @@ export class TradeService {
 
     // Create DB record
     // We store the plaintext reason for human review.
-    await (this.prisma as PrismaClient).dispute.create({
+    await this.prisma.dispute.create({
       data: {
         tradeId: trade.tradeId,
         initiator: callerAddress,
         reason,
         status: DisputeStatus.OPEN,
+        categoryId: resolvedCategoryId,
       },
     });
 
     return { unsignedXdr };
+  }
+
+  private async resolveDisputeCategoryId(category: string, categoryId?: number): Promise<number> {
+    if (categoryId !== undefined) {
+      const categoryRecord = await this.prisma.disputeCategory.findFirst({
+        where: { id: categoryId, isActive: true },
+        select: { id: true },
+      });
+
+      if (!categoryRecord) {
+        throw new DisputeCategoryValidationError(categoryId);
+      }
+
+      return categoryRecord.id;
+    }
+
+    const normalizedCategory = category.trim();
+    if (!normalizedCategory) {
+      throw new DisputeCategoryValidationError(category);
+    }
+
+    const categoryRecord = await this.prisma.disputeCategory.findFirst({
+      where: { name: normalizedCategory, isActive: true },
+      select: { id: true },
+    });
+
+    if (!categoryRecord) {
+      throw new DisputeCategoryValidationError(normalizedCategory);
+    }
+
+    return categoryRecord.id;
   }
 
   /** Alias for listUserTrades — used by trade.controller.test.ts */

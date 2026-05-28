@@ -4,6 +4,8 @@ import type {
   CreateTradeResponse,
   DepositResponse,
   EvidenceResponse,
+  SubmitManifestRequest,
+  SubmitManifestResponse,
   TradeHistoryResponse,
   TradeListResponse,
   TradeResponse,
@@ -29,6 +31,13 @@ export const tradesApi = {
 
   getEvidence: (token: string, id: string) =>
     request<EvidenceResponse>(`/trades/${id}/evidence`, { token }),
+
+  submitManifest: (token: string, tradeId: string, data: SubmitManifestRequest) =>
+    request<SubmitManifestResponse>(`/trades/${tradeId}/manifest`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
 
   getStats: (token: string) =>
     request<TradeStatsResponse>("/trades/stats", { token }),

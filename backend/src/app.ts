@@ -15,6 +15,7 @@ import { createAuditTrailRouter } from "./routes/auditTrail.routes";
 import { createGoalsRouter } from "./routes/goals.routes";
 import { createHealthRouter } from "./routes/health.routes";
 import { disputeRoutes } from "./routes/dispute.routes";
+import { disputeCategoryRoutes } from "./routes/disputeCategory.routes";
 import userRoutes from "./routes/user.routes";
 import reputationRoutes from "./routes/reputation.routes";
 
@@ -114,6 +115,9 @@ export function createApp(): express.Application {
   // Disputes: GET /disputes
   app.use("/disputes", disputeRoutes);
 
+  // Dispute categories: CRUD /dispute-categories
+  app.use("/dispute-categories", disputeCategoryRoutes);
+
   // Error handler is registered last so it catches errors from all routes,
   // including any routes added to the app after createApp() returns.
   // We achieve this by re-registering it whenever a new route/middleware is added.
@@ -152,5 +156,4 @@ export function createApp(): express.Application {
 
   return app;
 }
-
 

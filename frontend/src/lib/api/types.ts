@@ -75,6 +75,19 @@ export interface DepositResponse {
   unsignedXdr: string;
 }
 
+export interface SubmitManifestRequest {
+  driverName: string;
+  driverIdNumber: string;
+  vehicleRegistration: string;
+  routeDescription: string;
+  expectedDeliveryAt: string;
+}
+
+export interface SubmitManifestResponse {
+  manifestId: number;
+  unsignedXdr: string;
+}
+
 export interface PathPaymentQuote {
   source_amount: string;
   source_asset_type: string;

@@ -5,7 +5,7 @@ const YAML = require("yamljs");
 
 type OpenApiOperation = {
   security?: Array<Record<string, unknown>>;
-  parameters?: Array<{ name?: string; in?: string }>;
+  parameters?: Array<{ name?: string; in?: string; $ref?: string }>;
 };
 
 type OpenApiPathItem = Partial<Record<"get" | "post" | "put" | "delete" | "patch", OpenApiOperation>>;
@@ -19,6 +19,15 @@ describe("OpenAPI documentation coverage", () => {
     paths: Record<string, OpenApiPathItem>;
   };
 
+  function resolvesHeaderParameter(parameter: { name?: string; in?: string; $ref?: string }, name: string) {
+    if (parameter.in === "header" && parameter.name === name) {
+      return true;
+    }
+
+    const refName = parameter.$ref?.replace("#/components/parameters/", "");
+    return refName === name || refName === `${name.replace(/-/g, "")}Header`;
+  }
+
   const liveRouteMap: Record<string, Array<keyof OpenApiPathItem>> = {
     "/health": ["get"],
     "/health/live": ["get"],
@@ -30,6 +39,8 @@ describe("OpenAPI documentation coverage", () => {
     "/wallet/path-payment-quote": ["get"],
     "/users/me": ["get", "put"],
     "/users/{address}": ["get"],
+    "/dispute-categories": ["get", "post"],
+    "/dispute-categories/{id}": ["get", "patch", "delete"],
     "/trades": ["get", "post"],
     "/trades/stats": ["get"],
     "/trades/{id}": ["get"],
@@ -52,6 +63,11 @@ describe("OpenAPI documentation coverage", () => {
     ["/wallet/path-payment-quote", "get"],
     ["/users/me", "get"],
     ["/users/me", "put"],
+    ["/dispute-categories", "get"],
+    ["/dispute-categories", "post"],
+    ["/dispute-categories/{id}", "get"],
+    ["/dispute-categories/{id}", "patch"],
+    ["/dispute-categories/{id}", "delete"],
     ["/trades", "get"],
     ["/trades", "post"],
     ["/trades/stats", "get"],
@@ -98,7 +114,7 @@ describe("OpenAPI documentation coverage", () => {
     for (const [route, method] of idempotentOperations) {
       const parameters = spec.paths[route]?.[method]?.parameters ?? [];
       expect(
-        parameters.some((parameter) => parameter.in === "header" && parameter.name === "Idempotency-Key"),
+        parameters.some((parameter) => resolvesHeaderParameter(parameter, "Idempotency-Key")),
       ).toBe(true);
     }
   });

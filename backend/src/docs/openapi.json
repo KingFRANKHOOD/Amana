@@ -27,6 +27,9 @@
       "name": "Trades"
     },
     {
+      "name": "Dispute Categories"
+    },
+    {
       "name": "Manifest"
     },
     {
@@ -57,6 +60,17 @@
           "type": "string"
         },
         "example": 4294967297
+      },
+      "DisputeCategoryIdPath": {
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "description": "Dispute category identifier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "example": 1
       },
       "UserAddressPath": {
         "in": "path",
@@ -183,6 +197,16 @@
           "type": "string"
         },
         "example": "createdAt:desc"
+      },
+      "IncludeInactiveCategoriesQuery": {
+        "in": "query",
+        "name": "includeInactive",
+        "required": false,
+        "schema": {
+          "type": "boolean",
+          "default": false
+        },
+        "description": "Include inactive dispute categories in the response."
       },
       "IdempotencyKeyHeader": {
         "in": "header",
@@ -676,6 +700,98 @@
       "TradeStatsResponse": {
         "type": "object",
         "additionalProperties": true
+      },
+      "DisputeCategory": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isActive",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "DisputeCategoryListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DisputeCategory"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "DisputeCategoryMutationRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "example": {
+          "name": "DAMAGE",
+          "description": "Goods arrived damaged or unusable."
+        }
+      },
+      "DisputeCategoryUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "example": {
+          "isActive": false
+        }
       },
       "ManifestRequest": {
         "type": "object",
@@ -1489,6 +1605,245 @@
         }
       }
     },
+    "/dispute-categories": {
+      "get": {
+        "tags": [
+          "Dispute Categories"
+        ],
+        "summary": "List dispute categories",
+        "description": "Returns active categories by default. Admin wallets can include inactive categories.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IncludeInactiveCategoriesQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dispute categories returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeCategoryListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/LegacyValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Dispute Categories"
+        ],
+        "summary": "Create a dispute category",
+        "description": "Admin wallet access is required.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeCategoryMutationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Dispute category created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeCategory"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/LegacyValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "409": {
+            "description": "Category name already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/dispute-categories/{id}": {
+      "get": {
+        "tags": [
+          "Dispute Categories"
+        ],
+        "summary": "Fetch a dispute category",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DisputeCategoryIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dispute category returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeCategory"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/LegacyValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Dispute Categories"
+        ],
+        "summary": "Update a dispute category",
+        "description": "Admin wallet access is required.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DisputeCategoryIdPath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeCategoryUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dispute category updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeCategory"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/LegacyValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "description": "Category name already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Dispute Categories"
+        ],
+        "summary": "Deactivate a dispute category",
+        "description": "Admin wallet access is required. The category is marked inactive.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DisputeCategoryIdPath"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dispute category deactivated."
+          },
+          "400": {
+            "$ref": "#/components/responses/LegacyValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/trades": {
       "post": {
         "tags": [
@@ -1855,7 +2210,7 @@
           "Trades"
         ],
         "summary": "Initiate a dispute for a trade",
-        "description": "Supports optional `Idempotency-Key`.\nRoute validation requires a reason of at least 10 characters.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
+        "description": "Supports optional `Idempotency-Key`.\nRoute validation requires a reason of at least 10 characters and either `category`\nor `categoryId`. The category must match an active dispute category.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
             "bearerAuth": []
@@ -1881,12 +2236,17 @@
                     "minLength": 10
                   },
                   "category": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Active dispute category name."
+                  },
+                  "categoryId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Active dispute category id."
                   }
                 },
                 "required": [
-                  "reason",
-                  "category"
+                  "reason"
                 ]
               },
               "example": {
@@ -2283,7 +2643,7 @@
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 },
                 "example": {
-                  "error": "Unsupported media type \u2014 only MP4 and WebM are accepted"
+                  "error": "Unsupported media type — only MP4 and WebM are accepted"
                 }
               }
             }

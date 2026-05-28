@@ -8,7 +8,12 @@ import {
   ContractService,
 } from "../services/contract.service";
 import { appLogger } from "../middleware/logger";
-import { TradeAccessDeniedError, TradeService, DisputeTradeStatusError } from "../services/trade.service";
+import {
+  TradeAccessDeniedError,
+  TradeService,
+  DisputeTradeStatusError,
+  DisputeCategoryValidationError,
+} from "../services/trade.service";
 
 const AMOUNT_USDC_PATTERN = /^\d+(?:\.\d{1,7})?$/;
 
@@ -264,19 +269,32 @@ export class TradeController {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const { reason, category } = req.body as { reason?: unknown; category?: unknown };
+      const { reason, category, categoryId } = req.body as {
+        reason?: unknown;
+        category?: unknown;
+        categoryId?: unknown;
+      };
       if (!reason || typeof reason !== "string") {
         return res.status(400).json({ error: "Reason string is required" });
       }
-      if (!category || typeof category !== "string") {
-        return res.status(400).json({ error: "Category string is required" });
+
+      const parsedCategoryId =
+        categoryId !== undefined
+          ? typeof categoryId === "number" && Number.isInteger(categoryId) && categoryId > 0
+            ? categoryId
+            : null
+          : undefined;
+
+      if (categoryId !== undefined && parsedCategoryId === null) {
+        return res.status(400).json({ error: "categoryId must be a positive integer" });
       }
 
       const { unsignedXdr } = await this.tradeService.initiateDispute(
         tradeId,
         callerAddress,
         reason,
-        category,
+        typeof category === "string" ? category : "",
+        parsedCategoryId ?? undefined,
       );
 
       return res.status(200).json({ unsignedXdr });
@@ -285,6 +303,9 @@ export class TradeController {
         return res.status(403).json({ error: "Forbidden" });
       }
       if (error instanceof DisputeTradeStatusError) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error instanceof DisputeCategoryValidationError) {
         return res.status(400).json({ error: error.message });
       }
       if (error instanceof Error && error.message === "Trade not found") {

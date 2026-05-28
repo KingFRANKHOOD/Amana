@@ -233,6 +233,22 @@ pub struct DeliveryManifestRecord {
     pub submitted_at: u64,
 }
 
+/// On-chain release sequence state for a trade.
+/// Kept separate from `Trade` so existing trade storage layout remains stable.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseSequence {
+    pub trade_id: u64,
+    pub created_at: u64,
+    pub funded_at: Option<u64>,
+    pub manifest_submitted_at: Option<u64>,
+    pub delivered_at: Option<u64>,
+    pub disputed_at: Option<u64>,
+    pub released_at: Option<u64>,
+    pub resolved_at: Option<u64>,
+    pub cancelled_at: Option<u64>,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataKey {
@@ -258,6 +274,8 @@ pub enum DataKey {
     VideoProof(u64),
     /// Stores the single DeliveryManifestRecord for a trade.
     Manifest(u64),
+    /// Stores release sequencing timestamps for a trade.
+    ReleaseSequence(u64),
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +436,31 @@ impl EscrowContract {
         panic!("Unauthorized mediator");
     }
 
+    fn default_release_sequence(trade: &Trade) -> ReleaseSequence {
+        ReleaseSequence {
+            trade_id: trade.trade_id,
+            created_at: trade.created_at,
+            funded_at: trade.funded_at,
+            manifest_submitted_at: None,
+            delivered_at: trade.delivered_at,
+            disputed_at: None,
+            released_at: None,
+            resolved_at: None,
+            cancelled_at: None,
+        }
+    }
+
+    fn update_release_sequence(env: &Env, trade: &Trade, updater: fn(&mut ReleaseSequence, u64)) {
+        let key = DataKey::ReleaseSequence(trade.trade_id);
+        let mut sequence: ReleaseSequence = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Self::default_release_sequence(trade));
+        updater(&mut sequence, env.ledger().timestamp());
+        env.storage().persistent().set(&key, &sequence);
+    }
+
     // -----------------------------------------------------------------------
     // Trade lifecycle
     // -----------------------------------------------------------------------
@@ -470,6 +513,10 @@ impl EscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Trade(trade_id), &trade);
+        env.storage().persistent().set(
+            &DataKey::ReleaseSequence(trade_id),
+            &Self::default_release_sequence(&trade),
+        );
         TradeCreatedEvent {
             trade_id,
             buyer,
@@ -500,6 +547,9 @@ impl EscrowContract {
         trade.funded_at = Some(now);
         trade.updated_at = now;
         env.storage().persistent().set(&key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.funded_at = Some(at);
+        });
         TradeFundedEvent {
             trade_id,
             amount: trade.amount,
@@ -580,6 +630,9 @@ impl EscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Trade(trade.trade_id), trade);
+        Self::update_release_sequence(env, trade, |sequence, at| {
+            sequence.cancelled_at = Some(at);
+        });
 
         TradeCancelledEvent {
             trade_id: trade.trade_id,
@@ -606,6 +659,9 @@ impl EscrowContract {
         trade.delivered_at = Some(now);
         trade.updated_at = now;
         env.storage().persistent().set(&key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.delivered_at = Some(at);
+        });
         DeliveryConfirmedEvent {
             trade_id,
             delivered_at: now,
@@ -652,6 +708,9 @@ impl EscrowContract {
         trade.status = TradeStatus::Completed;
         trade.updated_at = now;
         env.storage().persistent().set(&key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.released_at = Some(at);
+        });
         FundsReleasedEvent {
             trade_id,
             seller_amount,
@@ -711,6 +770,9 @@ impl EscrowContract {
         trade.status = TradeStatus::Disputed;
         trade.updated_at = now;
         env.storage().persistent().set(&key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.disputed_at = Some(at);
+        });
 
         // Emit on-chain event
         DisputeInitiatedEvent {
@@ -843,6 +905,9 @@ impl EscrowContract {
         trade.status = TradeStatus::Completed;
         trade.updated_at = now;
         env.storage().persistent().set(&key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.resolved_at = Some(at);
+        });
 
         // 7. Emit event
         DisputeResolvedEvent {
@@ -1055,6 +1120,9 @@ impl EscrowContract {
             submitted_at: env.ledger().timestamp(),
         };
         env.storage().persistent().set(&manifest_key, &record);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.manifest_submitted_at = Some(at);
+        });
 
         ManifestSubmittedEvent {
             trade_id,
@@ -1068,6 +1136,24 @@ impl EscrowContract {
     /// Fetch manifest record for a trade, if present.
     pub fn get_manifest(env: Env, trade_id: u64) -> Option<DeliveryManifestRecord> {
         env.storage().persistent().get(&DataKey::Manifest(trade_id))
+    }
+
+    /// Fetch on-chain release sequence timestamps for a trade.
+    pub fn get_release_sequence(env: Env, trade_id: u64) -> ReleaseSequence {
+        if let Some(sequence) = env
+            .storage()
+            .persistent()
+            .get::<_, ReleaseSequence>(&DataKey::ReleaseSequence(trade_id))
+        {
+            return sequence;
+        }
+
+        let trade: Trade = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Trade(trade_id))
+            .expect("Trade not found");
+        Self::default_release_sequence(&trade)
     }
 
     /// Retrieve the video proof record for a trade, if any.
@@ -1390,6 +1476,38 @@ mod test {
             client.get_trade(&trade_id).status,
             TradeStatus::Completed
         ));
+    }
+
+    #[test]
+    fn test_release_sequence_tracks_manifest_delivery_and_release() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _usdc_id, _buyer, seller, _treasury, trade_id) =
+            setup_funded_trade(&env, 10_000_i128, 100_u32);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let funded_sequence = client.get_release_sequence(&trade_id);
+        assert_eq!(funded_sequence.trade_id, trade_id);
+        assert!(funded_sequence.funded_at.is_some());
+        assert!(funded_sequence.manifest_submitted_at.is_none());
+        assert!(funded_sequence.delivered_at.is_none());
+        assert!(funded_sequence.released_at.is_none());
+
+        client.submit_manifest(
+            &trade_id,
+            &seller,
+            &String::from_str(&env, "driver-name-hash"),
+            &String::from_str(&env, "driver-id-hash"),
+        );
+        client.confirm_delivery(&trade_id);
+        client.release_funds(&trade_id);
+
+        let released_sequence = client.get_release_sequence(&trade_id);
+        assert!(released_sequence.manifest_submitted_at.is_some());
+        assert!(released_sequence.delivered_at.is_some());
+        assert!(released_sequence.released_at.is_some());
+        assert!(released_sequence.resolved_at.is_none());
+        assert!(released_sequence.cancelled_at.is_none());
     }
 
     // -----------------------------------------------------------------------
