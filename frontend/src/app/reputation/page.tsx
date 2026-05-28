@@ -117,6 +117,7 @@ export default function ReputationPage() {
 
   useEffect(() => {
     if (isAuthenticated && token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchReputation();
     }
   }, [isAuthenticated, token, fetchReputation]);
