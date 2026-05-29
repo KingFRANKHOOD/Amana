@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { env } from '../config/env';
 
 // Ensure a single instance of Prisma Client is used across the application
 declare global {
@@ -7,7 +8,7 @@ declare global {
 
 const prismaClientSingleton = () => {
   const client = new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    log: env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
   client.$use(async (params: Prisma.MiddlewareParams, next: (params: Prisma.MiddlewareParams) => Promise<unknown>) => {
@@ -43,7 +44,7 @@ const prismaClientSingleton = () => {
 
 export const prisma = global.prisma ?? prismaClientSingleton();
 
-if (process.env.NODE_ENV !== 'production') {
+if (env.NODE_ENV !== 'production') {
   global.prisma = prisma;
 }
 

@@ -12,7 +12,8 @@
     "test:watch": "jest --config jest.config.ts --watch",
     "test:coverage": "jest --config jest.config.ts --coverage",
     "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots"
+    "test:visual:update": "playwright test --update-snapshots",
+    "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",

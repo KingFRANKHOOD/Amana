@@ -23,25 +23,31 @@ export function BentoCard({
 
   return (
     <div
-      className={`
-        bg-[#101E18F2]
-        border border-border-default 
-        rounded-2xl 
-        p-6 
-        shadow-card 
-        hover:shadow-card-hover 
-        transition-shadow duration-300 
-        relative 
-        overflow-hidden 
-        flex flex-col
-        ${glowClasses[glowVariant]}
-        ${className}
-      `}
+      className={[
+        "bg-[#101E18F2]",
+        "dark:bg-surface-1",
+        "border border-border-default",
+        "dark:border-border-default",
+        "rounded-2xl",
+        "p-6",
+        "shadow-card",
+        "hover:shadow-card-hover",
+        "transition-shadow duration-300",
+        "relative",
+        "overflow-hidden",
+        "flex flex-col",
+        glowClasses[glowVariant],
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       {...props}
     >
       <div className="flex items-center gap-2 mb-4">
-        {icon && <span className="text-gold">{icon}</span>}
-        <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
+        {icon && <span className="text-gold dark:text-gold">{icon}</span>}
+        <h3 className="text-lg font-semibold text-text-primary dark:text-text-primary">
+          {title}
+        </h3>
       </div>
       <div className="flex-1">{children}</div>
     </div>

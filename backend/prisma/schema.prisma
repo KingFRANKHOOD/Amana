@@ -134,6 +134,8 @@ model Dispute {
   initiator    String           @db.VarChar(255)
   reason       String           @db.Text
   status       DisputeStatus    @default(OPEN)
+  /// Monotonic optimistic concurrency counter for status transitions.
+  version      Int              @default(0)
   resolvedAt   DateTime?
   categoryId   Int?
   createdAt    DateTime         @default(now())

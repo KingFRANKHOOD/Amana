@@ -1,12 +1,14 @@
 import { PrismaClient, DisputeStatus } from "@prisma/client";
 import { AppError, ErrorCode } from "../errors/errorCodes";
 import { getMediatorAllowlist } from "../lib/accessControl";
+import {
+  COMPLETED_DISPUTE_STATUSES,
+  applyDisputeStatusTransition,
+  assertTransitionApplied,
+  assertValidTransition,
+} from "./disputeTransitions";
 
-/** Terminal dispute statuses — disputes in these states are considered complete. */
-export const COMPLETED_DISPUTE_STATUSES: DisputeStatus[] = [
-  DisputeStatus.RESOLVED,
-  DisputeStatus.CLOSED,
-];
+export { COMPLETED_DISPUTE_STATUSES, DisputeStatus };
 
 export interface DisputeCleanupResult {
   purgedCount: number;
@@ -39,40 +41,60 @@ export interface DisputeListResponse {
   };
 }
 
-/** Valid forward-only status transition map for disputes. */
-const VALID_TRANSITIONS: Record<DisputeStatus, DisputeStatus[]> = {
-  [DisputeStatus.OPEN]: [DisputeStatus.UNDER_REVIEW, DisputeStatus.CLOSED],
-  [DisputeStatus.UNDER_REVIEW]: [DisputeStatus.RESOLVED, DisputeStatus.CLOSED],
-  [DisputeStatus.RESOLVED]: [],
-  [DisputeStatus.CLOSED]: [],
-};
+const disputeInclude = {
+  trade: {
+    select: { buyerAddress: true, sellerAddress: true, amountUsdc: true },
+  },
+} as const;
+
+function toDisputeResponse(dispute: {
+  id: number;
+  tradeId: string;
+  initiator: string;
+  reason: string;
+  status: DisputeStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  resolvedAt: Date | null;
+  trade: { buyerAddress: string; sellerAddress: string; amountUsdc: string };
+}): DisputeResponse {
+  return {
+    id: dispute.id,
+    tradeId: dispute.tradeId,
+    initiator: dispute.initiator,
+    reason: dispute.reason,
+    status: dispute.status,
+    createdAt: dispute.createdAt.toISOString(),
+    updatedAt: dispute.updatedAt.toISOString(),
+    resolvedAt: dispute.resolvedAt?.toISOString() ?? null,
+    trade: dispute.trade,
+  };
+}
 
 export class DisputeService {
   constructor(private prisma: PrismaClient) {}
 
   async listMediatorDisputes(
     mediatorAddress: string,
-    params: { status?: DisputeStatus; page?: number; limit?: number } = {}
+    params: { status?: DisputeStatus; page?: number; limit?: number } = {},
   ): Promise<DisputeListResponse> {
     const { status, page = 1, limit = 10 } = params;
     const offset = (page - 1) * limit;
 
     if (!getMediatorAllowlist().has(mediatorAddress)) {
-      throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized: Not a mediator", 403);
+      throw new AppError(
+        ErrorCode.AUTH_ERROR,
+        "Unauthorized: Not a mediator",
+        403,
+      );
     }
 
-    const where = status
-      ? { status }
-      : { status: { in: [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW] as DisputeStatus[] } };
+    const where = status ? { status } : {};
 
     const [disputes, total] = await Promise.all([
       this.prisma.dispute.findMany({
         where,
-        include: {
-          trade: {
-            select: { buyerAddress: true, sellerAddress: true, amountUsdc: true },
-          },
-        },
+        include: disputeInclude,
         orderBy: { createdAt: "desc" },
         skip: offset,
         take: limit,
@@ -81,17 +103,7 @@ export class DisputeService {
     ]);
 
     return {
-      items: disputes.map(d => ({
-        id: d.id,
-        tradeId: d.tradeId,
-        initiator: d.initiator,
-        reason: d.reason,
-        status: d.status,
-        createdAt: d.createdAt.toISOString(),
-        updatedAt: d.updatedAt.toISOString(),
-        resolvedAt: d.resolvedAt?.toISOString() ?? null,
-        trade: d.trade,
-      })),
+      items: disputes.map(toDisputeResponse),
       pagination: {
         page,
         limit,
@@ -104,24 +116,12 @@ export class DisputeService {
   async getDisputeByTradeId(tradeId: string): Promise<DisputeResponse | null> {
     const dispute = await this.prisma.dispute.findFirst({
       where: { tradeId },
-      include: {
-        trade: { select: { buyerAddress: true, sellerAddress: true, amountUsdc: true } },
-      },
+      include: disputeInclude,
     });
 
     if (!dispute) return null;
 
-    return {
-      id: dispute.id,
-      tradeId: dispute.tradeId,
-      initiator: dispute.initiator,
-      reason: dispute.reason,
-      status: dispute.status,
-      createdAt: dispute.createdAt.toISOString(),
-      updatedAt: dispute.updatedAt.toISOString(),
-      resolvedAt: dispute.resolvedAt?.toISOString() ?? null,
-      trade: dispute.trade,
-    };
+    return toDisputeResponse(dispute);
   }
 
   /**
@@ -135,10 +135,14 @@ export class DisputeService {
    */
   async purgeCompletedDisputeData(
     mediatorAddress: string,
-    olderThanDays = 90
+    olderThanDays = 90,
   ): Promise<DisputeCleanupResult> {
     if (!getMediatorAllowlist().has(mediatorAddress)) {
-      throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized: Not a mediator", 403);
+      throw new AppError(
+        ErrorCode.AUTH_ERROR,
+        "Unauthorized: Not a mediator",
+        403,
+      );
     }
 
     const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
@@ -165,75 +169,59 @@ export class DisputeService {
 
     return {
       purgedCount: completed.length,
-      tradeIds: completed.map((d: { id: number; tradeId: string }) => d.tradeId),
+      tradeIds: completed.map(
+        (d: { id: number; tradeId: string }) => d.tradeId,
+      ),
     };
   }
 
   /**
    * Transition a dispute to a new status.
    * Only valid forward transitions are permitted; backwards or sideways moves throw
-   * DISPUTE_STATUS_TRANSITION_INVALID.
+   * DISPUTE_STATUS_TRANSITION_INVALID. Concurrent updates throw DISPUTE_STATUS_CONFLICT.
    */
   async transitionDisputeStatus(
     tradeId: string,
     mediatorAddress: string,
-    newStatus: DisputeStatus
+    newStatus: DisputeStatus,
   ): Promise<DisputeResponse> {
     if (!getMediatorAllowlist().has(mediatorAddress)) {
-      throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized: Not a mediator", 403);
-    }
-
-    const dispute = await this.prisma.dispute.findFirst({
-      where: { tradeId },
-      include: {
-        trade: { select: { buyerAddress: true, sellerAddress: true, amountUsdc: true } },
-      },
-    });
-
-    if (!dispute) {
-      throw new AppError(ErrorCode.DISPUTE_NOT_FOUND, `No dispute found for trade: ${tradeId}`, 404);
-    }
-
-    const allowedNext = VALID_TRANSITIONS[dispute.status];
-    if (!allowedNext.includes(newStatus)) {
       throw new AppError(
-        ErrorCode.DISPUTE_STATUS_TRANSITION_INVALID,
-        `Cannot transition dispute from ${dispute.status} to ${newStatus}`,
-        422,
-        {
-          currentStatus: dispute.status,
-          requestedStatus: newStatus,
-          allowedTransitions: allowedNext,
-        },
+        ErrorCode.AUTH_ERROR,
+        "Unauthorized: Not a mediator",
+        403,
       );
     }
 
-    const resolvedAt =
-      newStatus === DisputeStatus.RESOLVED || newStatus === DisputeStatus.CLOSED
-        ? new Date()
-        : undefined;
+    return this.prisma.$transaction(async (tx) => {
+      const dispute = await tx.dispute.findFirst({
+        where: { tradeId },
+        include: disputeInclude,
+      });
 
-    const updated = await this.prisma.dispute.update({
-      where: { id: dispute.id },
-      data: {
-        status: newStatus,
-        ...(resolvedAt !== undefined && { resolvedAt }),
-      },
-      include: {
-        trade: { select: { buyerAddress: true, sellerAddress: true, amountUsdc: true } },
-      },
+      if (!dispute) {
+        throw new AppError(
+          ErrorCode.DISPUTE_NOT_FOUND,
+          `No dispute found for trade: ${tradeId}`,
+          404,
+        );
+      }
+
+      assertValidTransition(dispute.status, newStatus);
+
+      const applied = await applyDisputeStatusTransition(
+        tx,
+        dispute,
+        newStatus,
+      );
+      assertTransitionApplied(applied, tradeId);
+
+      const updated = await tx.dispute.findUniqueOrThrow({
+        where: { id: dispute.id },
+        include: disputeInclude,
+      });
+
+      return toDisputeResponse(updated);
     });
-
-    return {
-      id: updated.id,
-      tradeId: updated.tradeId,
-      initiator: updated.initiator,
-      reason: updated.reason,
-      status: updated.status,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-      resolvedAt: updated.resolvedAt?.toISOString() ?? null,
-      trade: updated.trade,
-    };
   }
 }

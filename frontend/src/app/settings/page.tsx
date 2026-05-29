@@ -18,6 +18,10 @@ interface AppPrefs {
   autoSignOut: "15" | "30" | "60" | "never";
 }
 
+interface ValidationErrors {
+  [key: string]: string;
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionCard({
@@ -90,25 +94,37 @@ function SelectField({
   value,
   onChange,
   options,
+  error,
 }: {
   label: string;
   description?: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  error?: string;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-      <div>
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+      <div className="flex-1">
         <p className="text-sm font-medium text-text-primary">{label}</p>
         {description && (
           <p className="text-xs text-text-secondary mt-0.5">{description}</p>
+        )}
+        {error && (
+          <p className="text-xs text-status-danger mt-1 flex items-center gap-1">
+            <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 10a1 1 0 110 2 1 1 0 010-2zm0-7a1 1 0 011 1v4a1 1 0 11-2 0V5a1 1 0 011-1z" />
+            </svg>
+            {error}
+          </p>
         )}
       </div>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-border-default bg-bg-input text-text-primary text-sm px-3 py-2 focus:outline-none focus:border-border-focus transition-colors sm:w-44"
+        aria-invalid={!!error}
+        aria-describedby={error ? `${label}-error` : undefined}
+        className={`rounded-lg border ${error ? "border-status-danger" : "border-border-default"} bg-bg-input text-text-primary text-sm px-3 py-2 focus:outline-none focus:border-border-focus transition-colors sm:w-44`}
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -149,6 +165,9 @@ export default function SettingsPage() {
 
   const [copied, setCopied] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>(
+    {},
+  );
 
   function setNotif<K extends keyof NotificationPrefs>(
     key: K,
@@ -159,6 +178,26 @@ export default function SettingsPage() {
 
   function setPref<K extends keyof AppPrefs>(key: K, value: AppPrefs[K]) {
     setPrefs((prev) => ({ ...prev, [key]: value }));
+    setValidationErrors((prev) => ({ ...prev, [key]: "" }));
+  }
+
+  function validatePreferences(): boolean {
+    const errors: ValidationErrors = {};
+
+    if (!prefs.network) {
+      errors.network = "Network selection is required";
+    }
+
+    if (!prefs.currency) {
+      errors.currency = "Currency selection is required";
+    }
+
+    if (!prefs.autoSignOut) {
+      errors.autoSignOut = "Auto sign-out preference is required";
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   }
 
   async function handleCopyAddress() {
@@ -169,6 +208,10 @@ export default function SettingsPage() {
   }
 
   function handleSavePreferences() {
+    if (!validatePreferences()) {
+      return;
+    }
+
     // Preferences are local-only for now; extend with API call as needed.
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
@@ -342,6 +385,7 @@ export default function SettingsPage() {
               description="The Stellar network your wallet interacts with."
               value={prefs.network}
               onChange={(v) => setPref("network", v as AppPrefs["network"])}
+              error={validationErrors.network}
               options={[
                 { value: "mainnet", label: "Mainnet" },
                 { value: "testnet", label: "Testnet" },
@@ -349,7 +393,6 @@ export default function SettingsPage() {
             />
             <Divider />
             <SelectField
-              label="Display currency"
               description="Fiat currency used for value estimates."
               value={prefs.currency}
               onChange={(v) => setPref("currency", v as AppPrefs["currency"])}

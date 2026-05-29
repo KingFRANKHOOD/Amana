@@ -80,13 +80,45 @@ function pickBestEvidenceCid(records: EvidenceRecord[]): string | null {
   return candidateCid && isProbablyIpfsCid(candidateCid) ? candidateCid : null;
 }
 
+function useFocusTrap(isActive: boolean) {
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+      }
+
+      if (e.key === "Tab") {
+        const focusableElements = document.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey && document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isActive]);
+}
+
 export default function MediatorPanelClient({ disputeId }: Props) {
   const { address, isAuthorized, isLoading, connectWallet } =
     useFreighterIdentity();
   const [txStatus, setTxStatus] = useState<string>("");
   const [isSubmittingTx, setIsSubmittingTx] = useState(false);
   const [activeGatewayIndex, setActiveGatewayIndex] = useState(0);
-  const [videoLoadState, setVideoLoadState] = useState<VideoLoadState>("loading");
+  const [videoLoadState, setVideoLoadState] =
+    useState<VideoLoadState>("loading");
   const [resolvedCid, setResolvedCid] = useState<string | null>(null);
   const [cidSource, setCidSource] = useState<
     "backend" | "query" | "none" | "loading"
@@ -116,6 +148,8 @@ export default function MediatorPanelClient({ disputeId }: Props) {
   const pinataUrl = resolvedCid
     ? `${PINATA_GATEWAYS[activeGatewayIndex]}/${resolvedCid}`
     : null;
+
+  useFocusTrap(modal.isOpen);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,7 +191,10 @@ export default function MediatorPanelClient({ disputeId }: Props) {
       }
 
       try {
-        const response = await api.trades.getEvidence(token, String(parsedTradeId));
+        const response = await api.trades.getEvidence(
+          token,
+          String(parsedTradeId),
+        );
         const backendCid = pickBestEvidenceCid(response.evidence);
 
         if (!cancelled && backendCid) {
@@ -169,7 +206,9 @@ export default function MediatorPanelClient({ disputeId }: Props) {
         if (!cancelled && fallbackCid) {
           setCidSource("query");
           setResolvedCid(fallbackCid);
-          setCidMessage("No backend evidence CID found. Using query parameter fallback.");
+          setCidMessage(
+            "No backend evidence CID found. Using query parameter fallback.",
+          );
           return;
         }
 
@@ -335,11 +374,13 @@ export default function MediatorPanelClient({ disputeId }: Props) {
     <div className="px-6 py-8 max-w-6xl mx-auto">
       {/* Page header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-text-primary">Mediator Panel</h1>
+        <h1 className="text-2xl font-semibold text-text-primary">
+          Mediator Panel
+        </h1>
         <p className="text-text-secondary mt-1">
           Dispute{" "}
-          <span className="font-mono text-text-primary">{disputeId}</span>{" "}
-          — Review evidence and resolve on-chain.
+          <span className="font-mono text-text-primary">{disputeId}</span> —
+          Review evidence and resolve on-chain.
         </p>
       </div>
 
@@ -434,7 +475,8 @@ export default function MediatorPanelClient({ disputeId }: Props) {
                   Gateway {activeGatewayIndex + 1}/{PINATA_GATEWAYS.length}
                 </span>
               )}
-              {pinataUrl && PINATA_GATEWAYS.length > 1 &&
+              {pinataUrl &&
+                PINATA_GATEWAYS.length > 1 &&
                 videoLoadState !== "terminal-failure" && (
                   <button
                     onClick={switchGateway}
@@ -460,7 +502,9 @@ export default function MediatorPanelClient({ disputeId }: Props) {
               {cidMessage && <div>Message: {cidMessage}</div>}
               <div>
                 Gateway:{" "}
-                <Badge variant="info">{PINATA_GATEWAYS[activeGatewayIndex]}</Badge>
+                <Badge variant="info">
+                  {PINATA_GATEWAYS[activeGatewayIndex]}
+                </Badge>
               </div>
               <div>Wallet: {address ?? "Not connected"}</div>
             </div>
@@ -533,7 +577,9 @@ export default function MediatorPanelClient({ disputeId }: Props) {
 
             {/* Tx status feedback */}
             {txStatus && (
-              <p className="text-xs text-text-secondary break-all">{txStatus}</p>
+              <p className="text-xs text-text-secondary break-all">
+                {txStatus}
+              </p>
             )}
 
             {/* Dev-only: exec string builder */}
@@ -589,9 +635,20 @@ export default function MediatorPanelClient({ disputeId }: Props) {
 
       {/* Confirmation Modal */}
       {modal.isOpen && modal.sellerGetsBps !== null && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-bg-card rounded-xl shadow-lg w-full max-w-md p-6 space-y-4">
-            <h2 className="text-xl font-bold text-text-primary">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
+          <div className="bg-bg-card rounded-t-2xl sm:rounded-2xl shadow-lg w-full max-w-md p-4 sm:p-6 space-y-4 animate-slide-up sm:animate-none">
+            <h2
+              id="modal-title"
+              className="text-lg sm:text-xl font-bold text-text-primary"
+            >
               Confirm Resolution
             </h2>
 
@@ -640,11 +697,12 @@ export default function MediatorPanelClient({ disputeId }: Props) {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
               <button
                 onClick={closeModal}
                 disabled={isSubmittingTx}
-                className="px-4 py-2.5 border border-border-default text-text-primary text-sm font-medium rounded-md hover:bg-bg-elevated disabled:opacity-50 transition"
+                className="px-3 sm:px-4 py-2.5 border border-border-default text-text-primary text-sm font-medium rounded-md hover:bg-bg-elevated disabled:opacity-50 transition"
+                aria-label="Cancel resolution"
               >
                 Cancel
               </button>
@@ -654,7 +712,8 @@ export default function MediatorPanelClient({ disputeId }: Props) {
                   void executeResolution(modal.sellerGetsBps!);
                 }}
                 disabled={isSubmittingTx}
-                className="px-4 py-2.5 bg-emerald-700 text-white text-sm font-medium rounded-md hover:bg-emerald-800 disabled:opacity-50 transition"
+                className="px-3 sm:px-4 py-2.5 bg-emerald-700 text-white text-sm font-medium rounded-md hover:bg-emerald-800 disabled:opacity-50 transition"
+                aria-label="Confirm and sign resolution"
               >
                 {isSubmittingTx ? "Processing..." : "Confirm & Sign"}
               </button>

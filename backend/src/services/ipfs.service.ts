@@ -3,6 +3,7 @@ import { getPinataClient } from "../config/ipfs";
 import { retryAsync } from "../lib/retry";
 import { appLogger } from "../middleware/logger";
 import { TracingHelper } from "../config/tracing";
+import { env } from "../config/env";
 
 export class ServiceUnavailableError extends Error {
     status = 503;
@@ -16,15 +17,15 @@ export class IPFSService {
     private static pinataCircuit = { failures: 0, openUntil: 0 };
 
     private getUploadTimeoutMs(): number {
-        return parseInt(process.env.IPFS_UPLOAD_TIMEOUT_MS || "10000", 10);
+        return env.IPFS_UPLOAD_TIMEOUT_MS;
     }
 
     private getCircuitThreshold(): number {
-        return parseInt(process.env.IPFS_PINATA_CIRCUIT_FAILURE_THRESHOLD || "3", 10);
+        return env.IPFS_PINATA_CIRCUIT_FAILURE_THRESHOLD;
     }
 
     private getCircuitCooldownMs(): number {
-        return parseInt(process.env.IPFS_PINATA_CIRCUIT_COOLDOWN_MS || "30000", 10);
+        return env.IPFS_PINATA_CIRCUIT_COOLDOWN_MS;
     }
 
     private ensureCircuitClosed(): void {
@@ -150,7 +151,7 @@ export class IPFSService {
      * Build a public gateway URL for a given CID.
      */
     getFileUrl(cid: string): string {
-        const gateway = process.env.IPFS_GATEWAY_URL || "https://gateway.pinata.cloud/ipfs";
+        const gateway = process.env.IPFS_GATEWAY_URL ?? env.IPFS_GATEWAY_URL;
         return `${gateway.replace(/\/$/, "")}/${cid}`;
     }
 

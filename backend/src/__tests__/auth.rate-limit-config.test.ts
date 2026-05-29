@@ -1,13 +1,23 @@
-const mockRateLimit: jest.Mock = jest.fn(() => (_req: any, _res: any, next: any) => next());
+const mockCreateIpRateLimiter: jest.Mock = jest.fn((_preset: unknown) => (_req: any, _res: any, next: any) => next());
 
-jest.mock(
-  'express-rate-limit',
-  () => ({
-    __esModule: true,
-    default: (options: any) => mockRateLimit(options),
-  }),
-  { virtual: true },
-);
+jest.mock('../config/rateLimit', () => ({
+  RATE_LIMIT_CONFIG: {
+    auth: {
+      windowMs: 15 * 60 * 1000,
+      max: 10,
+      message: 'Too many challenges/verify attempts, try again later.',
+    },
+    authRefresh: {
+      windowMs: 15 * 60 * 1000,
+      max: 30,
+      message: 'Too many token refresh attempts, try again later.',
+    },
+  },
+}));
+
+jest.mock('../lib/rateLimit', () => ({
+  createIpRateLimiter: (preset: unknown) => mockCreateIpRateLimiter(preset),
+}));
 
 jest.mock(
   'zod',
@@ -40,19 +50,24 @@ jest.mock('../middleware/auth.middleware', () => ({
 describe('auth route rate limiting', () => {
   beforeEach(() => {
     jest.resetModules();
-    mockRateLimit.mockClear();
+    mockCreateIpRateLimiter.mockClear();
   });
 
-  it('configures the auth limiter for 10 requests per 15 minute window', () => {
+  it('wires shared auth and refresh limiters from centralized presets', () => {
     jest.isolateModules(() => {
       require('../routes/auth.routes');
     });
 
-    expect(mockRateLimit).toHaveBeenCalledTimes(1);
-    expect(mockRateLimit).toHaveBeenCalledWith({
+    expect(mockCreateIpRateLimiter).toHaveBeenCalledTimes(2);
+    expect(mockCreateIpRateLimiter).toHaveBeenNthCalledWith(1, expect.objectContaining({
       windowMs: 15 * 60 * 1000,
       max: 10,
       message: 'Too many challenges/verify attempts, try again later.',
-    });
+    }));
+    expect(mockCreateIpRateLimiter).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      windowMs: 15 * 60 * 1000,
+      max: 30,
+      message: 'Too many token refresh attempts, try again later.',
+    }));
   });
 });

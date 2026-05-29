@@ -23,7 +23,8 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif;
+  font-family:
+    var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif;
 }
 
 @keyframes shimmer {
@@ -32,6 +33,16 @@ body {
   }
 }
 
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
 
 @layer base {
   /* Scrollbar styling */
@@ -40,7 +51,7 @@ body {
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #0B1A14;
+    background: #0b1a14;
   }
   ::-webkit-scrollbar-thumb {
     background: rgba(139, 168, 154, 0.2);

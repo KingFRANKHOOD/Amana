@@ -2,6 +2,9 @@ import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import { prisma as defaultPrisma } from "../lib/db";
 import { TOKEN_CONFIG } from "../config/token";
+import { getAdminAllowlistLowercase } from "../lib/accessControl";
+import { getAuditSigningConfig } from "../config/auditSigning";
+import { env } from "../config/env";
 
 export type TradeEventType =
     | "CREATED"
@@ -87,19 +90,13 @@ interface AuditTrade {
     completedAt: Date | null;
 }
 
-function parseAdminPubkeys(): Set<string> {
-    const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
-    return new Set(
-        raw
-            .split(",")
-            .map((value) => value.trim().toLowerCase())
-            .filter(Boolean),
-    );
-}
-
 function getEvidenceMetadataRetentionDays(): number {
-    const parsed = parseInt(process.env.EVIDENCE_METADATA_RETENTION_DAYS || "90", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+    const raw = process.env.EVIDENCE_METADATA_RETENTION_DAYS;
+    if (raw !== undefined) {
+        const parsed = parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : env.EVIDENCE_METADATA_RETENTION_DAYS;
+    }
+    return env.EVIDENCE_METADATA_RETENTION_DAYS;
 }
 
 function isEvidenceMetadataExpired(createdAt: Date): boolean {
@@ -126,7 +123,7 @@ export class AuditTrailService {
         const caller = callerAddress.toLowerCase();
         const isBuyer = trade.buyerAddress.toLowerCase() === caller;
         const isSeller = trade.sellerAddress.toLowerCase() === caller;
-        const isAdmin = parseAdminPubkeys().has(caller);
+        const isAdmin = getAdminAllowlistLowercase().has(caller);
 
         // Fetch dispute early — needed for both mediator access check and event assembly
         const dispute = await this.prisma.dispute.findUnique({ where: { tradeId } });
@@ -265,8 +262,7 @@ export class AuditTrailService {
     }
 
     signPayload(payload: CanonicalAuditPayload): AuditIntegrityMetadata {
-        const keyId = process.env.AUDIT_SIGNING_KEY_ID;
-        const privateKeyPem = process.env.AUDIT_SIGNING_PRIVATE_KEY_PEM;
+        const { keyId, privateKeyPem } = getAuditSigningConfig();
 
         if (!keyId || !privateKeyPem) {
             throw new AuditSigningConfigError("AUDIT_SIGNING_KEY_ID and AUDIT_SIGNING_PRIVATE_KEY_PEM are required");
@@ -286,7 +282,7 @@ export class AuditTrailService {
     }
 
     verifyPayload(payload: CanonicalAuditPayload, signatureBase64: string): boolean {
-        const publicKeyPem = process.env.AUDIT_SIGNING_PUBLIC_KEY_PEM;
+        const { publicKeyPem } = getAuditSigningConfig();
         if (!publicKeyPem) {
             throw new AuditSigningConfigError("AUDIT_SIGNING_PUBLIC_KEY_PEM is required");
         }

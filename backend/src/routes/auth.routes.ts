@@ -1,17 +1,15 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { StrKey } from '@stellar/stellar-sdk';
 import jwt from 'jsonwebtoken';
 import { AuthService } from '../services/auth.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { AuthRequest } from '../services/auth.service';
+import { RATE_LIMIT_CONFIG } from '../config/rateLimit';
+import { createIpRateLimiter } from '../lib/rateLimit';
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 requests per windowMs
-  message: 'Too many challenges/verify attempts, try again later.',
-});
+const authLimiter = createIpRateLimiter(RATE_LIMIT_CONFIG.auth);
+const refreshLimiter = createIpRateLimiter(RATE_LIMIT_CONFIG.authRefresh);
 
 const router = Router();
 
@@ -21,7 +19,7 @@ const challengeSchema = z.object({
   }),
 });
 
-router.post('/challenge', limiter, async (req, res) => {
+router.post('/challenge', authLimiter, async (req, res) => {
   try {
     const { walletAddress } = challengeSchema.parse(req.body);
     const challenge = await AuthService.generateChallenge(walletAddress);
@@ -42,7 +40,7 @@ const verifySchema = z.object({
   signedChallenge: z.string(),
 });
 
-router.post('/verify', limiter, async (req, res) => {
+router.post('/verify', authLimiter, async (req, res) => {
   try {
     const { walletAddress, signedChallenge } = verifySchema.parse(req.body);
     const token = await AuthService.verifySignatureAndIssueJWT(walletAddress, signedChallenge);
@@ -69,7 +67,7 @@ router.post('/logout', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', refreshLimiter, async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
@@ -88,4 +86,3 @@ router.get('/validate', authMiddleware, (req: AuthRequest, res) => {
 });
 
 export { router as authRoutes };
-

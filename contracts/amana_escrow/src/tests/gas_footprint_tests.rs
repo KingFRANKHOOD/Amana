@@ -1,20 +1,8 @@
-/// Issue #388 — Gas and footprint regression checks for hot paths
+/// Issue #388/#552/#544 — Gas and footprint regression checks for hot paths
 ///
-/// Measures CPU instructions and memory bytes consumed by the four hot paths:
-///   create_trade, deposit, initiate_dispute, resolve_dispute
-///
-/// Baseline thresholds are versioned here. A regression (cost exceeding the
-/// threshold) causes the test to fail, surfacing the issue in CI before it ships.
-///
-/// Threshold methodology
-/// ---------------------
-/// Values were established by running the suite once and rounding up to the
-/// nearest comfortable headroom (~20 % above the measured baseline).  They are
-/// intentionally conservative so that genuine regressions are caught while
-/// minor SDK-version fluctuations do not produce false positives.
-///
-/// To re-baseline after an intentional change, update the constants below and
-/// commit the diff as part of the PR that introduces the change.
+/// Measures CPU instructions and memory bytes consumed by the escrow hot paths.
+/// See `contracts/amana_escrow/docs/gas-estimation.md` for the methodology,
+/// re-baselining policy, and CI assumptions.
 #[cfg(test)]
 mod gas_footprint_tests {
     use crate::{EscrowContract, EscrowContractClient};
@@ -23,33 +11,29 @@ mod gas_footprint_tests {
         token, Address, Env, String,
     };
 
-    // -----------------------------------------------------------------------
-    // Versioned baseline thresholds  (v0.1 — amana_escrow 0.1.0)
-    // -----------------------------------------------------------------------
-
-    /// Maximum CPU instructions allowed for create_trade.
     const BASELINE_CREATE_TRADE_CPU: u64 = 3_000_000;
-    /// Maximum memory bytes allowed for create_trade.
     const BASELINE_CREATE_TRADE_MEM: u64 = 2_000_000;
-
-    /// Maximum CPU instructions allowed for deposit.
     const BASELINE_DEPOSIT_CPU: u64 = 5_000_000;
-    /// Maximum memory bytes allowed for deposit.
     const BASELINE_DEPOSIT_MEM: u64 = 3_000_000;
-
-    /// Maximum CPU instructions allowed for initiate_dispute.
     const BASELINE_DISPUTE_CPU: u64 = 3_000_000;
-    /// Maximum memory bytes allowed for initiate_dispute.
     const BASELINE_DISPUTE_MEM: u64 = 2_000_000;
-
-    /// Maximum CPU instructions allowed for resolve_dispute.
     const BASELINE_RESOLVE_CPU: u64 = 8_000_000;
-    /// Maximum memory bytes allowed for resolve_dispute.
     const BASELINE_RESOLVE_MEM: u64 = 4_000_000;
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct CostEstimate {
+        cpu: u64,
+        mem: u64,
+    }
+
+    impl CostEstimate {
+        fn assert_under(self, label: &str, max_cpu: u64, max_mem: u64) {
+            assert!(self.cpu > 0, "{label} CPU estimate must be non-zero");
+            assert!(self.mem > 0, "{label} MEM estimate must be non-zero");
+            assert!(self.cpu <= max_cpu, "{label} CPU regression: {} > baseline {max_cpu}", self.cpu);
+            assert!(self.mem <= max_mem, "{label} MEM regression: {} > baseline {max_mem}", self.mem);
+        }
+    }
 
     struct Ctx {
         env: Env,
@@ -63,7 +47,6 @@ mod gas_footprint_tests {
         fn new(amount: i128) -> Self {
             let env = Env::default();
             env.mock_all_auths();
-            // Disable the budget so setup calls don't count toward measurements
             env.cost_estimate().budget().reset_unlimited();
 
             let admin = Address::generate(&env);
@@ -73,9 +56,7 @@ mod gas_footprint_tests {
             let mediator = Address::generate(&env);
 
             let contract_id = env.register(EscrowContract, ());
-            let usdc_id = env
-                .register_stellar_asset_contract_v2(admin.clone())
-                .address();
+            let usdc_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
 
             token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(amount * 10));
 
@@ -90,75 +71,50 @@ mod gas_footprint_tests {
             EscrowContractClient::new(&self.env, &self.contract_id)
         }
 
-        /// Reset the budget, run `f`, then return (cpu_insns, mem_bytes).
-        fn measure<F: FnOnce()>(&self, f: F) -> (u64, u64) {
+        fn measure<F: FnOnce()>(&self, f: F) -> CostEstimate {
             self.env.cost_estimate().budget().reset_unlimited();
             f();
             let budget = self.env.cost_estimate().budget();
-            let cpu = budget.cpu_instruction_cost();
-            let mem = budget.memory_bytes_cost();
-            (cpu, mem)
+            CostEstimate {
+                cpu: budget.cpu_instruction_cost(),
+                mem: budget.memory_bytes_cost(),
+            }
         }
     }
 
-    // -----------------------------------------------------------------------
-    // #388-1  create_trade hot path
-    // -----------------------------------------------------------------------
     #[test]
     fn test_gas_create_trade() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
 
-        let (cpu, mem) = ctx.measure(|| {
+        let cost = ctx.measure(|| {
             client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
         });
 
-        assert!(
-            cpu <= BASELINE_CREATE_TRADE_CPU,
-            "create_trade CPU regression: {cpu} > baseline {BASELINE_CREATE_TRADE_CPU}"
-        );
-        assert!(
-            mem <= BASELINE_CREATE_TRADE_MEM,
-            "create_trade MEM regression: {mem} > baseline {BASELINE_CREATE_TRADE_MEM}"
-        );
+        cost.assert_under("create_trade", BASELINE_CREATE_TRADE_CPU, BASELINE_CREATE_TRADE_MEM);
     }
 
-    // -----------------------------------------------------------------------
-    // #388-2  deposit hot path
-    // -----------------------------------------------------------------------
     #[test]
     fn test_gas_deposit() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id =
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
 
-        let (cpu, mem) = ctx.measure(|| {
+        let cost = ctx.measure(|| {
             client.deposit(&trade_id);
         });
 
-        assert!(
-            cpu <= BASELINE_DEPOSIT_CPU,
-            "deposit CPU regression: {cpu} > baseline {BASELINE_DEPOSIT_CPU}"
-        );
-        assert!(
-            mem <= BASELINE_DEPOSIT_MEM,
-            "deposit MEM regression: {mem} > baseline {BASELINE_DEPOSIT_MEM}"
-        );
+        cost.assert_under("deposit", BASELINE_DEPOSIT_CPU, BASELINE_DEPOSIT_MEM);
     }
 
-    // -----------------------------------------------------------------------
-    // #388-3  initiate_dispute hot path
-    // -----------------------------------------------------------------------
     #[test]
     fn test_gas_initiate_dispute() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id =
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
         client.deposit(&trade_id);
 
-        let (cpu, mem) = ctx.measure(|| {
+        let cost = ctx.measure(|| {
             client.initiate_dispute(
                 &trade_id,
                 &ctx.buyer,
@@ -166,90 +122,40 @@ mod gas_footprint_tests {
             );
         });
 
-        assert!(
-            cpu <= BASELINE_DISPUTE_CPU,
-            "initiate_dispute CPU regression: {cpu} > baseline {BASELINE_DISPUTE_CPU}"
-        );
-        assert!(
-            mem <= BASELINE_DISPUTE_MEM,
-            "initiate_dispute MEM regression: {mem} > baseline {BASELINE_DISPUTE_MEM}"
-        );
+        cost.assert_under("initiate_dispute", BASELINE_DISPUTE_CPU, BASELINE_DISPUTE_MEM);
     }
 
-    // -----------------------------------------------------------------------
-    // #388-4  resolve_dispute hot path
-    // -----------------------------------------------------------------------
     #[test]
     fn test_gas_resolve_dispute() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id =
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
         client.deposit(&trade_id);
-        client.initiate_dispute(
-            &trade_id,
-            &ctx.buyer,
-            &String::from_str(&ctx.env, "QmGasTestReason"),
-        );
+        client.initiate_dispute(&trade_id, &ctx.buyer, &String::from_str(&ctx.env, "QmGasTestReason"));
 
-        let (cpu, mem) = ctx.measure(|| {
+        let cost = ctx.measure(|| {
             client.resolve_dispute(&trade_id, &ctx.mediator, &5_000_u32);
         });
 
-        assert!(
-            cpu <= BASELINE_RESOLVE_CPU,
-            "resolve_dispute CPU regression: {cpu} > baseline {BASELINE_RESOLVE_CPU}"
-        );
-        assert!(
-            mem <= BASELINE_RESOLVE_MEM,
-            "resolve_dispute MEM regression: {mem} > baseline {BASELINE_RESOLVE_MEM}"
-        );
+        cost.assert_under("resolve_dispute", BASELINE_RESOLVE_CPU, BASELINE_RESOLVE_MEM);
     }
 
-    // -----------------------------------------------------------------------
-    // #388-5  Regression guard: all four hot paths in sequence
-    //         Ensures no cumulative footprint surprise across a full lifecycle.
-    // -----------------------------------------------------------------------
     #[test]
     fn test_gas_full_dispute_lifecycle_combined() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
 
-        // Measure the entire dispute lifecycle as one unit
-        let (cpu, mem) = ctx.measure(|| {
-            let trade_id = client.create_trade(
-                &ctx.buyer,
-                &ctx.seller,
-                &10_000_i128,
-                &5000_u32,
-                &5000_u32,
-            );
+        let cost = ctx.measure(|| {
+            let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
             client.deposit(&trade_id);
-            client.initiate_dispute(
-                &trade_id,
-                &ctx.buyer,
-                &String::from_str(&ctx.env, "QmCombinedReason"),
-            );
+            client.initiate_dispute(&trade_id, &ctx.buyer, &String::from_str(&ctx.env, "QmCombinedReason"));
             client.resolve_dispute(&trade_id, &ctx.mediator, &5_000_u32);
         });
 
-        // Combined threshold = sum of individual baselines
-        let combined_cpu = BASELINE_CREATE_TRADE_CPU
-            + BASELINE_DEPOSIT_CPU
-            + BASELINE_DISPUTE_CPU
-            + BASELINE_RESOLVE_CPU;
-        let combined_mem = BASELINE_CREATE_TRADE_MEM
-            + BASELINE_DEPOSIT_MEM
-            + BASELINE_DISPUTE_MEM
-            + BASELINE_RESOLVE_MEM;
-
-        assert!(
-            cpu <= combined_cpu,
-            "combined lifecycle CPU regression: {cpu} > combined baseline {combined_cpu}"
-        );
-        assert!(
-            mem <= combined_mem,
-            "combined lifecycle MEM regression: {mem} > combined baseline {combined_mem}"
+        cost.assert_under(
+            "combined lifecycle",
+            BASELINE_CREATE_TRADE_CPU + BASELINE_DEPOSIT_CPU + BASELINE_DISPUTE_CPU + BASELINE_RESOLVE_CPU,
+            BASELINE_CREATE_TRADE_MEM + BASELINE_DEPOSIT_MEM + BASELINE_DISPUTE_MEM + BASELINE_RESOLVE_MEM,
         );
     }
 }

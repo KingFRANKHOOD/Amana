@@ -28,6 +28,7 @@ tags:
   - name: Wallet
   - name: Users
   - name: Trades
+  - name: Disputes
   - name: Dispute Categories
   - name: Manifest
   - name: Evidence
@@ -46,6 +47,14 @@ components:
       name: id
       required: true
       description: Trade identifier used by the backend route layer.
+      schema:
+        type: string
+      example: 4294967297
+    DisputeIdPath:
+      in: path
+      name: id
+      required: true
+      description: Trade identifier for the dispute.
       schema:
         type: string
       example: 4294967297
@@ -484,6 +493,70 @@ components:
           items:
             $ref: "#/components/schemas/DisputeCategory"
       required: [items]
+    DisputeResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        tradeId:
+          type: string
+        initiator:
+          type: string
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, UNDER_REVIEW, RESOLVED, CLOSED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        trade:
+          type: object
+          properties:
+            buyerAddress:
+              type: string
+            sellerAddress:
+              type: string
+            amountUsdc:
+              type: string
+      required:
+        [id, tradeId, initiator, reason, status, createdAt, updatedAt, trade]
+    DisputeListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DisputeResponse"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            totalPages:
+              type: integer
+          required: [page, limit, total, totalPages]
+      required: [items, pagination]
+    DisputeTransitionRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [UNDER_REVIEW, RESOLVED, CLOSED]
+      required: [status]
+      example:
+        status: UNDER_REVIEW
     DisputeCategoryMutationRequest:
       type: object
       properties:
@@ -1133,6 +1206,106 @@ paths:
           $ref: "#/components/responses/ForbiddenError"
         "404":
           $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /disputes:
+    get:
+      tags: [Disputes]
+      summary: List disputes for mediators
+      description: |-
+        Returns paginated list of disputes accessible to the authenticated mediator.
+        Error code references: `AUTH_ERROR`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [OPEN, UNDER_REVIEW, RESOLVED, CLOSED]
+          description: Filter by dispute status
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number for pagination
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of items per page
+      responses:
+        "200":
+          description: Dispute list returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          description: Caller is not a mediator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /disputes/{id}/transition:
+    post:
+      tags: [Disputes]
+      summary: Transition dispute status
+      description: |-
+        Mediator-only endpoint to transition a dispute to a new status.
+        Valid transitions: OPEN → UNDER_REVIEW → RESOLVED/CLOSED
+        Error code references: `AUTH_ERROR`, `DISPUTE_NOT_FOUND`, `DISPUTE_STATUS_TRANSITION_INVALID`, `DISPUTE_STATUS_CONFLICT`, `INTERNAL_ERROR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DisputeIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisputeTransitionRequest"
+      responses:
+        "200":
+          description: Dispute status transitioned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeResponse"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          description: Caller is not a mediator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Dispute not found for the trade.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Dispute was modified by another user (optimistic concurrency conflict).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppErrorResponse"
         "500":
           $ref: "#/components/responses/InternalError"
   /trades:

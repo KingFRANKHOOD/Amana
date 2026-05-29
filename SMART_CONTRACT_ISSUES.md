@@ -336,6 +336,34 @@ This issue will not be reviewed or approved without tests for event sequence fil
 
 ---
 
+## SC-013 - Core Structs Lack Forward Compatibility (Issue #554)
+
+Description:
+Core data structures like `Trade` are currently defined as simple `struct` types stored directly in persistent storage. In Soroban, structs are not easily upgradeable (adding/removing fields after deployment is difficult). For long-term maintainability, core structs should be wrapped in versioned enums.
+
+Requirements and Context:
+- This is a smart contract architectural improvement (Priority: P2).
+- Scope includes: refactoring storage to use versioned enums.
+- Contract location: `contracts/amana_escrow/src/lib.rs`
+- Affected structures:
+  - `Trade` struct (line 154-167)
+  - `ReleaseSequence` struct
+
+Acceptance Criteria:
+- [ ] Implement `TradeData` enum with variants like `V0(Trade)`.
+- [ ] Update `get_trade` and `create_trade` to handle the enum wrapper.
+- [ ] Ensure that future `V1` variants can be added without breaking existing storage.
+
+Deliverables:
+- [ ] Refactored schema with versioned enum wrappers.
+- [ ] Documentation of the upgrade path for future developers.
+- [ ] Tests verifying that `V0` data can still be read after adding `V1`.
+
+NOTE:
+This issue is critical for mainnet long-term stability and should be addressed before the trade volume becomes high enough to make migrations expensive.
+
+---
+
 ## Prioritization Summary
 
 | Priority | Issue Code | Issue Title |
@@ -350,7 +378,8 @@ This issue will not be reviewed or approved without tests for event sequence fil
 | P2 | SC-008 | CancelRequest State Leak |
 | P2 | SC-009 | Emergency Admin Withdrawal |
 | P2 | SC-011 | Video Proof and Manifest Coordination |
+| P2 | SC-013 | Core Structs Lack Forward Compatibility |
 | P3 | SC-010 | Trade ID Collision Risk |
 | P3 | SC-012 | Missing Event Indexing |
 
-Date: 2026-04-27
+Date: 2026-05-29

@@ -2,6 +2,7 @@ import { StellarService } from "./stellar.service";
 import { TOKEN_CONFIG } from "../config/token";
 import { env } from "../config/env";
 import { appLogger } from "../middleware/logger";
+import { isMediatorAddress } from "../lib/accessControl";
 
 export class TreasuryService {
   private stellarService: StellarService;
@@ -52,17 +53,13 @@ export class TreasuryService {
   } {
     return {
       contractId: env.AMANA_ESCROW_CONTRACT_ID,
-      network: process.env.STELLAR_NETWORK || "testnet",
+      network: process.env.STELLAR_NETWORK ?? env.STELLAR_NETWORK,
       asset: TOKEN_CONFIG.symbol,
     };
   }
 
   private isAdmin(address: string): boolean {
-    const admins = (process.env.ADMIN_STELLAR_PUBKEYS ?? "")
-      .split(",")
-      .map((a) => a.trim())
-      .filter(Boolean);
-    return admins.includes(address);
+    return isMediatorAddress(address);
   }
 }
 

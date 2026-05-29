@@ -2,6 +2,8 @@ import axios from "axios";
 import { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
 import { IPFSService, ServiceUnavailableError } from "./ipfs.service";
+import { getAdminAllowlistLowercase } from "../lib/accessControl";
+import { env } from "../config/env";
 
 export class EvidenceAccessDeniedError extends Error {
     status = 403;
@@ -50,19 +52,8 @@ class NoopEvidenceScanner implements EvidenceScanner {
     }
 }
 
-function parseAdminPubkeys(): Set<string> {
-    const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
-    return new Set(
-        raw
-            .split(",")
-            .map((value) => value.trim().toLowerCase())
-            .filter(Boolean),
-    );
-}
-
 function getEvidenceMetadataRetentionDays(): number {
-    const parsed = parseInt(process.env.EVIDENCE_METADATA_RETENTION_DAYS || "90", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+    return env.EVIDENCE_METADATA_RETENTION_DAYS;
 }
 
 function isEvidenceMetadataExpired(createdAt: Date): boolean {
@@ -101,7 +92,7 @@ export class EvidenceService {
         if (!trade) throw new EvidenceTradeNotFoundError();
 
         const caller = callerAddress.toLowerCase();
-        const isAdmin = parseAdminPubkeys().has(caller);
+        const isAdmin = getAdminAllowlistLowercase().has(caller);
         if (
             trade.buyerAddress.toLowerCase() !== caller &&
             trade.sellerAddress.toLowerCase() !== caller &&
@@ -164,7 +155,7 @@ export class EvidenceService {
 
         // Enforce configurable size limit (default 50MB)
         const size = (file as any).size ?? file.buffer.length;
-        const MAX = parseInt(process.env.EVIDENCE_MAX_BYTES || "52428800", 10);
+        const MAX = env.EVIDENCE_MAX_BYTES;
         if (size > MAX) {
             throw new EvidenceValidationError("File too large");
         }
@@ -204,7 +195,7 @@ export class EvidenceService {
         const headers: Record<string, string> = {};
         if (range) headers["Range"] = range;
 
-        const timeoutMs = parseInt(process.env.IPFS_STREAM_TIMEOUT_MS || "5000", 10);
+        const timeoutMs = env.IPFS_STREAM_TIMEOUT_MS;
 
         let lastError: any = null;
         for (const url of urls) {
@@ -264,7 +255,10 @@ export class EvidenceService {
     }
 
     private async runEvidenceScan(file: Express.Multer.File): Promise<EvidenceScanResult> {
-        const required = String(process.env.EVIDENCE_SCAN_REQUIRED || "false").toLowerCase() === "true";
+        const required =
+            process.env.EVIDENCE_SCAN_REQUIRED !== undefined
+                ? process.env.EVIDENCE_SCAN_REQUIRED.toLowerCase() === "true"
+                : env.EVIDENCE_SCAN_REQUIRED;
         try {
             return await this.scanner.scan(file);
         } catch (error) {
@@ -278,12 +272,12 @@ export class EvidenceService {
     }
 
     private resolveGatewayUrls(cid: string): string[] {
-        const env = process.env.IPFS_GATEWAY_URLS;
+        const gatewayUrls = process.env.IPFS_GATEWAY_URLS ?? env.IPFS_GATEWAY_URLS;
         const allowlist = this.parseGatewayAllowlist();
         const configured: string[] = [];
 
-        if (env) {
-            for (const value of env.split(",")) {
+        if (gatewayUrls) {
+            for (const value of gatewayUrls.split(",")) {
                 const gateway = value.trim();
                 if (!gateway) continue;
                 const normalized = gateway.replace(/\/$/, "");
@@ -307,11 +301,11 @@ export class EvidenceService {
     }
 
     private parseGatewayAllowlist(): Set<string> {
-        const raw = process.env.IPFS_GATEWAY_ALLOWLIST || "";
+        const raw = process.env.IPFS_GATEWAY_ALLOWLIST ?? env.IPFS_GATEWAY_ALLOWLIST ?? "";
         return new Set(
             raw
                 .split(",")
-                .map((v) => v.trim().toLowerCase())
+                .map((v: string) => v.trim().toLowerCase())
                 .filter(Boolean),
         );
     }
@@ -337,8 +331,8 @@ export class EvidenceService {
     }
 
     private onGatewayFailure(url: string): void {
-        const threshold = parseInt(process.env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD || "3", 10);
-        const cooldownMs = parseInt(process.env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS || "30000", 10);
+        const threshold = env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD;
+        const cooldownMs = env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS;
         const current = this.gatewayCircuit.get(url) ?? { failures: 0, openUntil: 0 };
         const failures = current.failures + 1;
 

@@ -53,3 +53,18 @@ Before production rollout, execute:
 ```bash
 cargo test
 ```
+
+## Deployment safety checks
+
+Contract CI runs `scripts/check-contract-deployment-safety.sh` before the test
+suite for contract changes. The script is intentionally static and
+deterministic: it verifies deployment-critical files exist, the crate keeps the
+explicit `wasm` feature and native `rlib` test configuration, initialization
+remains guarded by admin auth and the one-time initialized flag, and no obvious
+secret or live key material is committed under `contracts/`.
+
+Run the same check locally from the repository root:
+
+```bash
+bash scripts/check-contract-deployment-safety.sh
+```

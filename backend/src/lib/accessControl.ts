@@ -6,12 +6,28 @@
  * logic inline.
  */
 
+import { env } from "../config/env";
+
+function adminPubkeysRaw(): string {
+  return process.env.ADMIN_STELLAR_PUBKEYS ?? env.ADMIN_STELLAR_PUBKEYS ?? "";
+}
+
 /** Returns the set of mediator/arbitrator addresses from the environment. */
 export function getMediatorAllowlist(): Set<string> {
   return new Set(
-    (process.env.ADMIN_STELLAR_PUBKEYS ?? "")
+    adminPubkeysRaw()
       .split(",")
       .map((a: string) => a.trim())
+      .filter(Boolean)
+  );
+}
+
+/** Case-normalized admin allowlist for services that compare lowercase addresses. */
+export function getAdminAllowlistLowercase(): Set<string> {
+  return new Set(
+    adminPubkeysRaw()
+      .split(",")
+      .map((a: string) => a.trim().toLowerCase())
       .filter(Boolean)
   );
 }

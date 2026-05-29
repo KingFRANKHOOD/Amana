@@ -48,7 +48,7 @@ export function FormField({
     <div className={clsx("flex flex-col gap-1.5", className)}>
       <label
         htmlFor={inputId}
-        className="text-sm font-medium text-text-secondary"
+        className="text-sm font-medium text-text-secondary dark:text-text-secondary"
       >
         {label}
         {required && <span className="text-gold ml-0.5">*</span>}

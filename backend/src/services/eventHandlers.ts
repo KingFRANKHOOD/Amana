@@ -2,6 +2,10 @@ import { Prisma, TradeStatus } from "@prisma/client";
 import { EventType, ParsedEvent, EVENT_TO_STATUS } from "../types/events";
 import { appLogger } from "../middleware/logger";
 import { webhookService } from "./webhook.service";
+import {
+  syncDisputeInitiatedFromChain,
+  syncDisputeResolvedFromChain,
+} from "./disputeTransitions";
 
 type TradeCreatePayload = {
   tradeId: string;
@@ -16,7 +20,7 @@ const VALID_PREDECESSORS: Partial<Record<EventType, TradeStatus[]>> = {
   [EventType.TradeFunded]: [TradeStatus.CREATED],
   [EventType.DeliveryConfirmed]: [TradeStatus.FUNDED],
   [EventType.FundsReleased]: [TradeStatus.DELIVERED],
-  [EventType.DisputeInitiated]: [TradeStatus.FUNDED],
+  [EventType.DisputeInitiated]: [TradeStatus.FUNDED, TradeStatus.DELIVERED],
   [EventType.DisputeResolved]: [TradeStatus.DISPUTED],
 };
 
@@ -116,6 +120,11 @@ export async function handleDisputeInitiated(tx: Prisma.TransactionClient, event
     status: EVENT_TO_STATUS[EventType.DisputeInitiated],
     version: 1,
   });
+  await syncDisputeInitiatedFromChain(
+    tx,
+    event.tradeId,
+    String(event.data.initiator ?? ""),
+  );
   appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DisputeInitiated");
   webhookService.dispatch(event.tradeId, TradeStatus.DISPUTED, { ledger: event.ledgerSequence });
 }
@@ -128,6 +137,7 @@ export async function handleDisputeResolved(tx: Prisma.TransactionClient, event:
     status: EVENT_TO_STATUS[EventType.DisputeResolved],
     version: 1,
   });
+  await syncDisputeResolvedFromChain(tx, event.tradeId);
   appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DisputeResolved");
   webhookService.dispatch(event.tradeId, TradeStatus.COMPLETED, { ledger: event.ledgerSequence });
 }

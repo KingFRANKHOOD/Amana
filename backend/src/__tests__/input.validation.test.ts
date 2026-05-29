@@ -16,12 +16,13 @@ jest.mock("../services/contract.service");
 jest.mock("../services/trade.service");
 jest.mock("../services/manifest.service");
 jest.mock("../services/auth.service", () => {
-  const actual = jest.requireActual("../services/auth.service");
   return {
-    ...actual,
     AuthService: {
-      ...actual.AuthService,
-      isTokenRevoked: jest.fn(),
+      validateToken: jest.fn(async (token: string) => {
+        const jwt = require("jsonwebtoken");
+        return jwt.decode(token);
+      }),
+      isTokenRevoked: jest.fn().mockResolvedValue(false),
     },
   };
 });
@@ -77,6 +78,9 @@ beforeAll(() => {
   process.env.JWT_SECRET = JWT_SECRET;
   process.env.JWT_ISSUER = JWT_ISSUER;
   process.env.JWT_AUDIENCE = JWT_AUDIENCE;
+});
+
+beforeEach(() => {
   jest.spyOn(AuthService, "isTokenRevoked").mockResolvedValue(false);
 });
 

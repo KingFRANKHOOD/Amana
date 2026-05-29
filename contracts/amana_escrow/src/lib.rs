@@ -598,6 +598,7 @@ impl EscrowContract {
             amount: trade.amount,
         }
         .publish(&env);
+        Self::bump_instance_ttl(&env);
     }
 
     pub fn cancel_trade(env: Env, trade_id: u64, caller: Address) {
@@ -656,6 +657,32 @@ impl EscrowContract {
         } else {
             panic!("Cannot cancel trade in current status");
         }
+    }
+
+    /// Unilaterally refund a funded or delivered trade.
+    ///
+    /// Only the seller may call this. It transitions the trade to `Cancelled`
+    /// and returns the full escrowed amount to the buyer. This is useful when
+    /// the seller cannot fulfill the order or chooses to return funds after
+    /// a delivery issue without requiring a formal dispute.
+    pub fn refund(env: Env, trade_id: u64) {
+        let key = DataKey::Trade(trade_id);
+        let mut trade: Trade = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .expect("Trade not found");
+
+        trade.seller.require_auth();
+
+        assert!(
+            matches!(trade.status, TradeStatus::Funded | TradeStatus::Delivered),
+            "Trade must be Funded or Delivered to be refunded by seller"
+        );
+
+        let amount = trade.amount;
+        let seller = trade.seller.clone();
+        Self::execute_cancellation(&env, &mut trade, amount, seller);
     }
 
     fn execute_cancellation(env: &Env, trade: &mut Trade, refund_amount: i128, caller: Address) {
@@ -1513,6 +1540,44 @@ mod test {
         client.confirm_delivery(&trade_id);
 
         client.cancel_trade(&trade_id, &buyer);
+    }
+
+    #[test]
+    fn test_seller_can_unilaterally_refund() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let amount = 5000_i128;
+        let (contract_id, usdc_id, buyer, _seller, _treasury, trade_id) =
+            setup_funded_trade(&env, amount, 100);
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let token = token::Client::new(&env, &usdc_id);
+
+        // Refund while Funded
+        client.refund(&trade_id);
+
+        assert_eq!(token.balance(&buyer), amount);
+        assert_eq!(token.balance(&client.address), 0);
+        assert!(matches!(
+            client.get_trade(&trade_id).status,
+            TradeStatus::Cancelled
+        ));
+
+        // Refund while Delivered
+        let buyer_2 = Address::generate(&env);
+        let seller_2 = Address::generate(&env);
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer_2, &amount);
+
+        let trade_id_2 = client.create_trade(&buyer_2, &seller_2, &amount, &5000_u32, &5000_u32);
+        client.deposit(&trade_id_2);
+        client.confirm_delivery(&trade_id_2);
+        client.refund(&trade_id_2);
+
+        assert_eq!(token.balance(&buyer_2), amount);
+        assert!(matches!(
+            client.get_trade(&trade_id_2).status,
+            TradeStatus::Cancelled
+        ));
     }
 
     #[test]

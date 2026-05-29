@@ -27,6 +27,11 @@ function createMockTx() {
       create: jest.fn(async () => ({})),
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
+    dispute: {
+      findUnique: jest.fn(async () => null),
+      create: jest.fn(async () => ({})),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
   } as unknown as Prisma.TransactionClient;
 }
 
@@ -183,6 +188,48 @@ describe("eventHandlers", () => {
 
       expect(mockTx.trade.updateMany).toHaveBeenCalledTimes(1);
     });
+
+    it("creates a dispute row when chain initiation arrives first", async () => {
+      const event = makeParsedEvent(EventType.DisputeInitiated, {
+        data: { initiator: "GA_BUYER" },
+      });
+      (mockTx.trade.findUnique as any).mockResolvedValue({
+        tradeId: "test-trade-001",
+        status: TradeStatus.FUNDED,
+        version: 5,
+      });
+      (mockTx.dispute.findUnique as any).mockResolvedValue(null);
+
+      await handleDisputeInitiated(mockTx, event);
+
+      expect(mockTx.dispute.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tradeId: "test-trade-001",
+            initiator: "GA_BUYER",
+            status: "OPEN",
+          }),
+        }),
+      );
+    });
+
+    it("updates to DISPUTED from DELIVERED", async () => {
+      const event = makeParsedEvent(EventType.DisputeInitiated);
+      (mockTx.trade.findUnique as any).mockResolvedValue({
+        tradeId: "test-trade-001",
+        status: TradeStatus.DELIVERED,
+        version: 2,
+      });
+
+      await handleDisputeInitiated(mockTx, event);
+
+      expect(mockTx.trade.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: TradeStatus.DELIVERED }),
+          data: expect.objectContaining({ status: TradeStatus.DISPUTED }),
+        }),
+      );
+    });
   });
 
   /* ---------- handleDisputeResolved ------------------------------- */
@@ -195,9 +242,16 @@ describe("eventHandlers", () => {
         status: TradeStatus.DISPUTED,
         version: 6,
       });
+      (mockTx.dispute.findUnique as any).mockResolvedValue({
+        id: 1,
+        tradeId: "test-trade-001",
+        status: "OPEN",
+        version: 0,
+      });
       await handleDisputeResolved(mockTx, event);
 
       expect(mockTx.trade.updateMany).toHaveBeenCalledTimes(1);
+      expect(mockTx.dispute.updateMany).toHaveBeenCalledTimes(1);
     });
 
     it("maps DisputeResolved to COMPLETED in EVENT_TO_STATUS", async () => {

@@ -1,4 +1,4 @@
-import dotenv from "dotenv";
+import "./config/loadEnv";
 import express from "express";
 import fs from "fs";
 import path from "path";
@@ -17,7 +17,7 @@ env; // Validate early
 initializeTracing();
 
 const app = createApp();
-const port = Number(process.env.PORT || 4000);
+const port = env.PORT;
 
 const docsDir = path.join(__dirname, "docs");
 const openapiYamlPath = path.join(docsDir, "openapi.yaml");
@@ -30,10 +30,10 @@ try {
   appLogger.warn({ error }, "OpenAPI spec could not be loaded");
 }
 
-if (process.env.NODE_ENV !== "production" && openapiSpec) {
+if (env.NODE_ENV !== "production" && openapiSpec) {
   // Override server URL from env so Try It Out links work in deployed environments
-  if (process.env.API_PUBLIC_URL && Array.isArray(openapiSpec.servers)) {
-    openapiSpec.servers = [{ url: process.env.API_PUBLIC_URL }];
+  if (env.API_PUBLIC_URL && Array.isArray(openapiSpec.servers)) {
+    openapiSpec.servers = [{ url: env.API_PUBLIC_URL }];
   }
 
   // Auto-generate stable operationId for every operation so generated docs

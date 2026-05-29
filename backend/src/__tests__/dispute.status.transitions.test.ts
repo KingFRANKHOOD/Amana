@@ -5,17 +5,29 @@ import { AppError, ErrorCode } from "../errors/errorCodes";
 const MEDIATOR = "GA_MEDIATOR_VALID";
 
 function createMockPrisma() {
+  const txClient = {
+    dispute: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      updateMany: jest.fn(),
+    },
+  };
+
   return {
     dispute: {
       findFirst: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       count: jest.fn(),
       findMany: jest.fn(),
     },
-  } as unknown as PrismaClient;
+    $transaction: jest.fn(async (cb: (tx: typeof txClient) => Promise<unknown>) => cb(txClient)),
+    _tx: txClient,
+  } as unknown as PrismaClient & { _tx: typeof txClient };
 }
 
-function makeDispute(status: DisputeStatus, id = 1, tradeId = "T-001") {
+function makeDispute(status: DisputeStatus, id = 1, tradeId = "T-001", version = 0) {
   const now = new Date();
   return {
     id,
@@ -23,6 +35,7 @@ function makeDispute(status: DisputeStatus, id = 1, tradeId = "T-001") {
     initiator: "GA_BUYER",
     reason: "Item not received",
     status,
+    version,
     resolvedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -45,20 +58,39 @@ describe("DisputeService – status transitions", () => {
     jest.clearAllMocks();
   });
 
+  function mockSuccessfulTransition(
+    dispute: ReturnType<typeof makeDispute>,
+    newStatus: DisputeStatus,
+    resolvedAt: Date | null = null,
+  ) {
+    const updated = {
+      ...dispute,
+      status: newStatus,
+      version: dispute.version + 1,
+      resolvedAt,
+    };
+
+    prisma._tx.dispute.findFirst.mockResolvedValue(dispute);
+    prisma._tx.dispute.updateMany.mockResolvedValue({ count: 1 });
+    prisma._tx.dispute.findUniqueOrThrow.mockResolvedValue(updated);
+    return updated;
+  }
+
   // ── Valid forward transitions ─────────────────────────────────────────────
 
-  it("OPEN → UNDER_REVIEW: succeeds and persists new status", async () => {
+  it("OPEN → UNDER_REVIEW: succeeds and persists new status with CAS", async () => {
     const dispute = makeDispute(DisputeStatus.OPEN);
-    const updated = { ...dispute, status: DisputeStatus.UNDER_REVIEW };
-
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(dispute);
-    (prisma.dispute.update as jest.Mock).mockResolvedValue(updated);
+    mockSuccessfulTransition(dispute, DisputeStatus.UNDER_REVIEW);
 
     const result = await service.transitionDisputeStatus("T-001", MEDIATOR, DisputeStatus.UNDER_REVIEW);
 
-    expect(prisma.dispute.update).toHaveBeenCalledWith(
+    expect(prisma._tx.dispute.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: DisputeStatus.UNDER_REVIEW }),
+        where: { id: dispute.id, status: DisputeStatus.OPEN, version: 0 },
+        data: expect.objectContaining({
+          status: DisputeStatus.UNDER_REVIEW,
+          version: { increment: 1 },
+        }),
       }),
     );
     expect(result.status).toBe(DisputeStatus.UNDER_REVIEW);
@@ -66,15 +98,11 @@ describe("DisputeService – status transitions", () => {
 
   it("OPEN → CLOSED: succeeds and sets resolvedAt", async () => {
     const dispute = makeDispute(DisputeStatus.OPEN);
-    const now = new Date();
-    const updated = { ...dispute, status: DisputeStatus.CLOSED, resolvedAt: now };
-
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(dispute);
-    (prisma.dispute.update as jest.Mock).mockResolvedValue(updated);
+    mockSuccessfulTransition(dispute, DisputeStatus.CLOSED, new Date());
 
     const result = await service.transitionDisputeStatus("T-001", MEDIATOR, DisputeStatus.CLOSED);
 
-    expect(prisma.dispute.update).toHaveBeenCalledWith(
+    expect(prisma._tx.dispute.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ resolvedAt: expect.any(Date) }),
       }),
@@ -85,11 +113,7 @@ describe("DisputeService – status transitions", () => {
 
   it("UNDER_REVIEW → RESOLVED: succeeds and sets resolvedAt", async () => {
     const dispute = makeDispute(DisputeStatus.UNDER_REVIEW);
-    const now = new Date();
-    const updated = { ...dispute, status: DisputeStatus.RESOLVED, resolvedAt: now };
-
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(dispute);
-    (prisma.dispute.update as jest.Mock).mockResolvedValue(updated);
+    mockSuccessfulTransition(dispute, DisputeStatus.RESOLVED, new Date());
 
     const result = await service.transitionDisputeStatus("T-001", MEDIATOR, DisputeStatus.RESOLVED);
 
@@ -99,11 +123,7 @@ describe("DisputeService – status transitions", () => {
 
   it("UNDER_REVIEW → CLOSED: succeeds and sets resolvedAt", async () => {
     const dispute = makeDispute(DisputeStatus.UNDER_REVIEW);
-    const now = new Date();
-    const updated = { ...dispute, status: DisputeStatus.CLOSED, resolvedAt: now };
-
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(dispute);
-    (prisma.dispute.update as jest.Mock).mockResolvedValue(updated);
+    mockSuccessfulTransition(dispute, DisputeStatus.CLOSED, new Date());
 
     const result = await service.transitionDisputeStatus("T-001", MEDIATOR, DisputeStatus.CLOSED);
 
@@ -114,18 +134,18 @@ describe("DisputeService – status transitions", () => {
   // ── Invalid / blocked transitions ────────────────────────────────────────
 
   it("OPEN → RESOLVED: throws DISPUTE_STATUS_TRANSITION_INVALID (skip UNDER_REVIEW)", async () => {
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(makeDispute(DisputeStatus.OPEN));
+    prisma._tx.dispute.findFirst.mockResolvedValue(makeDispute(DisputeStatus.OPEN));
 
     await expect(
       service.transitionDisputeStatus("T-001", MEDIATOR, DisputeStatus.RESOLVED),
     ).rejects.toMatchObject({
       code: ErrorCode.DISPUTE_STATUS_TRANSITION_INVALID,
     });
-    expect(prisma.dispute.update).not.toHaveBeenCalled();
+    expect(prisma._tx.dispute.updateMany).not.toHaveBeenCalled();
   });
 
   it("RESOLVED → any: throws DISPUTE_STATUS_TRANSITION_INVALID (terminal state)", async () => {
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(makeDispute(DisputeStatus.RESOLVED));
+    prisma._tx.dispute.findFirst.mockResolvedValue(makeDispute(DisputeStatus.RESOLVED));
 
     for (const next of [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW, DisputeStatus.CLOSED]) {
       await expect(
@@ -134,11 +154,11 @@ describe("DisputeService – status transitions", () => {
         code: ErrorCode.DISPUTE_STATUS_TRANSITION_INVALID,
       });
     }
-    expect(prisma.dispute.update).not.toHaveBeenCalled();
+    expect(prisma._tx.dispute.updateMany).not.toHaveBeenCalled();
   });
 
   it("CLOSED → any: throws DISPUTE_STATUS_TRANSITION_INVALID (terminal state)", async () => {
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(makeDispute(DisputeStatus.CLOSED));
+    prisma._tx.dispute.findFirst.mockResolvedValue(makeDispute(DisputeStatus.CLOSED));
 
     for (const next of [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW, DisputeStatus.RESOLVED]) {
       await expect(
@@ -150,18 +170,18 @@ describe("DisputeService – status transitions", () => {
   });
 
   it("UNDER_REVIEW → OPEN: throws DISPUTE_STATUS_TRANSITION_INVALID (backwards move)", async () => {
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(makeDispute(DisputeStatus.UNDER_REVIEW));
+    prisma._tx.dispute.findFirst.mockResolvedValue(makeDispute(DisputeStatus.UNDER_REVIEW));
 
     await expect(
       service.transitionDisputeStatus("T-001", MEDIATOR, DisputeStatus.OPEN),
     ).rejects.toMatchObject({
       code: ErrorCode.DISPUTE_STATUS_TRANSITION_INVALID,
     });
-    expect(prisma.dispute.update).not.toHaveBeenCalled();
+    expect(prisma._tx.dispute.updateMany).not.toHaveBeenCalled();
   });
 
   it("invalid transition error includes currentStatus, requestedStatus, and allowedTransitions", async () => {
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(makeDispute(DisputeStatus.OPEN));
+    prisma._tx.dispute.findFirst.mockResolvedValue(makeDispute(DisputeStatus.OPEN));
 
     let caught: AppError | undefined;
     try {
@@ -179,44 +199,60 @@ describe("DisputeService – status transitions", () => {
     });
   });
 
+  // ── Concurrency ───────────────────────────────────────────────────────────
+
+  it("throws DISPUTE_STATUS_CONFLICT when another writer wins the CAS race", async () => {
+    const dispute = makeDispute(DisputeStatus.OPEN);
+    prisma._tx.dispute.findFirst.mockResolvedValue(dispute);
+    prisma._tx.dispute.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.transitionDisputeStatus("T-001", MEDIATOR, DisputeStatus.UNDER_REVIEW),
+    ).rejects.toMatchObject({
+      code: ErrorCode.DISPUTE_STATUS_CONFLICT,
+      statusCode: 409,
+    });
+    expect(prisma._tx.dispute.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
   // ── Authorization ─────────────────────────────────────────────────────────
 
   it("throws AUTH_ERROR if caller is not a mediator", async () => {
     await expect(
       service.transitionDisputeStatus("T-001", "GA_NOT_MEDIATOR", DisputeStatus.UNDER_REVIEW),
     ).rejects.toMatchObject({ code: ErrorCode.AUTH_ERROR });
-    expect(prisma.dispute.findFirst).not.toHaveBeenCalled();
+    expect(prisma._tx.dispute.findFirst).not.toHaveBeenCalled();
   });
 
   it("throws DISPUTE_NOT_FOUND if no dispute exists for the trade", async () => {
-    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue(null);
+    prisma._tx.dispute.findFirst.mockResolvedValue(null);
 
     await expect(
       service.transitionDisputeStatus("T-UNKNOWN", MEDIATOR, DisputeStatus.UNDER_REVIEW),
     ).rejects.toMatchObject({ code: ErrorCode.DISPUTE_NOT_FOUND });
-    expect(prisma.dispute.update).not.toHaveBeenCalled();
+    expect(prisma._tx.dispute.updateMany).not.toHaveBeenCalled();
   });
 
   // ── listMediatorDisputes ──────────────────────────────────────────────────
 
-  it("listMediatorDisputes returns only OPEN and UNDER_REVIEW disputes by default", async () => {
-    const openDispute = makeDispute(DisputeStatus.OPEN, 1, "T-A");
-    const reviewDispute = makeDispute(DisputeStatus.UNDER_REVIEW, 2, "T-B");
+  it("listMediatorDisputes returns all disputes by default when no status filter", async () => {
+    const disputes = [
+      makeDispute(DisputeStatus.OPEN, 1, "T-A"),
+      makeDispute(DisputeStatus.UNDER_REVIEW, 2, "T-B"),
+      makeDispute(DisputeStatus.RESOLVED, 3, "T-C"),
+      makeDispute(DisputeStatus.CLOSED, 4, "T-D"),
+    ];
 
-    (prisma.dispute.findMany as jest.Mock).mockResolvedValue([openDispute, reviewDispute]);
-    (prisma.dispute.count as jest.Mock).mockResolvedValue(2);
+    (prisma.dispute.findMany as jest.Mock).mockResolvedValue(disputes);
+    (prisma.dispute.count as jest.Mock).mockResolvedValue(4);
 
     const result = await service.listMediatorDisputes(MEDIATOR);
 
     expect(prisma.dispute.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          status: { in: [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW] },
-        },
-      }),
+      expect.objectContaining({ where: {} }),
     );
-    expect(result.items).toHaveLength(2);
-    expect(result.pagination.total).toBe(2);
+    expect(result.items).toHaveLength(4);
+    expect(result.pagination.total).toBe(4);
   });
 
   it("listMediatorDisputes filters by specific status when provided", async () => {

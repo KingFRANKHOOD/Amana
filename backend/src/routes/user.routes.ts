@@ -1,14 +1,10 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { getMe, updateMe, getUserByAddress } from "../controllers/user.controller";
+import { RATE_LIMIT_CONFIG } from "../config/rateLimit";
+import { createIpRateLimiter } from "../lib/rateLimit";
 
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const limiter = createIpRateLimiter(RATE_LIMIT_CONFIG.user);
 
 const router = Router();
 

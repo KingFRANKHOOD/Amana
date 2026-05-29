@@ -16,9 +16,10 @@ import {
     streamEvidenceParamSchema 
 } from "../schemas/evidence.schemas";
 import { tradeIdParamSchema } from "../schemas/trade.schemas";
+import { env } from "../config/env";
 
 const ALLOWED_MIME_TYPES = ["video/mp4", "video/webm"];
-const MAX_FILE_SIZE = parseInt(process.env.EVIDENCE_MAX_BYTES || "52428800", 10);
+const MAX_FILE_SIZE = env.EVIDENCE_MAX_BYTES;
 
 const videoUpload = multer({
     storage: multer.memoryStorage(),
