@@ -3,6 +3,8 @@
  * All values are overridable via environment variables.
  */
 
+import { env } from './env';
+
 export interface EventListenerConfig {
   /** Soroban RPC endpoint URL */
   rpcUrl: string;
@@ -16,15 +18,20 @@ export interface EventListenerConfig {
   backoffMaxMs: number;
   /** Maximum number of processed ledgers to keep in memory */
   processedLedgersCacheSize: number;
+  /** Maximum number of outbox processing attempts before dead-lettering */
+  outboxMaxAttempts: number;
 }
+
+const DEFAULT_RPC_URL = 'https://soroban-testnet.stellar.org';
 
 export function getEventListenerConfig(): EventListenerConfig {
   return {
-    rpcUrl: process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org",
-    contractId: process.env.CONTRACT_ID || "",
-    pollIntervalMs: parseInt(process.env.EVENT_POLL_INTERVAL_MS || "10000", 10),
-    backoffInitialMs: parseInt(process.env.BACKOFF_INITIAL_MS || "1000", 10),
-    backoffMaxMs: parseInt(process.env.BACKOFF_MAX_MS || "30000", 10),
-    processedLedgersCacheSize: parseInt(process.env.PROCESSED_LEDGERS_CACHE_SIZE || "10000", 10),
+    rpcUrl: env.STELLAR_RPC_URL || DEFAULT_RPC_URL,
+    contractId: env.AMANA_ESCROW_CONTRACT_ID,
+    pollIntervalMs: env.EVENT_POLL_INTERVAL_MS,
+    backoffInitialMs: env.BACKOFF_INITIAL_MS,
+    backoffMaxMs: env.BACKOFF_MAX_MS,
+    processedLedgersCacheSize: env.PROCESSED_LEDGERS_CACHE_SIZE,
+    outboxMaxAttempts: env.EVENT_OUTBOX_MAX_ATTEMPTS,
   };
 }

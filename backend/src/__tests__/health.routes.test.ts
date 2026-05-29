@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../app";
 import express from "express";
@@ -14,7 +13,7 @@ describe("Health Routes", () => {
         it("should return health status", async () => {
             const response = await request(app).get("/health");
 
-            expect(response.status).toBeOneOf([200, 503]);
+            expect([200, 503]).toContain(response.status);
             expect(response.body).toHaveProperty("status");
             expect(response.body).toHaveProperty("timestamp");
             expect(response.body).toHaveProperty("checks");
@@ -61,7 +60,7 @@ describe("Health Routes", () => {
         it("should return readiness status", async () => {
             const response = await request(app).get("/health/ready");
 
-            expect(response.status).toBeOneOf([200, 503]);
+            expect([200, 503]).toContain(response.status);
             expect(response.body).toHaveProperty("status");
             expect(response.body).toHaveProperty("timestamp");
         });

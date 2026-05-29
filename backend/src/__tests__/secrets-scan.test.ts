@@ -74,7 +74,7 @@ describe('Custom rule patterns — true positives (should detect)', () => {
     {
       ruleId: 'stellar-secret-key',
       // Valid Stellar secret key format: S + 55 uppercase base32 chars
-      sample: 'STELLAR_KEY=SABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVWXYZ2',
+      sample: 'STELLAR_KEY=SABCDEFGHIJKLMNOPQRSTUVWXYZ234567AAAAAAAAAAAAAAAAAAAAAAA',
     },
     {
       ruleId: 'ed25519-private-key-pem',
@@ -165,7 +165,7 @@ describe('Push protection patterns (inline regex — mirrors workflow script)', 
   describe('True positives', () => {
     it('detects Stellar secret key', () => {
       expect(PATTERNS.stellarSecretKey.test(
-        'SABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVWXYZ2'
+        'SABCDEFGHIJKLMNOPQRSTUVWXYZ234567AAAAAAAAAAAAAAAAAAAAAAA'
       )).toBe(true);
     });
 

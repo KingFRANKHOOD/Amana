@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { SavingsService } from "../services/savings.service";
 import { PrismaClient } from "@prisma/client";
 
@@ -9,17 +8,17 @@ describe("SavingsService", () => {
     beforeEach(() => {
         mockPrisma = {
             user: {
-                findUnique: vi.fn(),
+                findUnique: jest.fn(),
             },
             goal: {
-                findMany: vi.fn(),
-                create: vi.fn(),
-                update: vi.fn(),
+                findMany: jest.fn(),
+                create: jest.fn(),
+                update: jest.fn(),
             },
             vault: {
-                create: vi.fn(),
-                update: vi.fn(),
-                findUnique: vi.fn(),
+                create: jest.fn(),
+                update: jest.fn(),
+                findUnique: jest.fn(),
             },
         };
 

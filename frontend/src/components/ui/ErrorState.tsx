@@ -3,6 +3,26 @@
 import * as React from "react";
 import { clsx } from "clsx";
 
+function CardIcon() {
+  return (
+    <div className="mx-auto h-12 w-12 rounded-full bg-danger/10 flex items-center justify-center">
+      <svg
+        className="h-6 w-6 text-danger"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+    </div>
+  );
+}
+
 export interface ErrorStateProps {
   title?: string;
   message?: string;
@@ -52,24 +72,6 @@ export function ErrorState({
   }
 
   if (variant === "card") {
-    const CardIcon = () => (
-      <div className="mx-auto h-12 w-12 rounded-full bg-danger/10 flex items-center justify-center">
-        <svg
-          className="h-6 w-6 text-danger"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
-      </div>
-    );
-
     return (
       <div
         className={clsx(

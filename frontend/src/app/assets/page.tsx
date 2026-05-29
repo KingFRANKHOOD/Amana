@@ -18,6 +18,10 @@ import {
   NetworkBackboneCard,
   VaultFooter,
 } from "@/components/vault";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { SkeletonList } from "@/components/ui/SkeletonList";
+import { Tabs } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/Button";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -170,11 +174,8 @@ function AssetsSidebar({
 
       {/* New Asset CTA */}
       <div className="px-4 pb-4">
-        <Link
-          href="/trades/create"
-          className="block w-full rounded-lg bg-gold text-text-inverse text-sm font-semibold text-center py-2.5 hover:bg-gold-hover transition-colors"
-        >
-          + NEW ASSET
+        <Link href="/trades/create" className="block">
+          <Button variant="primary" className="w-full">+ NEW ASSET</Button>
         </Link>
       </div>
 
@@ -210,47 +211,31 @@ function AssetsSidebar({
 // ─── Top sub-nav (Overview / Active Vault / History) ─────────────────────────
 
 const SUB_NAV = [
-  { label: "Overview", href: "/assets" },
-  { label: "Active Vault", href: "/vault" },
-  { label: "History", href: "/trades" },
+  { label: "Overview", value: "/assets" },
+  { label: "Active Vault", value: "/vault" },
+  { label: "History", value: "/trades" },
 ];
 
 function AssetsSubNav() {
   const pathname = usePathname();
 
   return (
-    <nav
-      className="flex items-center gap-6 px-8 h-11 border-b border-border-default bg-card shrink-0"
-      aria-label="Assets sub-navigation"
-    >
-      {SUB_NAV.map((item) => {
-        const isActive = pathname === item.href;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={isActive ? "page" : undefined}
-            className={`text-xs font-semibold uppercase tracking-widest pb-px transition-colors ${
-              isActive
-                ? "text-gold border-b-2 border-gold"
-                : "text-text-secondary hover:text-text-primary"
-            }`}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <div className="px-8 h-11 border-b border-border-default bg-card shrink-0 flex items-center">
+      <Tabs
+        items={SUB_NAV}
+        activeValue={pathname ?? "/assets"}
+        onChange={(value) => {
+          // Navigate using Next.js router would be ideal, but for now using Link pattern
+          window.location.href = value as string;
+        }}
+        variant="bordered"
+        className="gap-6"
+      />
+    </div>
   );
 }
 
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
-
-function SkeletonBlock({ className = "" }: { className?: string }) {
-  return (
-    <div className={`rounded-xl bg-bg-elevated animate-pulse ${className}`} />
-  );
-}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -271,6 +256,10 @@ export default function AssetsPage() {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const estimatedFinalReleaseLabel = useState(
+    () =>
+      `Est. ${new Date(Date.now() + 14 * 86400000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+  )[0];
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -293,6 +282,7 @@ export default function AssetsPage() {
   }, [token]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isAuthenticated && token) void fetchData();
   }, [isAuthenticated, token, fetchData]);
 
@@ -357,18 +347,18 @@ export default function AssetsPage() {
                     Connect your Freighter wallet to view live asset data.
                   </p>
                 </div>
-                <button
+                <Button
                   type="button"
                   onClick={isWalletConnected ? authenticate : connectWallet}
                   disabled={authLoading}
-                  className="shrink-0 rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-text-inverse hover:bg-gold-hover transition-colors disabled:opacity-60"
+                  className="shrink-0"
                 >
                   {authLoading
                     ? "Loading…"
                     : isWalletConnected
                       ? "Sign In"
                       : "Connect Freighter"}
-                </button>
+                </Button>
               </div>
             )}
 
@@ -388,9 +378,9 @@ export default function AssetsPage() {
             {/* ── Hero ── */}
             {loading && !stats ? (
               <div className="space-y-3">
-                <SkeletonBlock className="h-6 w-40" />
-                <SkeletonBlock className="h-14 w-80" />
-                <SkeletonBlock className="h-10 w-64" />
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-14 w-80" />
+                <Skeleton className="h-10 w-64" />
               </div>
             ) : (
               <VaultHero
@@ -415,7 +405,7 @@ export default function AssetsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               <div className="lg:col-span-8">
                 {loading && !stats ? (
-                  <SkeletonBlock className="h-56" />
+                  <Skeleton className="h-56 rounded-xl" />
                 ) : (
                   <ReleaseSequenceCard
                     sequenceId={sequenceId}
@@ -439,7 +429,7 @@ export default function AssetsPage() {
                       {
                         label: "Final Release",
                         date: stats
-                          ? `Est. ${new Date(Date.now() + 14 * 86400000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                          ? estimatedFinalReleaseLabel
                           : "Est. Nov 04",
                         status: "pending",
                       },
@@ -450,7 +440,7 @@ export default function AssetsPage() {
 
               <div className="lg:col-span-4">
                 {loading && !stats ? (
-                  <SkeletonBlock className="h-56" />
+                  <Skeleton className="h-56 rounded-xl" />
                 ) : (
                   <VaultValueCard
                     value={vaultValue || 2480000}
@@ -466,7 +456,7 @@ export default function AssetsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               <div className="lg:col-span-7">
                 {loading && !recentTrades ? (
-                  <SkeletonBlock className="h-72" />
+                  <Skeleton className="h-72 rounded-xl" />
                 ) : (
                   <ContractManifestCard
                     contractId={firstTrade?.tradeId ?? "AMN-772-VLT-09"}
@@ -509,7 +499,7 @@ export default function AssetsPage() {
 
               <div className="lg:col-span-5">
                 {loading && !recentTrades ? (
-                  <SkeletonBlock className="h-72" />
+                  <Skeleton className="h-72 rounded-xl" />
                 ) : (
                   <AuditLogCard
                     entries={auditEntries}
@@ -546,12 +536,8 @@ export default function AssetsPage() {
               </div>
 
               {loading && !recentTrades ? (
-                <div className="divide-y divide-border-default">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="px-6 py-4 animate-pulse">
-                      <SkeletonBlock className="h-4 w-3/4" />
-                    </div>
-                  ))}
+                <div className="px-4 py-4">
+                  <SkeletonList rows={3} />
                 </div>
               ) : recentTrades && recentTrades.items.length > 0 ? (
                 <>
@@ -567,11 +553,11 @@ export default function AssetsPage() {
                   {recentTrades.items.map((trade, i) => {
                     const statusLower = trade.status.toLowerCase();
                     const statusStyles: Record<string, string> = {
-                      active: "text-status-success bg-emerald-muted",
-                      pending: "text-status-warning bg-status-warning/15",
+                      active: "text-status-success bg-status-success/10",
+                      pending: "text-status-warning bg-status-warning/10",
                       completed: "text-text-secondary bg-bg-elevated",
-                      disputed: "text-status-danger bg-status-danger/15",
-                      locked: "text-status-locked bg-gold-muted",
+                      disputed: "text-status-danger bg-status-danger/10",
+                      locked: "text-status-locked bg-status-locked/10",
                     };
                     const pill =
                       statusStyles[statusLower] ??
@@ -679,11 +665,8 @@ export default function AssetsPage() {
                       : "Connect your wallet to view assets."}
                   </p>
                   {isAuthenticated && (
-                    <Link
-                      href="/trades/create"
-                      className="inline-block px-4 py-2 rounded-lg bg-gold text-text-inverse text-sm font-semibold hover:bg-gold-hover transition-colors"
-                    >
-                      Create Asset
+                    <Link href="/trades/create">
+                      <Button variant="primary">Create Asset</Button>
                     </Link>
                   )}
                 </div>

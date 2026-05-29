@@ -1,22 +1,21 @@
 import request from "supertest";
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createApp } from "../app";
 import { TOKEN_CONFIG } from "../config/token";
 import { ErrorCode } from "../errors/errorCodes";
 
 // Mock redis
-vi.mock("../lib/redis", () => {
+jest.mock("../lib/redis", () => {
   const store = new Map();
   return {
     redis: {
-      get: vi.fn().mockImplementation(async (key) => store.get(key)),
-      set: vi.fn().mockImplementation(async (key, value) => store.set(key, value)),
+      get: jest.fn().mockImplementation(async (key) => store.get(key)),
+      set: jest.fn().mockImplementation(async (key, value) => store.set(key, value)),
     },
   };
 });
 
 // Mock auth middleware to skip auth
-vi.mock("../middleware/auth.middleware", () => ({
+jest.mock("../middleware/auth.middleware", () => ({
   authMiddleware: (req: any, res: any, next: any) => {
     req.user = { walletAddress: "GBU...123" };
     next();

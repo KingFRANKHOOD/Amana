@@ -13,22 +13,28 @@
  * If any of these fail, CI will block the merge.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as StellarSdk from "@stellar/stellar-sdk";
-
-vi.hoisted(() => {
-    process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-at-least-32-characters-long";
-    process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test:test@localhost:5432/test";
-    process.env.AMANA_ESCROW_CONTRACT_ID = process.env.AMANA_ESCROW_CONTRACT_ID || "CONTRACT_ID";
-    process.env.USDC_CONTRACT_ID = process.env.USDC_CONTRACT_ID || "USDC_CONTRACT_ID";
+jest.mock("@stellar/stellar-sdk", () => {
+    const actual = jest.requireActual("@stellar/stellar-sdk");
+    return {
+        ...actual,
+        TransactionBuilder: jest.fn(),
+        Contract: jest.fn(),
+    };
 });
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-at-least-32-characters-long";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test:test@localhost:5432/test";
+process.env.AMANA_ESCROW_CONTRACT_ID = process.env.AMANA_ESCROW_CONTRACT_ID || "CONTRACT_ID";
+process.env.USDC_CONTRACT_ID = process.env.USDC_CONTRACT_ID || "USDC_CONTRACT_ID";
 
 import {
     ContractService,
-    BuildCreateTradeTxInput,
     buildConfirmDeliveryTx,
     buildReleaseFundsTx,
     buildInitiateDisputeTx,
+    __setRpcServerFactoryForTests,
+    __resetRpcServerFactoryForTests,
 } from "../services/contract.service";
 
 // ============================================================================
@@ -157,9 +163,9 @@ describe("ABI Compatibility Tests", () => {
 
         mockTransaction = {
             toXDR: () => "mock-xdr",
-            addOperation: vi.fn().mockReturnThis(),
-            setTimeout: vi.fn().mockReturnThis(),
-            build: vi.fn().mockReturnThis(),
+            addOperation: jest.fn().mockReturnThis(),
+            setTimeout: jest.fn().mockReturnThis(),
+            build: jest.fn().mockReturnThis(),
         };
 
         mockPreparedTransaction = {
@@ -167,28 +173,27 @@ describe("ABI Compatibility Tests", () => {
         };
 
         mockContract = {
-            call: vi.fn().mockReturnValue({}),
+            call: jest.fn().mockReturnValue({}),
         };
 
         mockRpcServer = {
-            getAccount: vi.fn().mockResolvedValue(mockAccount),
-            simulateTransaction: vi.fn().mockResolvedValue({
+            getAccount: jest.fn().mockResolvedValue(mockAccount),
+            simulateTransaction: jest.fn().mockResolvedValue({
                 result: {
                     retval: StellarSdk.xdr.ScVal.scvU64(
                         StellarSdk.xdr.Uint64.fromString("123456789"),
                     ),
                 },
             }),
-            prepareTransaction: vi.fn().mockResolvedValue(mockPreparedTransaction),
+            prepareTransaction: jest.fn().mockResolvedValue(mockPreparedTransaction),
         };
+        __setRpcServerFactoryForTests(() => mockRpcServer as any);
 
-        // Mock the TransactionBuilder
-        vi.spyOn(StellarSdk, "TransactionBuilder").mockImplementation(
+        // Mock SDK constructors used by ContractService.
+        (StellarSdk.TransactionBuilder as unknown as jest.Mock).mockImplementation(
             () => mockTransaction as any,
         );
-
-        // Mock the Contract constructor
-        vi.spyOn(StellarSdk, "Contract").mockImplementation(
+        (StellarSdk.Contract as unknown as jest.Mock).mockImplementation(
             () => mockContract as any,
         );
 
@@ -204,19 +209,23 @@ describe("ABI Compatibility Tests", () => {
         (contractService as any).rpcServer = mockRpcServer;
     });
 
+    afterEach(() => {
+        __resetRpcServerFactoryForTests();
+    });
+
     // ============================================================================
     // create_trade ABI Tests
     // ============================================================================
 
     describe("create_trade ABI compatibility", () => {
         it("should call create_trade with correct argument count", async () => {
-            const input: BuildCreateTradeTxInput = {
+            const input = {
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                sellerAddress: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 amountUsdc: "100.5000000",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
-            };
+            } as any;
 
             await contractService.buildCreateTradeTx(input);
 
@@ -230,13 +239,13 @@ describe("ABI Compatibility Tests", () => {
         });
 
         it("should call create_trade with correct argument types", async () => {
-            const input: BuildCreateTradeTxInput = {
+            const input = {
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                sellerAddress: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 amountUsdc: "100.5000000",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
-            };
+            } as any;
 
             await contractService.buildCreateTradeTx(input);
 
@@ -254,13 +263,13 @@ describe("ABI Compatibility Tests", () => {
         });
 
         it("should call create_trade with correct argument order", async () => {
-            const input: BuildCreateTradeTxInput = {
+            const input = {
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                sellerAddress: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 amountUsdc: "100.5000000",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
-            };
+            } as any;
 
             await contractService.buildCreateTradeTx(input);
 
@@ -276,13 +285,13 @@ describe("ABI Compatibility Tests", () => {
 
         it("should fail if create_trade argument count changes", async () => {
             // This test documents the expected behavior if someone adds/removes args
-            const input: BuildCreateTradeTxInput = {
+            const input = {
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                sellerAddress: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 amountUsdc: "100.5000000",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
-            };
+            } as any;
 
             await contractService.buildCreateTradeTx(input);
 
@@ -304,7 +313,7 @@ describe("ABI Compatibility Tests", () => {
             const trade = {
                 tradeId: "123456789",
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                amountUsdc: "100.5000000",
+                amount: "100.5000000",
             };
 
             await contractService.buildDepositTx(trade as any);
@@ -322,7 +331,7 @@ describe("ABI Compatibility Tests", () => {
             const trade = {
                 tradeId: "123456789",
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                amountUsdc: "100.5000000",
+                amount: "100.5000000",
             };
 
             await contractService.buildDepositTx(trade as any);
@@ -340,7 +349,7 @@ describe("ABI Compatibility Tests", () => {
             const trade = {
                 tradeId: "123456789",
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                amountUsdc: "100.5000000",
+                amount: "100.5000000",
             };
 
             await contractService.buildDepositTx(trade as any);
@@ -634,13 +643,13 @@ describe("ABI Compatibility Tests", () => {
 
     describe("Argument drift detection", () => {
         it("should detect if create_trade loses an argument", async () => {
-            const input: BuildCreateTradeTxInput = {
+            const input = {
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                sellerAddress: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 amountUsdc: "100.5000000",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
-            };
+            } as any;
 
             await contractService.buildCreateTradeTx(input);
 
@@ -652,13 +661,13 @@ describe("ABI Compatibility Tests", () => {
         });
 
         it("should detect if create_trade gains an argument", async () => {
-            const input: BuildCreateTradeTxInput = {
+            const input = {
                 buyerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                sellerAddress: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 amountUsdc: "100.5000000",
                 buyerLossBps: 5000,
                 sellerLossBps: 5000,
-            };
+            } as any;
 
             await contractService.buildCreateTradeTx(input);
 

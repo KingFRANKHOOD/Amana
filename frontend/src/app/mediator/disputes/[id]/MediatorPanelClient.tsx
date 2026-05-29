@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Address,
   BASE_FEE,
@@ -14,6 +14,8 @@ import { signTransaction } from "@stellar/freighter-api";
 
 import { useFreighterIdentity } from "@/hooks/useFreighterIdentity";
 import { Badge } from "@/components/ui/Badge";
+import { WalletAddressBadge } from "@/components/ui/WalletAddressBadge";
+import { api, ApiError, type EvidenceRecord } from "@/lib/api";
 
 type Props = { disputeId: string };
 
@@ -23,7 +25,10 @@ type ConfirmationModalState = {
   splitLabel: string;
 };
 
+type VideoLoadState = "loading" | "ready" | "terminal-failure";
+
 const DEFAULT_MEDIATOR_ADDRESSES = ["GEXAMPLEMEDIATORPUBLICKEY1"];
+const TOKEN_STORAGE_KEY = "amana_jwt";
 
 const PINATA_GATEWAYS = [
   process.env.NEXT_PUBLIC_PINATA_GATEWAY_URL?.trim(),
@@ -34,19 +39,97 @@ const PINATA_GATEWAYS = [
 const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
 const isDev = process.env.NEXT_PUBLIC_APP_ENV === "development";
 
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+function isProbablyIpfsCid(value: string): boolean {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return false;
+  }
+
+  if (/^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(trimmedValue)) {
+    return true;
+  }
+
+  return /^bafy[2-7a-z]{20,}$/i.test(trimmedValue);
+}
+
+function pickBestEvidenceCid(records: EvidenceRecord[]): string | null {
+  if (records.length === 0) {
+    return null;
+  }
+
+  const newestRecord = [...records].sort((left, right) => {
+    const leftTimestamp = new Date(left.createdAt).getTime();
+    const rightTimestamp = new Date(right.createdAt).getTime();
+
+    if (Number.isNaN(leftTimestamp) || Number.isNaN(rightTimestamp)) {
+      return 0;
+    }
+
+    return rightTimestamp - leftTimestamp;
+  })[0];
+
+  const candidateCid = newestRecord?.cid?.trim();
+  return candidateCid && isProbablyIpfsCid(candidateCid) ? candidateCid : null;
+}
+
+function useFocusTrap(isActive: boolean) {
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+      }
+
+      if (e.key === "Tab") {
+        const focusableElements = document.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey && document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isActive]);
+}
+
 export default function MediatorPanelClient({ disputeId }: Props) {
   const { address, isAuthorized, isLoading, connectWallet } =
     useFreighterIdentity();
   const [txStatus, setTxStatus] = useState<string>("");
   const [isSubmittingTx, setIsSubmittingTx] = useState(false);
   const [activeGatewayIndex, setActiveGatewayIndex] = useState(0);
+  const [videoLoadState, setVideoLoadState] =
+    useState<VideoLoadState>("loading");
+  const [resolvedCid, setResolvedCid] = useState<string | null>(null);
+  const [cidSource, setCidSource] = useState<
+    "backend" | "query" | "none" | "loading"
+  >("loading");
+  const [cidMessage, setCidMessage] = useState("");
   const [modal, setModal] = useState<ConfirmationModalState>({
     isOpen: false,
     sellerGetsBps: null,
     splitLabel: "",
   });
 
-  // Dev-only state
   const [execString, setExecString] = useState<string>("");
 
   const mediatorAddresses = useMemo(() => {
@@ -59,11 +142,133 @@ export default function MediatorPanelClient({ disputeId }: Props) {
   }, []);
 
   const isMediator = Boolean(address && mediatorAddresses.includes(address));
+  const explorerNetwork =
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK === "public" ? "public" : "testnet";
 
-  const cid = disputeId || "QmExampleCidForDemo";
-  const pinataUrl = `${PINATA_GATEWAYS[activeGatewayIndex]}/${cid}`;
+  const pinataUrl = resolvedCid
+    ? `${PINATA_GATEWAYS[activeGatewayIndex]}/${resolvedCid}`
+    : null;
 
-  // Dev-only: generates a soroban:// URI for manual inspection
+  useFocusTrap(modal.isOpen);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveEvidenceCid() {
+      setCidSource("loading");
+      setCidMessage("");
+      setResolvedCid(null);
+
+      const parsedTradeId = Number(disputeId);
+      if (!Number.isInteger(parsedTradeId) || parsedTradeId < 0) {
+        if (!cancelled) {
+          setCidSource("none");
+          setCidMessage("Invalid dispute id. Expected a numeric trade id.");
+        }
+        return;
+      }
+
+      const url = new URL(window.location.href);
+      const queryCid = url.searchParams.get("cid")?.trim() ?? "";
+      const fallbackCid = isProbablyIpfsCid(queryCid) ? queryCid : null;
+      const token = getStoredToken();
+
+      if (!token) {
+        if (!cancelled && fallbackCid) {
+          setCidSource("query");
+          setResolvedCid(fallbackCid);
+          setCidMessage("Using CID from query parameter fallback.");
+          return;
+        }
+
+        if (!cancelled) {
+          setCidSource("none");
+          setCidMessage(
+            "No evidence CID available. Authenticate to load evidence from the backend, or supply a valid ?cid=... parameter.",
+          );
+        }
+        return;
+      }
+
+      try {
+        const response = await api.trades.getEvidence(
+          token,
+          String(parsedTradeId),
+        );
+        const backendCid = pickBestEvidenceCid(response.evidence);
+
+        if (!cancelled && backendCid) {
+          setCidSource("backend");
+          setResolvedCid(backendCid);
+          return;
+        }
+
+        if (!cancelled && fallbackCid) {
+          setCidSource("query");
+          setResolvedCid(fallbackCid);
+          setCidMessage(
+            "No backend evidence CID found. Using query parameter fallback.",
+          );
+          return;
+        }
+
+        if (!cancelled) {
+          setCidSource("none");
+          setCidMessage("No evidence found for this trade.");
+        }
+      } catch (error) {
+        const message =
+          error instanceof ApiError
+            ? `Evidence lookup failed (${error.status}).`
+            : "Evidence lookup failed.";
+
+        if (!cancelled && fallbackCid) {
+          setCidSource("query");
+          setResolvedCid(fallbackCid);
+          setCidMessage(`${message} Using query parameter fallback.`);
+          return;
+        }
+
+        if (!cancelled) {
+          setCidSource("none");
+          setCidMessage(`${message} No CID available for playback.`);
+        }
+      }
+    }
+
+    void resolveEvidenceCid();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [disputeId]);
+
+  useEffect(() => {
+    if (!resolvedCid) {
+      return;
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveGatewayIndex(0);
+    setVideoLoadState("loading");
+  }, [resolvedCid]);
+
+  function handleVideoError() {
+    const nextIndex = activeGatewayIndex + 1;
+    if (nextIndex < PINATA_GATEWAYS.length) {
+      setActiveGatewayIndex(nextIndex);
+      setVideoLoadState("loading");
+    } else {
+      setVideoLoadState("terminal-failure");
+    }
+  }
+
+  function switchGateway() {
+    const nextIndex = (activeGatewayIndex + 1) % PINATA_GATEWAYS.length;
+    setActiveGatewayIndex(nextIndex);
+    setVideoLoadState("loading");
+  }
+
   function buildExec(split: string) {
     const s = `soroban://execute?cmd=resolve_dispute&split=${split}&dispute=${disputeId}`;
     setExecString(s);
@@ -166,69 +371,180 @@ export default function MediatorPanelClient({ disputeId }: Props) {
   }
 
   return (
-    <div className="min-h-screen p-6 bg-gray-50">
-      <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
+    <div className="px-6 py-8 max-w-6xl mx-auto">
+      {/* Page header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-text-primary">
+          Mediator Panel
+        </h1>
+        <p className="text-text-secondary mt-1">
+          Dispute{" "}
+          <span className="font-mono text-text-primary">{disputeId}</span> —
+          Review evidence and resolve on-chain.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Evidence Video */}
-        <div className="col-span-7">
-          <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-modal">
-            <video
-              controls
-              className="w-full h-full object-contain bg-black"
-              src={pinataUrl}
-              onError={() => {
-                if (activeGatewayIndex < PINATA_GATEWAYS.length - 1) {
-                  setActiveGatewayIndex((prev) => prev + 1);
-                }
-              }}
-            />
+        <div className="lg:col-span-7">
+          <div className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-card">
+            {!pinataUrl ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-6">
+                <svg
+                  className="w-10 h-10 text-status-danger"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v3m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-white font-medium">Evidence unavailable</p>
+                <p className="text-gray-400 text-sm max-w-md">
+                  {cidSource === "loading" ? "Loading evidence..." : cidMessage}
+                </p>
+              </div>
+            ) : videoLoadState === "terminal-failure" ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-6">
+                <svg
+                  className="w-10 h-10 text-status-danger"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v3m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-white font-medium">Evidence unavailable</p>
+                <p className="text-gray-400 text-sm">
+                  All IPFS gateways failed to load this file.
+                </p>
+                <button
+                  onClick={() => {
+                    setActiveGatewayIndex(0);
+                    setVideoLoadState("loading");
+                  }}
+                  className="mt-2 px-4 py-2 bg-bg-elevated border border-border-default text-text-primary text-sm rounded-md hover:bg-bg-input transition-colors"
+                >
+                  Retry from first gateway
+                </button>
+              </div>
+            ) : (
+              <>
+                {videoLoadState === "loading" && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="animate-spin w-8 h-8 border-2 border-gold border-t-transparent rounded-full" />
+                      <span className="text-gray-300 text-xs">
+                        Loading via gateway {activeGatewayIndex + 1}/
+                        {PINATA_GATEWAYS.length}…
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <video
+                  key={pinataUrl}
+                  controls
+                  className="w-full h-full object-contain bg-black"
+                  src={pinataUrl}
+                  onLoadStart={() => setVideoLoadState("loading")}
+                  onCanPlay={() => setVideoLoadState("ready")}
+                  onError={handleVideoError}
+                />
+              </>
+            )}
           </div>
-          <div className="mt-3 text-sm text-gray-600 space-y-1">
-            <div>Dispute ID: <span className="font-mono">{disputeId}</span></div>
-            <div className="mt-2">
+
+          {/* Video meta */}
+          <div className="mt-3 text-sm text-text-secondary space-y-2">
+            <div>
+              Dispute ID:{" "}
+              <span className="font-mono text-text-primary">{disputeId}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {pinataUrl && videoLoadState !== "terminal-failure" && (
+                <span className="text-xs text-text-muted">
+                  Gateway {activeGatewayIndex + 1}/{PINATA_GATEWAYS.length}
+                </span>
+              )}
+              {pinataUrl &&
+                PINATA_GATEWAYS.length > 1 &&
+                videoLoadState !== "terminal-failure" && (
+                  <button
+                    onClick={switchGateway}
+                    className="text-xs text-gold hover:underline underline-offset-2"
+                  >
+                    Switch gateway
+                  </button>
+                )}
               {isMediator ? (
                 <Badge variant="success">Authorized Mediator</Badge>
               ) : (
                 <Badge variant="danger">Unauthorized</Badge>
               )}
             </div>
-
-            {/* Dev-only: IPFS debug info */}
-            {isDev && (
-              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs space-y-1">
-                <div className="font-semibold text-yellow-700">DEV</div>
-                <div>Pinata CID: {cid}</div>
-                <div>Gateway: <Badge variant="info">{PINATA_GATEWAYS[activeGatewayIndex]}</Badge></div>
-                <div>Wallet: {address ?? "Not connected"}</div>
-                <button
-                  onClick={() =>
-                    setActiveGatewayIndex(
-                      (prev) => (prev + 1) % PINATA_GATEWAYS.length,
-                    )
-                  }
-                  className="px-2 py-1 bg-gray-100 rounded text-xs"
-                >
-                  Switch Gateway
-                </button>
-              </div>
-            )}
           </div>
+
+          {/* Dev-only: IPFS debug info */}
+          {isDev && (
+            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs space-y-1">
+              <div className="font-semibold text-yellow-700">DEV</div>
+              <div>Pinata CID: {resolvedCid ?? "Unavailable"}</div>
+              <div>CID source: {cidSource}</div>
+              {cidMessage && <div>Message: {cidMessage}</div>}
+              <div>
+                Gateway:{" "}
+                <Badge variant="info">
+                  {PINATA_GATEWAYS[activeGatewayIndex]}
+                </Badge>
+              </div>
+              <div>Wallet: {address ?? "Not connected"}</div>
+            </div>
+          )}
         </div>
 
         {/* Right: Resolution Panel */}
-        <div className="col-span-5">
-          <div className="bg-white rounded-xl shadow-md p-5 space-y-4">
+        <div className="lg:col-span-5">
+          <div className="bg-bg-card rounded-xl shadow-card p-5 space-y-4">
             <div>
-              <h3 className="text-lg font-semibold">Resolve Dispute</h3>
-              <p className="text-sm text-gray-500 mt-1">
+              <h3 className="text-lg font-semibold text-text-primary">
+                Resolve Dispute
+              </h3>
+              <p className="text-sm text-text-secondary mt-1">
                 Select a loss-ratio split to settle this trade on-chain.
               </p>
+            </div>
+
+            <div className="rounded-md border border-border-default bg-bg-elevated p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                Connected wallet
+              </p>
+              {address ? (
+                <WalletAddressBadge
+                  address={address}
+                  truncate="middle"
+                  showCopy
+                  showExplorer
+                  explorerNetwork={explorerNetwork}
+                />
+              ) : (
+                <p className="text-sm text-text-muted">No wallet connected.</p>
+              )}
             </div>
 
             {!isAuthorized && (
               <button
                 onClick={() => void connectWallet()}
                 disabled={isLoading}
-                className="w-full rounded-md bg-black text-white py-2 text-sm font-medium"
+                className="w-full rounded-md bg-gold text-text-inverse py-2.5 text-sm font-medium hover:bg-gold-hover transition-colors disabled:opacity-50"
               >
                 {isLoading ? "Connecting..." : "Connect Freighter"}
               </button>
@@ -261,13 +577,17 @@ export default function MediatorPanelClient({ disputeId }: Props) {
 
             {/* Tx status feedback */}
             {txStatus && (
-              <p className="text-xs text-gray-600 break-all">{txStatus}</p>
+              <p className="text-xs text-text-secondary break-all">
+                {txStatus}
+              </p>
             )}
 
             {/* Dev-only: exec string builder */}
             {isDev && (
               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded space-y-2">
-                <p className="text-xs font-semibold text-yellow-700">DEV — Exec String Builder</p>
+                <p className="text-xs font-semibold text-yellow-700">
+                  DEV — Exec String Builder
+                </p>
                 <div className="flex gap-2">
                   <button
                     disabled={!isMediator}
@@ -299,7 +619,9 @@ export default function MediatorPanelClient({ disputeId }: Props) {
                   </button>
                   <a
                     href={execString || "#"}
-                    onClick={(e) => { if (!execString) e.preventDefault(); }}
+                    onClick={(e) => {
+                      if (!execString) e.preventDefault();
+                    }}
                     className="px-2 py-1 bg-gray-100 rounded text-xs"
                   >
                     Preview
@@ -313,30 +635,55 @@ export default function MediatorPanelClient({ disputeId }: Props) {
 
       {/* Confirmation Modal */}
       {modal.isOpen && modal.sellerGetsBps !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6 space-y-4">
-            <h2 className="text-xl font-bold text-gray-900">Confirm Resolution</h2>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
+          <div className="bg-bg-card rounded-t-2xl sm:rounded-2xl shadow-lg w-full max-w-md p-4 sm:p-6 space-y-4 animate-slide-up sm:animate-none">
+            <h2
+              id="modal-title"
+              className="text-lg sm:text-xl font-bold text-text-primary"
+            >
+              Confirm Resolution
+            </h2>
 
-            <div className="border rounded-lg bg-gray-50 p-4 space-y-3">
+            <div className="border border-border-default rounded-lg bg-bg-elevated p-4 space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">Trade ID:</span>
-                <span className="text-sm font-mono text-gray-900">{disputeId}</span>
+                <span className="text-sm font-medium text-text-secondary">
+                  Trade ID:
+                </span>
+                <span className="text-sm font-mono text-text-primary">
+                  {disputeId}
+                </span>
               </div>
-              <div className="border-t border-gray-200" />
+              <div className="border-t border-border-default" />
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">Split:</span>
-                <span className="text-sm font-semibold text-gray-900">{modal.splitLabel}</span>
+                <span className="text-sm font-medium text-text-secondary">
+                  Split:
+                </span>
+                <span className="text-sm font-semibold text-text-primary">
+                  {modal.splitLabel}
+                </span>
               </div>
-              <div className="border-t border-gray-200" />
+              <div className="border-t border-border-default" />
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">Seller Receives:</span>
-                <span className="text-sm font-semibold text-emerald-700">
+                <span className="text-sm font-medium text-text-secondary">
+                  Seller Receives:
+                </span>
+                <span className="text-sm font-semibold text-status-success">
                   {(modal.sellerGetsBps / 100).toFixed(2)}%
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">Buyer Receives:</span>
-                <span className="text-sm font-semibold text-blue-700">
+                <span className="text-sm font-medium text-text-secondary">
+                  Buyer Receives:
+                </span>
+                <span className="text-sm font-semibold text-gold">
                   {(getBuyerSplit(modal.sellerGetsBps) / 100).toFixed(2)}%
                 </span>
               </div>
@@ -344,17 +691,18 @@ export default function MediatorPanelClient({ disputeId }: Props) {
 
             <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3">
               <p className="text-xs text-yellow-800">
-                <span className="font-semibold">⚠️ Warning:</span> This action is
-                irreversible and will be recorded on-chain. Please review the split
-                details before confirming.
+                <span className="font-semibold">Warning:</span> This action is
+                irreversible and will be recorded on-chain. Please review the
+                split details before confirming.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
               <button
                 onClick={closeModal}
                 disabled={isSubmittingTx}
-                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 disabled:opacity-50 transition"
+                className="px-3 sm:px-4 py-2.5 border border-border-default text-text-primary text-sm font-medium rounded-md hover:bg-bg-elevated disabled:opacity-50 transition"
+                aria-label="Cancel resolution"
               >
                 Cancel
               </button>
@@ -364,7 +712,8 @@ export default function MediatorPanelClient({ disputeId }: Props) {
                   void executeResolution(modal.sellerGetsBps!);
                 }}
                 disabled={isSubmittingTx}
-                className="px-4 py-2 bg-emerald-700 text-white text-sm font-medium rounded-md hover:bg-emerald-800 disabled:opacity-50 transition"
+                className="px-3 sm:px-4 py-2.5 bg-emerald-700 text-white text-sm font-medium rounded-md hover:bg-emerald-800 disabled:opacity-50 transition"
+                aria-label="Confirm and sign resolution"
               >
                 {isSubmittingTx ? "Processing..." : "Confirm & Sign"}
               </button>

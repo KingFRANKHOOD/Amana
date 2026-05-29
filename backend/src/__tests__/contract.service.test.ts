@@ -474,7 +474,7 @@ describe("ContractService XDR builders", () => {
 
       await expect(
         service.buildConfirmDeliveryTx(
-          { tradeId: "7", status: "PENDING" },
+          { tradeId: "7", status: "PENDING_SIGNATURE" },
           buyerAddress,
         ),
       ).rejects.toThrow("Trade must be FUNDED before confirm_delivery");
@@ -543,7 +543,7 @@ describe("ContractService XDR builders", () => {
 
       await expect(
         service.buildReleaseFundsTx(
-          { tradeId: "7", status: "PENDING" },
+          { tradeId: "7", status: "PENDING_SIGNATURE" },
           buyerAddress,
         ),
       ).rejects.toThrow("Trade must be DELIVERED before release_funds");

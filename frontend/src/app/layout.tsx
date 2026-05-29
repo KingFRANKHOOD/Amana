@@ -4,9 +4,11 @@ import { Manrope } from "next/font/google";
 
 import "./globals.css";
 import { Geist, Geist_Mono } from "next/font/google";
-import { AppTopNav } from "@/components/layout/AppTopNav";
-import { AppSidebar } from "@/components/layout/AppSidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { AuthProvider } from "@/hooks/useAuth";
+import { AnalyticsProvider } from "@/components/AnalyticsProvider";
+import { ToastContainer } from "@/components/ui/ToastContainer";
+import { ToastProvider } from "@/hooks/useToast";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,15 +41,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} font-sans bg-primary text-text-primary antialiased`}
       >
-        <AuthProvider>
-          <div className="flex flex-col h-screen">
-            <AppTopNav />
-            <div className="flex flex-1 overflow-hidden">
-              <AppSidebar />
-              <main className="flex-1 overflow-y-auto h-full">{children}</main>
-            </div>
-          </div>
-        </AuthProvider>
+        <AnalyticsProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <AppShell>{children}</AppShell>
+              <ToastContainer />
+            </ToastProvider>
+          </AuthProvider>
+        </AnalyticsProvider>
       </body>
     </html>
   );

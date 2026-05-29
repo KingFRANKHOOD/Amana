@@ -7,6 +7,7 @@
  * - Retrieval and playback
  * - Error handling and edge cases
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

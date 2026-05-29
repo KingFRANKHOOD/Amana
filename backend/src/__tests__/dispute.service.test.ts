@@ -11,6 +11,9 @@ function createMockPrisma() {
         dispute: {
             create: jest.fn(),
         },
+        disputeCategory: {
+            findFirst: jest.fn(),
+        },
     } as unknown as PrismaClient;
 }
 
@@ -42,6 +45,7 @@ describe("TradeService - initiateDispute", () => {
 
     it("successfully initiates a dispute for a FUNDED trade", async () => {
         prisma.trade.findFirst = jest.fn().mockResolvedValue(mockTrade);
+        (prisma as any).disputeCategory.findFirst = jest.fn().mockResolvedValue({ id: 7 });
         contractService.buildInitiateDisputeTx = jest.fn().mockResolvedValue({ unsignedXdr: "mock-xdr" });
         prisma.dispute.create = jest.fn().mockResolvedValue({});
 
@@ -59,6 +63,7 @@ describe("TradeService - initiateDispute", () => {
                 initiator: "GA_BUYER",
                 reason: "Reason string",
                 status: DisputeStatus.OPEN,
+                categoryId: 7,
             },
         });
     });
@@ -68,11 +73,41 @@ describe("TradeService - initiateDispute", () => {
             ...mockTrade,
             status: TradeStatus.DELIVERED,
         });
+        (prisma as any).disputeCategory.findFirst = jest.fn().mockResolvedValue({ id: 7 });
         contractService.buildInitiateDisputeTx = jest.fn().mockResolvedValue({ unsignedXdr: "mock-xdr" });
 
         await service.initiateDispute("T123", "GA_SELLER", "Reason string", "Category string");
 
         expect(contractService.buildInitiateDisputeTx).toHaveBeenCalled();
+    });
+
+    it("stores a validated category id when categoryId is provided", async () => {
+        prisma.trade.findFirst = jest.fn().mockResolvedValue(mockTrade);
+        (prisma as any).disputeCategory.findFirst = jest.fn().mockResolvedValue({ id: 12 });
+        contractService.buildInitiateDisputeTx = jest.fn().mockResolvedValue({ unsignedXdr: "mock-xdr" });
+        prisma.dispute.create = jest.fn().mockResolvedValue({});
+
+        await service.initiateDispute("T123", "GA_BUYER", "Reason string", "", 12);
+
+        expect((prisma as any).disputeCategory.findFirst).toHaveBeenCalledWith({
+            where: { id: 12, isActive: true },
+            select: { id: true },
+        });
+        expect(prisma.dispute.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ categoryId: 12 }),
+        });
+    });
+
+    it("rejects an unknown or inactive dispute category before building the contract transaction", async () => {
+        prisma.trade.findFirst = jest.fn().mockResolvedValue(mockTrade);
+        (prisma as any).disputeCategory.findFirst = jest.fn().mockResolvedValue(null);
+
+        await expect(
+            service.initiateDispute("T123", "GA_BUYER", "Reason string", "unknown")
+        ).rejects.toThrow("Invalid dispute category: unknown");
+
+        expect(contractService.buildInitiateDisputeTx).not.toHaveBeenCalled();
+        expect(prisma.dispute.create).not.toHaveBeenCalled();
     });
 
     it("throws DisputeTradeStatusError if trade is in CREATED status", async () => {

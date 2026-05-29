@@ -1,4 +1,5 @@
 "use client";
+import { StrKey } from "@stellar/stellar-sdk";
 import { useTrade } from "../TradeContext";
 
 export default function Step2Negotiation() {
@@ -13,6 +14,14 @@ export default function Step2Negotiation() {
     data.quantity && data.pricePerUnit
       ? parseFloat(data.quantity) * parseFloat(data.pricePerUnit)
       : 0;
+
+  const step1Qty = parseFloat(data.quantity);
+  const step1Price = parseFloat(data.pricePerUnit);
+  const step1Valid =
+    data.commodity !== "" &&
+    data.quantity !== "" && !isNaN(step1Qty) && step1Qty > 0 &&
+    data.pricePerUnit !== "" && !isNaN(step1Price) && step1Price > 0 &&
+    data.sellerAddress !== "" && StrKey.isValidEd25519PublicKey(data.sellerAddress.trim());
 
   const buyerLoss = totalValue ? ((data.buyerRatio / 100) * totalValue).toLocaleString("en-NG") : "—";
   const sellerLoss = totalValue ? ((data.sellerRatio / 100) * totalValue).toLocaleString("en-NG") : "—";
@@ -64,7 +73,11 @@ export default function Step2Negotiation() {
           min="1"
           max="90"
           value={data.deliveryDays}
-          onChange={(e) => update({ deliveryDays: e.target.value })}
+          onChange={(e) => {
+            const raw = parseInt(e.target.value);
+            const clamped = isNaN(raw) ? 1 : Math.min(90, Math.max(1, raw));
+            update({ deliveryDays: String(clamped) });
+          }}
           className="bg-bg-input border border-border-default rounded-md px-4 py-3 text-text-primary focus:outline-none focus:border-border-focus"
         />
       </div>
@@ -95,8 +108,9 @@ export default function Step2Negotiation() {
           Back
         </button>
         <button
+          disabled={!step1Valid}
           onClick={() => setStep(3)}
-          className="flex-1 h-12 rounded-full bg-gradient-gold-cta text-text-inverse font-semibold"
+          className="flex-1 h-12 rounded-full bg-gradient-gold-cta text-text-inverse font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Review Trade
         </button>

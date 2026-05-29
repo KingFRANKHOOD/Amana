@@ -1,4 +1,5 @@
 "use client";
+import { StrKey } from "@stellar/stellar-sdk";
 import { useTrade } from "../TradeContext";
 
 const COMMODITIES = ["Maize", "Rice", "Sorghum", "Millet", "Cassava", "Yam", "Groundnut", "Soybean"];
@@ -7,13 +8,20 @@ const UNITS = ["kg", "tonnes", "bags (50kg)", "bags (100kg)"];
 export default function Step1Details() {
   const { data, update, setStep } = useTrade();
 
-  const totalNGN =
-    data.quantity && data.pricePerUnit
-      ? (parseFloat(data.quantity) * parseFloat(data.pricePerUnit)).toLocaleString("en-NG")
-      : "—";
+  const qty = parseFloat(data.quantity);
+  const price = parseFloat(data.pricePerUnit);
+  const totalValue = !isNaN(qty) && !isNaN(price) ? qty * price : NaN;
+
+  const totalNGN = !isNaN(totalValue) ? totalValue.toLocaleString("en-NG") : "—";
+
+  const isQtyValid = data.quantity !== "" && !isNaN(qty) && qty > 0;
+  const isPriceValid = data.pricePerUnit !== "" && !isNaN(price) && price > 0;
+  const isAddressValid =
+    data.sellerAddress !== "" &&
+    StrKey.isValidEd25519PublicKey(data.sellerAddress.trim());
 
   const valid =
-    data.commodity && data.quantity && data.pricePerUnit && data.sellerAddress;
+    data.commodity !== "" && isQtyValid && isPriceValid && isAddressValid;
 
   return (
     <div className="flex flex-col gap-6">
@@ -96,7 +104,7 @@ export default function Step1Details() {
           type="text"
           placeholder="G..."
           value={data.sellerAddress}
-          onChange={(e) => update({ sellerAddress: e.target.value })}
+          onChange={(e) => update({ sellerAddress: e.target.value.trim() })}
           className="bg-bg-input border border-border-default rounded-md px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-border-focus"
         />
       </div>

@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import { PrismaClient, TradeStatus } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
+import { getMediatorAllowlist } from "../lib/accessControl";
+import { env } from "../config/env";
 
 export interface SubmitManifestInput {
     tradeId: string;
@@ -79,13 +81,7 @@ function isUniqueConstraintError(error: unknown): boolean {
 }
 
 function parseMediatorAllowlist(): Set<string> {
-    const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
-    return new Set(
-        raw
-            .split(",")
-            .map((value) => value.trim().toLowerCase())
-            .filter(Boolean),
-    );
+    return getMediatorAllowlist();
 }
 
 function maskDriverName(driverName: string): string {
@@ -95,6 +91,20 @@ function maskDriverName(driverName: string): string {
 
 function maskDriverIdNumber(): string {
     return "ID-****";
+}
+
+function getManifestRetentionDays(): number {
+    const raw = process.env.MANIFEST_PII_RETENTION_DAYS;
+    if (raw !== undefined) {
+        const parsed = parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : env.MANIFEST_PII_RETENTION_DAYS;
+    }
+    return env.MANIFEST_PII_RETENTION_DAYS;
+}
+
+function isOutsideRetentionWindow(createdAt: Date): boolean {
+    const retentionMs = getManifestRetentionDays() * 24 * 60 * 60 * 1000;
+    return Date.now() - createdAt.getTime() > retentionMs;
 }
 
 export class ManifestService {
@@ -168,6 +178,8 @@ export class ManifestService {
         });
         if (!manifest) throw new ManifestNotFoundError();
 
+        const retentionExpired = isOutsideRetentionWindow(manifest.createdAt);
+
         if (isBuyer) {
             return {
                 tradeId,
@@ -178,6 +190,7 @@ export class ManifestService {
                 routeDescription: manifest.routeDescription,
                 expectedDeliveryAt: manifest.expectedDeliveryAt,
                 createdAt: manifest.createdAt,
+                retentionExpired,
             };
         }
 
@@ -191,6 +204,23 @@ export class ManifestService {
                 routeDescription: manifest.routeDescription,
                 expectedDeliveryAt: manifest.expectedDeliveryAt,
                 createdAt: manifest.createdAt,
+                retentionExpired,
+            };
+        }
+
+        if (retentionExpired) {
+            return {
+                tradeId,
+                roleView: "seller" as const,
+                driverName: "REDACTED",
+                driverIdNumber: "REDACTED",
+                driverNameHash: manifest.driverNameHash,
+                driverIdHash: manifest.driverIdHash,
+                vehicleRegistration: manifest.vehicleRegistration,
+                routeDescription: manifest.routeDescription,
+                expectedDeliveryAt: manifest.expectedDeliveryAt,
+                createdAt: manifest.createdAt,
+                retentionExpired,
             };
         }
 
@@ -205,6 +235,7 @@ export class ManifestService {
             routeDescription: manifest.routeDescription,
             expectedDeliveryAt: manifest.expectedDeliveryAt,
             createdAt: manifest.createdAt,
+            retentionExpired,
         };
     }
 }

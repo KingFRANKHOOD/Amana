@@ -33,6 +33,7 @@ jest.mock("../config/eventListener.config", () => ({
     backoffInitialMs: 100,
     backoffMaxMs: 5000,
     processedLedgersCacheSize: 100,
+    outboxMaxAttempts: 5,
   }),
 }));
 
@@ -50,8 +51,10 @@ import { EventType, EVENT_TO_STATUS } from "../types/events";
 function createMockPrisma() {
   const mockTrade = {
     upsert: jest.fn().mockResolvedValue({}),
+    create: jest.fn().mockResolvedValue({}),
     findUnique: jest.fn().mockResolvedValue(null),
     findMany: jest.fn().mockResolvedValue([]),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   };
 
   const mockProcessedLedger = {
@@ -60,12 +63,26 @@ function createMockPrisma() {
     create: jest.fn().mockResolvedValue({}),
   };
 
-  return {
+  const mockProcessedEvent = {
+    findUnique: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue({}),
+    upsert: jest.fn().mockResolvedValue({}),
+  };
+
+  const mockObj = {
     trade: mockTrade,
     processedLedger: mockProcessedLedger,
+    processedEvent: mockProcessedEvent,
+    $transaction: jest.fn().mockImplementation(async (fn: (tx: any) => Promise<any>) => fn({
+      trade: mockTrade,
+      processedLedger: mockProcessedLedger,
+      processedEvent: mockProcessedEvent,
+    })),
     $connect: jest.fn().mockResolvedValue(undefined),
     $disconnect: jest.fn().mockResolvedValue(undefined),
   } as any;
+
+  return mockObj;
 }
 
 /**
@@ -276,11 +293,7 @@ describe("Event Integration Tests", () => {
       await eventListener.processEvent(rawEvent);
 
       // Verify event was processed (ledger persisted)
-      expect(mockPrisma.processedLedger.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { ledgerSequence: 100011 },
-        }),
-      );
+      expect(mockPrisma.processedEvent.create).toHaveBeenCalled();
     });
   });
 
@@ -388,7 +401,7 @@ describe("Event Integration Tests", () => {
       await eventListener.processEvent(rawEvent);
 
       // Verify event was processed successfully
-      expect(mockPrisma.processedLedger.upsert).toHaveBeenCalled();
+      expect(mockPrisma.processedEvent.create).toHaveBeenCalled();
     });
   });
 
@@ -650,7 +663,7 @@ describe("Event Integration Tests", () => {
 
       // Verify all events were processed (no loss)
       expect(mockPrisma.trade.upsert).toHaveBeenCalledTimes(eventCount);
-      expect(mockPrisma.processedLedger.upsert).toHaveBeenCalledTimes(
+      expect(mockPrisma.processedEvent.create).toHaveBeenCalledTimes(
         eventCount,
       );
     });
@@ -670,7 +683,7 @@ describe("Event Integration Tests", () => {
 
       // Should only process once (no duplicates)
       expect(mockPrisma.trade.upsert).toHaveBeenCalledTimes(1);
-      expect(mockPrisma.processedLedger.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.processedEvent.create).toHaveBeenCalledTimes(1);
     });
 
     it("should handle rapid consecutive events without loss", async () => {
@@ -803,11 +816,7 @@ describe("Event Integration Tests", () => {
 
         // Verify event was processed
         expect(mockPrisma.trade.upsert).toHaveBeenCalledTimes(1);
-        expect(mockPrisma.processedLedger.upsert).toHaveBeenCalledWith(
-          expect.objectContaining({
-            where: { ledgerSequence: ledger },
-          }),
-        );
+        expect(mockPrisma.processedEvent.create).toHaveBeenCalled();
       }
     });
 

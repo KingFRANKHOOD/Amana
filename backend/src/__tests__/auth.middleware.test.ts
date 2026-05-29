@@ -4,7 +4,16 @@ import jwt from "jsonwebtoken";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { AuthService } from "../services/auth.service";
 
-jest.mock("../services/auth.service");
+jest.mock("../services/auth.service", () => {
+  const actual = jest.requireActual("../services/auth.service");
+  // Spreading the class (`{ ...actual.AuthService }`) only copies enumerable
+  // properties and therefore drops the non-enumerable static methods such as
+  // `validateToken`, leaving the middleware to call `undefined`. Mutate the real
+  // class so every static method is preserved and only `isTokenRevoked` is
+  // replaced with a controllable mock.
+  actual.AuthService.isTokenRevoked = jest.fn();
+  return actual;
+});
 
 const JWT_SECRET = "a-very-long-secret-that-is-at-least-32-chars-long";
 const JWT_ISSUER = "amana";

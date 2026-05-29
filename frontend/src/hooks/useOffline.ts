@@ -61,6 +61,7 @@ export function useOffline(): UseOfflineReturn {
 
     const interval = setInterval(checkOnlineStatus, ONLINE_CHECK_INTERVAL_MS);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkOnlineStatus();
 
     return () => {

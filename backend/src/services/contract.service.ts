@@ -1,6 +1,7 @@
 import { Trade } from "@prisma/client";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { env } from "../config/env";
+import { withRpcMetrics } from "../lib/metrics";
 import { retryAsync } from "../lib/retry";
 import { TOKEN_BASE, TOKEN_DECIMALS } from "../config/token";
 
@@ -15,7 +16,7 @@ let serverFactory: RpcServerFactory = (rpcUrl: string) =>
 export interface BuildCreateTradeTxInput {
   buyerAddress: string;
   sellerAddress: string;
-  amount: string;
+  amountUsdc: string;
   buyerLossBps: number;
   sellerLossBps: number;
 }
@@ -39,12 +40,8 @@ export function __resetRpcServerFactoryForTests(): void {
     new StellarSdk.rpc.Server(rpcUrl, { allowHttp: true });
 }
 
-function requireEnv(name: string, fallback = ""): string {
-  const value = process.env[name] ?? fallback;
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
+function getRpcUrl(): string {
+  return env.STELLAR_RPC_URL || DEFAULT_RPC_URL;
 }
 
 function resolveNetworkPassphrase(
@@ -57,12 +54,20 @@ function resolveNetworkPassphrase(
 
   switch (configuredNetwork?.toUpperCase()) {
     case "PUBLIC":
+    case "MAINNET":
       return StellarSdk.Networks.PUBLIC;
     case "FUTURENET":
       return StellarSdk.Networks.FUTURENET;
     default:
       return StellarSdk.Networks.TESTNET;
   }
+}
+
+function getNetworkPassphrase(): string {
+  return resolveNetworkPassphrase(
+    process.env.STELLAR_NETWORK_PASSPHRASE ?? env.STELLAR_NETWORK_PASSPHRASE,
+    process.env.STELLAR_NETWORK ?? env.STELLAR_NETWORK,
+  );
 }
 
 function getRpcServer(rpcUrl: string): StellarSdk.rpc.Server {
@@ -73,36 +78,31 @@ async function getRpcAccount(
   server: StellarSdk.rpc.Server,
   accountId: string,
 ): Promise<StellarSdk.Account> {
-  return retryAsync(() => server.getAccount(accountId));
+  return withRpcMetrics("getAccount", () =>
+    retryAsync(() => server.getAccount(accountId)),
+  );
 }
 
 async function prepareRpcTransaction(
   server: StellarSdk.rpc.Server,
   transaction: StellarSdk.Transaction,
 ): Promise<StellarSdk.Transaction> {
-  return retryAsync(() => server.prepareTransaction(transaction));
+  return withRpcMetrics("prepareTransaction", () =>
+    retryAsync(() => server.prepareTransaction(transaction)),
+  );
 }
 
 async function simulateRpcTransaction(
   server: StellarSdk.rpc.Server,
   transaction: StellarSdk.Transaction,
 ): Promise<StellarSdk.rpc.Api.SimulateTransactionResponse> {
-  return retryAsync(() => server.simulateTransaction(transaction));
+  return withRpcMetrics("simulateTransaction", () =>
+    retryAsync(() => server.simulateTransaction(transaction)),
+  );
 }
 
 function getEscrowContractId(): string {
   return env.AMANA_ESCROW_CONTRACT_ID;
-}
-
-function getRpcUrl(): string {
-  return process.env.SOROBAN_RPC_URL || process.env.STELLAR_RPC_URL || DEFAULT_RPC_URL;
-}
-
-function getNetworkPassphrase(): string {
-  return resolveNetworkPassphrase(
-    process.env.STELLAR_NETWORK_PASSPHRASE,
-    process.env.STELLAR_NETWORK,
-  );
 }
 
 /**
@@ -233,7 +233,7 @@ export class ContractService {
 
     const account = await getRpcAccount(this.rpcServer, input.buyerAddress);
     const contract = new StellarSdk.Contract(this.contractId);
-    const amount = this.toContractAmount(input.amount);
+    const amount = this.toContractAmount(input.amountUsdc);
 
     const transaction = new StellarSdk.TransactionBuilder(account, {
       fee: StellarSdk.BASE_FEE,
@@ -390,4 +390,16 @@ export class ContractService {
 
     return String(StellarSdk.scValToNative(simulation.result.retval));
   }
+
+  /** Static delegate so tests can mock via ContractService.buildConfirmDeliveryTx */
+  static buildConfirmDeliveryTx = buildConfirmDeliveryTx;
+
+  /** Static delegate so tests can mock via ContractService.buildReleaseFundsTx */
+  static buildReleaseFundsTx = buildReleaseFundsTx;
+
+  /** Instance delegate for tests that call via service instance */
+  buildConfirmDeliveryTx = buildConfirmDeliveryTx;
+
+  /** Instance delegate for tests that call via service instance */
+  buildReleaseFundsTx = buildReleaseFundsTx;
 }

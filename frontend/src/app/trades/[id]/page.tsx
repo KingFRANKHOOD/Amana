@@ -1,30 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
-import { api, ApiError, TradeResponse } from "@/lib/api";
-
-function BentoCard({
-  title,
-  value,
-  helper,
-}: {
-  title: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border-default bg-bg-card p-4">
-      <p className="text-xs uppercase tracking-wide text-text-muted">{title}</p>
-      <p className="mt-3 text-lg font-semibold text-text-primary">{value}</p>
-      <p className="mt-2 text-xs text-text-secondary">{helper}</p>
-    </div>
-  );
-}
-
-
+import { useTradeDetails } from "@/hooks/useTradeDetails";
+import { BentoCard } from "@/components/ui";
 
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString("en-US", {
@@ -43,46 +23,13 @@ function formatAddress(address: string) {
 
 export default function TradeDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
-  const { token, isAuthenticated } = useAuth();
+  const { token } = useAuth();
   const tradeId = params?.id ?? "UNKNOWN";
 
-  const [trade, setTrade] = useState<TradeResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchTrade() {
-      if (!isAuthenticated || !token) {
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await api.trades.get(token, tradeId);
-        setTrade(response);
-      } catch (err) {
-        let errorMessage = "Failed to load trade";
-        if (err instanceof ApiError) {
-          errorMessage = err.message;
-        } else if (err instanceof Error) {
-          errorMessage = err.message;
-        }
-        setError(errorMessage);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchTrade();
-  }, [token, isAuthenticated, tradeId]);
+  const { trade, loading, error } = useTradeDetails(token, tradeId);
 
   return (
     <div className="px-6 py-8 max-w-6xl mx-auto">
-      {/* Header with back button */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-text-primary">
           Trade Details
@@ -94,7 +41,7 @@ export default function TradeDetailPage() {
           Back to Trades
         </Link>
       </div>
-      {/* Loading state */}
+
       {loading && (
         <div className="flex items-center justify-center py-12">
           <svg
@@ -110,17 +57,15 @@ export default function TradeDetailPage() {
         </div>
       )}
 
-      {/* Error state */}
       {error && !loading && (
         <div className="rounded-lg border border-status-danger/20 bg-red-500/10 px-4 py-3 text-center">
           <p className="text-status-danger text-sm">{error}</p>
         </div>
       )}
 
-      {/* Trade details */}
       {!loading && !error && trade && (
         <div className="space-y-6">
-          <div className="rounded-lg border border-border-default bg-bg-card p-5">
+          <div className="rounded-lg border border-border-default bg-bg-card dark:bg-surface-1 p-5">
             <p className="text-xs uppercase tracking-wide text-text-muted">
               Trade ID
             </p>
@@ -137,41 +82,47 @@ export default function TradeDetailPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <BentoCard
-              title="Amount"
-              value={`${trade.amountCngn} cNGN`}
-              helper="Total trade value"
-            />
-            <BentoCard
-              title="Buyer"
-              value={formatAddress(trade.buyerAddress)}
-              helper="Buyer wallet address"
-            />
-            <BentoCard
-              title="Seller"
-              value={formatAddress(trade.sellerAddress)}
-              helper="Seller wallet address"
-            />
+            <BentoCard title="Amount">
+              <p className="text-lg font-semibold text-text-primary">{`${trade.amountCngn} cNGN`}</p>
+              <p className="mt-1 text-xs text-text-secondary">Total trade value</p>
+            </BentoCard>
+            <BentoCard title="Buyer">
+              <p className="text-lg font-semibold text-text-primary font-mono">
+                {formatAddress(trade.buyerAddress)}
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">Buyer wallet address</p>
+            </BentoCard>
+            <BentoCard title="Seller">
+              <p className="text-lg font-semibold text-text-primary font-mono">
+                {formatAddress(trade.sellerAddress)}
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">Seller wallet address</p>
+            </BentoCard>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <BentoCard
-              title="Buyer Loss Ratio"
-              value={`${(trade.buyerLossBps / 100).toFixed(2)}%`}
-              helper="Buyer's share of loss in basis points"
-            />
-            <BentoCard
-              title="Seller Loss Ratio"
-              value={`${(trade.sellerLossBps / 100).toFixed(2)}%`}
-              helper="Seller's share of loss in basis points"
-            />
+            <BentoCard title="Buyer Loss Ratio">
+              <p className="text-lg font-semibold text-text-primary">
+                {`${(trade.buyerLossBps / 100).toFixed(2)}%`}
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">
+                Buyer&apos;s share of loss in basis points
+              </p>
+            </BentoCard>
+            <BentoCard title="Seller Loss Ratio">
+              <p className="text-lg font-semibold text-text-primary">
+                {`${(trade.sellerLossBps / 100).toFixed(2)}%`}
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">
+                Seller&apos;s share of loss in basis points
+              </p>
+            </BentoCard>
           </div>
         </div>
       )}
 
-      {/* Not found state */}
       {!loading && !error && !trade && (
-        <div className="rounded-lg border border-border-default bg-bg-card p-8 text-center">
+        <div className="rounded-lg border border-border-default bg-bg-card dark:bg-surface-1 p-8 text-center">
           <p className="text-text-muted">Trade not found</p>
         </div>
       )}

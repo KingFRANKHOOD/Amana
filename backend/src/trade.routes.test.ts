@@ -6,7 +6,6 @@ import {
   rpc,
 } from "@stellar/stellar-sdk";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
 import { tradeRepository } from "./repositories/trade.repository";
 import * as contractService from "./services/contract.service";
@@ -25,12 +24,12 @@ describe("POST /trades/:id/confirm and /release", () => {
     process.env.STELLAR_NETWORK_PASSPHRASE = Networks.FUTURENET;
 
     const mockServer = {
-      getAccount: vi
+      getAccount: jest
         .fn()
         .mockImplementation(
           async (pk: string) => new Account(pk, "1"),
         ),
-      prepareTransaction: vi.fn().mockImplementation(async (tx) => tx),
+      prepareTransaction: jest.fn().mockImplementation(async (tx) => tx),
     } as unknown as rpc.Server;
 
     contractService.__setRpcServerFactoryForTests(() => mockServer);

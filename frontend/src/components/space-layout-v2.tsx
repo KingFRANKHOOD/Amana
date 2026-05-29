@@ -2,8 +2,8 @@
 
 import React, { useRef, useState } from "react";
 import { Video } from "lucide-react";
-import { BentoCard } from "./BentoCard";
-import { Icon } from "./Icon";
+import { BentoCard } from "./ui/BentoCard";
+import { Icon } from "./ui/Icon";
 
 export interface VideoUploadCardProps {
   onUpload?: (ipfsHash: string) => void;

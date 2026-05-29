@@ -1,6 +1,8 @@
 import { Response, NextFunction } from "express";
 import { AuthService, AuthRequest } from "../services/auth.service";
-import { AppError } from "../errors/errorCodes";
+import { isAppError } from "../errors/errorCodes";
+
+export { AuthRequest };
 
 export const authMiddleware = async (
   req: AuthRequest,
@@ -20,7 +22,10 @@ export const authMiddleware = async (
     req.user = decoded;
     next();
   } catch (error) {
-    if (error instanceof AppError) {
+    // Recognise AppError structurally (not just via `instanceof`) so a failed
+    // authorization preserves its real status code and message instead of being
+    // collapsed into a generic 401 when the prototype chain doesn't line up.
+    if (isAppError(error)) {
       res.status(error.statusCode).json({ error: error.message });
       return;
     }

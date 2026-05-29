@@ -30,6 +30,19 @@ export async function findOrCreateUser(address: string) {
         .select()
         .single();
 
+      // Another request may have inserted the same address after our initial read.
+      if (createError?.code === "23505") {
+        const { data: existing, error: existingError } = await supabase
+          .from("users")
+          .select("*")
+          .eq("address", normalizedAddress)
+          .single();
+
+        if (!existingError && existing) {
+          return existing;
+        }
+      }
+
       if (createError) {
         throw new AppError(ErrorCode.INFRA_ERROR, 'Failed to create user record', 500);
       }

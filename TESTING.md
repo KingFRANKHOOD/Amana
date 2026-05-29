@@ -58,6 +58,12 @@ This document outlines testing approaches across frontend, backend, and smart co
 - Tests run via GitHub Actions
 - Command: `pnpm test` / `cargo test`
 
+### Flaky tests (QA-001)
+
+- **Policy:** [`docs/flaky-tests-policy.md`](docs/flaky-tests-policy.md) — quarantine process, bounded CI retries, owner/expiry requirements.
+- **Registry:** [`.github/flaky-tests-quarantine.json`](.github/flaky-tests-quarantine.json) — metadata for quarantined tests (must include `owner` and `expires_on`).
+- **Validation:** `node scripts/validate-flaky-quarantine.mjs`
+
 ---
 
 ## Local Setup

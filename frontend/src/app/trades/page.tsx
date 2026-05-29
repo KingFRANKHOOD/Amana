@@ -3,7 +3,11 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
+import { useAnalytics } from "@/components/AnalyticsProvider";
+import { useToast } from "@/hooks/useToast";
 import { api, ApiError, TradeResponse } from "@/lib/api";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Button } from "@/components/ui/Button";
 
 type TradeStatus = "all" | "active" | "pending" | "completed" | "disputed";
 
@@ -15,18 +19,57 @@ const FILTERS: { label: string; value: TradeStatus }[] = [
   { label: "Disputed", value: "disputed" },
 ];
 
+const NAV_ITEM_BASE =
+  "rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2";
+const NAV_ITEM_ACTIVE = "bg-surface-2 text-gold shadow-elev-1";
+const NAV_ITEM_INACTIVE = "text-text-secondary hover:text-text-primary hover:bg-surface-2/60";
+
+// Status chip tokens: text = status color, bg = status/10, border = status/20.
+// "completed" and "draft" use neutral surface tokens (no alert color).
 const STATUS_STYLES: Record<string, string> = {
-  active: "text-status-success bg-emerald-muted",
-  pending: "text-status-warning bg-status-warning/15",
-  completed: "text-text-secondary bg-bg-elevated",
-  disputed: "text-status-danger bg-status-danger/15",
-  locked: "text-status-locked bg-gold-muted",
+  active:    "text-status-success bg-status-success/10 border border-status-success/20",
+  pending:   "text-status-warning bg-status-warning/10 border border-status-warning/20",
+  completed: "text-text-secondary bg-surface-2 border border-border-default",
+  disputed:  "text-status-danger  bg-status-danger/10  border border-status-danger/20",
+  locked:    "text-status-locked  bg-status-locked/10  border border-status-locked/20",
+  draft:     "text-status-draft   bg-surface-1         border border-border-default",
 };
 
 const PAGE_SIZE = 10;
 
+function TradesTableSkeleton() {
+  return (
+    <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">
+      {/* Header: surface-1 (card level) */}
+      <div className="border-b border-border-default bg-surface-1 px-4 py-3">
+        <div className="grid grid-cols-5 gap-4">
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      </div>
+      {/* Rows: surface-0 (canvas) */}
+      <div className="divide-y divide-border-default bg-surface-0">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="grid grid-cols-5 gap-4 px-4 py-4">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function TradesPage() {
   const { token, isAuthenticated } = useAuth();
+  const { trackApiFailure, trackFunnelStep } = useAnalytics();
+  const { addToast } = useToast();
   const [activeFilter, setActiveFilter] = useState<TradeStatus>("all");
   const [page, setPage] = useState(1);
   const [trades, setTrades] = useState<TradeResponse[]>([]);
@@ -35,6 +78,8 @@ export default function TradesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    trackFunnelStep("trade_page_view", { filter: activeFilter });
+
     async function fetchTrades() {
       if (!isAuthenticated || !token) {
         setLoading(false);
@@ -56,11 +101,16 @@ export default function TradesPage() {
         setTotalPages(response.pagination.totalPages);
       } catch (err) {
         let errorMessage = "Failed to load trades";
+        let status = 0;
+
         if (err instanceof ApiError) {
           errorMessage = err.message;
+          status = err.status ?? 0;
         } else if (err instanceof Error) {
           errorMessage = err.message;
         }
+
+        trackApiFailure("/trades", status, { message: errorMessage, filter: activeFilter });
         setError(errorMessage);
       } finally {
         setLoading(false);
@@ -90,49 +140,72 @@ export default function TradesPage() {
 
   return (
     <div className="px-6 py-8 max-w-6xl mx-auto">
-      {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-text-primary">Trades</h1>
-        <Link
-          href="/trades/create"
-          className="px-4 py-2 rounded-md bg-gold text-text-inverse text-sm font-medium hover:bg-gold-hover transition-colors"
-        >
-          Create Trade
+      {/*
+       * #445 — Shell is canonical: AppTopNav (layout.tsx) now includes Trades
+       * and highlights the active route, so this page no longer renders a
+       * duplicate "Trades" heading. The Create Trade action and filter tabs
+       * remain as page-specific controls within the single shell.
+       */}
+      <div className="flex items-center justify-end gap-2 mb-6">
+        <div className="hidden md:flex items-center gap-2 mr-2 border-r border-border-default pr-4">
+          <button
+            type="button"
+            onClick={() => addToast({ type: "success", title: "Success", message: "Trade completed successfully!" })}
+            className="px-3 py-1.5 rounded-md bg-status-success/10 border border-status-success/30 text-status-success text-xs font-medium hover:bg-status-success/20 transition-colors"
+          >
+            Success
+          </button>
+          <button
+            type="button"
+            onClick={() => addToast({ type: "error", title: "Error", message: "Failed to complete trade." })}
+            className="px-3 py-1.5 rounded-md bg-status-danger/10 border border-status-danger/30 text-status-danger text-xs font-medium hover:bg-status-danger/20 transition-colors"
+          >
+            Error
+          </button>
+          <button
+            type="button"
+            onClick={() => addToast({ type: "warning", title: "Warning", message: "Trade is disputed." })}
+            className="px-3 py-1.5 rounded-md bg-status-warning/10 border border-status-warning/30 text-status-warning text-xs font-medium hover:bg-status-warning/20 transition-colors"
+          >
+            Warning
+          </button>
+          <button
+            type="button"
+            onClick={() => addToast({ type: "info", title: "Info", message: "New message received." })}
+            className="px-3 py-1.5 rounded-md bg-status-info/10 border border-status-info/30 text-status-info text-xs font-medium hover:bg-status-info/20 transition-colors"
+          >
+            Info
+          </button>
+        </div>
+        <Link href="/trades/create">
+          <Button variant="primary">Create Trade</Button>
         </Link>
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2 border-b border-border-default pb-[1px] mb-6">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => handleFilter(f.value)}
-            className={`pb-3 px-1 text-sm transition-colors ${
-              activeFilter === f.value
-                ? "text-gold underline underline-offset-8 decoration-gold decoration-2"
-                : "text-text-secondary hover:text-text-primary"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="mb-6" role="tablist" aria-label="Trade filters">
+        <div className="flex items-center gap-2">
+          {FILTERS.map((filter) => {
+            const isActive = activeFilter === filter.value;
+
+            return (
+              <button
+                key={filter.value}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => handleFilter(filter.value)}
+                className={`${NAV_ITEM_BASE} ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_INACTIVE}`}
+              >
+                {filter.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Loading state */}
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <svg
-            className="animate-spin w-8 h-8 text-gold"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" />
-          </svg>
-        </div>
-      )}
+      {loading && <TradesTableSkeleton />}
 
       {/* Error state */}
       {error && !loading && (
@@ -145,10 +218,10 @@ export default function TradesPage() {
       {!loading && !error && (
         <>
           {trades.length === 0 ? (
-            <div className="rounded-lg border border-border-default bg-bg-card py-20 px-6 text-center">
+            <div className="rounded-lg border border-border-default bg-surface-1 py-20 px-6 text-center shadow-elev-1">
               {/* Icon */}
               <div className="flex justify-center mb-6">
-                <div className="w-16 h-16 rounded-lg bg-bg-elevated border border-border-default flex items-center justify-center">
+                <div className="w-16 h-16 rounded-lg bg-surface-2 border border-border-default flex items-center justify-center">
                   <svg
                     className="w-8 h-8 text-text-muted"
                     fill="none"
@@ -177,18 +250,16 @@ export default function TradesPage() {
               </p>
 
               {/* CTA Button */}
-              <Link
-                href="/trades/create"
-                className="inline-block px-6 py-3 rounded-lg bg-gold text-text-inverse text-sm font-semibold hover:bg-gold-hover transition-colors"
-              >
-                Create Your First Trade
+              <Link href="/trades/create">
+                <Button variant="primary" size="lg">Create Your First Trade</Button>
               </Link>
             </div>
           ) : (
-            <div className="rounded-lg border border-border-default overflow-hidden">
+            <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border-default bg-bg-card">
+                  {/* Header: surface-1 (card level), subtle bottom border */}
+                  <tr className="border-b border-border-default bg-surface-1">
                     <th className="text-left px-4 py-3 text-text-muted font-medium">
                       ID
                     </th>
@@ -210,8 +281,10 @@ export default function TradesPage() {
                   {trades.map((trade, i) => (
                     <tr
                       key={trade.tradeId}
-                      className={`border-b border-border-default last:border-0 hover:bg-bg-elevated transition-colors ${
-                        i % 2 === 0 ? "bg-bg-primary" : "bg-bg-card"
+                      // Even rows: surface-0 (canvas), odd rows: surface-1 (card).
+                      // Hover lifts to surface-2 + elev-2 shadow for clear depth feedback.
+                      className={`border-b border-border-default last:border-0 hover:bg-surface-2 hover:shadow-elev-2 transition-colors ${
+                        i % 2 === 0 ? "bg-surface-0" : "bg-surface-1"
                       }`}
                     >
                       <td className="px-4 py-3 text-gold font-mono">

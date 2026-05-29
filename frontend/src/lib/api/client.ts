@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from "./env";
+import { trackApiFailure } from "@/lib/analytics";
 
 export type FetchOptions = RequestInit & {
   token?: string | null;
@@ -56,16 +57,26 @@ export function createQueryString(params?: Record<string, string | number | unde
 
 export async function request<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
   const { token, headers, ...fetchOptions } = options;
-  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
-    ...fetchOptions,
-    headers: createHeaders(headers, token),
-  });
 
-  const data = await response.json().catch(() => null);
+  try {
+    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+      ...fetchOptions,
+      headers: createHeaders(headers, token),
+    });
 
-  if (!response.ok) {
-    throw new ApiError(response.status, (data as { error?: string })?.error || response.statusText, data);
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      trackApiFailure(endpoint, response.status, { method: fetchOptions.method ?? "GET" });
+      throw new ApiError(response.status, (data as { error?: string })?.error || response.statusText, data);
+    }
+
+    return data as T;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    trackApiFailure(endpoint, 0, { method: fetchOptions.method ?? "GET", error: error instanceof Error ? error.message : "Unknown error" });
+    throw new ApiError(0, error instanceof Error ? error.message : "Network error");
   }
-
-  return data as T;
 }

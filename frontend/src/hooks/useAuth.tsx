@@ -17,6 +17,7 @@ import {
   signMessage,
 } from "@stellar/freighter-api";
 import { api, ApiError } from "@/lib/api";
+import { trackAuthEvent } from "@/lib/analytics";
 
 const TOKEN_STORAGE_KEY = "amana_jwt";
 
@@ -146,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
+      trackAuthEvent("connect_wallet", "started");
       const requestResult = await requestAccess();
       if (requestResult.error !== undefined) {
         throw new Error(requestResult.error.message || "Failed to connect wallet");
@@ -160,11 +162,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isWalletDetected: true,
         isLoading: false,
       }));
+      trackAuthEvent("connect_wallet", "success", { connected: true });
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to connect wallet";
+      trackAuthEvent("connect_wallet", "failed", { error: message });
       setState((prev) => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : "Failed to connect wallet",
+        error: message,
       }));
     }
   }, []);
@@ -181,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
+      trackAuthEvent("authenticate", "started");
       const { challenge } = await api.auth.challenge(state.address);
 
       const signResult = await signMessage(challenge, {
@@ -209,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: false,
         error: null,
       }));
+      trackAuthEvent("authenticate", "success", { authenticated: true });
     } catch (error) {
       let errorMessage = "Authentication failed";
       if (error instanceof ApiError) {
@@ -216,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
+      trackAuthEvent("authenticate", "failed", { error: errorMessage });
 
       setState((prev) => ({
         ...prev,
@@ -242,6 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: false,
       error: null,
     }));
+    trackAuthEvent("logout", "success");
   }, [state.token]);
 
   useEffect(() => {

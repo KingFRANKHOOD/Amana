@@ -1,6 +1,6 @@
 import { TradeStatus } from "@prisma/client";
 import * as StellarSdk from "@stellar/stellar-sdk";
-import type { Response } from "express";
+import type { NextFunction, Response } from "express";
 import { AuthRequest } from "../services/auth.service";
 import {
   buildConfirmDeliveryTx,
@@ -8,7 +8,14 @@ import {
   ContractService,
 } from "../services/contract.service";
 import { appLogger } from "../middleware/logger";
-import { TradeAccessDeniedError, TradeService, DisputeTradeStatusError } from "../services/trade.service";
+import {
+  TradeAccessDeniedError,
+  TradeService,
+  DisputeTradeStatusError,
+  DisputeCategoryValidationError,
+} from "../services/trade.service";
+import { AppError, ErrorCode } from "../errors/errorCodes";
+import { getMediatorAllowlist } from "../lib/accessControl";
 
 const AMOUNT_USDC_PATTERN = /^\d+(?:\.\d{1,7})?$/;
 
@@ -20,13 +27,7 @@ interface CreateTradeBody {
 }
 
 function parseAdminPubkeys(): Set<string> {
-  const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
-  return new Set(
-    raw
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
+  return getMediatorAllowlist();
 }
 
 export function isBuyer(tradeBuyer: string, caller: string): boolean {
@@ -45,58 +46,67 @@ export function isBuyerOrAdmin(
   return tradeBuyer === caller || admins.has(caller);
 }
 
-
 export class TradeController {
   constructor(
     private readonly tradeService: TradeService = new TradeService(),
     private readonly contractService: ContractService = new ContractService(),
-  ) { }
+  ) {}
 
   public createTrade = async (
     req: AuthRequest,
     res: Response,
+    next: NextFunction,
   ): Promise<Response | void> => {
     try {
       const buyerAddress = req.user?.walletAddress;
       if (!buyerAddress) {
-        return res
-          .status(400)
-          .json({ error: "Wallet address not found in token" });
+        throw new AppError(ErrorCode.AUTH_ERROR, "Wallet address not found in token", 401);
       }
 
       if (!this.isValidPublicKey(buyerAddress)) {
-        return res.status(400).json({ error: "Invalid buyer wallet address" });
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "Invalid buyer wallet address", 400);
       }
 
       const { sellerAddress, amountUsdc, buyerLossBps, sellerLossBps } = req.body as CreateTradeBody;
       if (!this.isValidPublicKey(sellerAddress)) {
-        return res.status(400).json({ error: "Invalid sellerAddress" });
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "Invalid sellerAddress", 400);
       }
 
       const normalizedAmountUsdc = this.normalizeAmountUsdc(amountUsdc);
       if (!normalizedAmountUsdc) {
-        return res.status(400).json({ error: "Invalid amountUsdc" });
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "Invalid amountUsdc", 400);
       }
 
       if (!this.isValidLossBps(buyerLossBps)) {
-        return res.status(400).json({ error: "buyerLossBps must be an integer between 0 and 10000" });
+        throw new AppError(
+          ErrorCode.VALIDATION_ERROR,
+          "buyerLossBps must be an integer between 0 and 10000",
+          400,
+        );
       }
       if (!this.isValidLossBps(sellerLossBps)) {
-        return res.status(400).json({ error: "sellerLossBps must be an integer between 0 and 10000" });
+        throw new AppError(
+          ErrorCode.VALIDATION_ERROR,
+          "sellerLossBps must be an integer between 0 and 10000",
+          400,
+        );
       }
       if ((buyerLossBps as number) + (sellerLossBps as number) !== 10000) {
-        return res.status(400).json({ error: "buyerLossBps and sellerLossBps must sum to 10000" });
+        throw new AppError(
+          ErrorCode.VALIDATION_ERROR,
+          "buyerLossBps and sellerLossBps must sum to 10000",
+          400,
+        );
       }
 
       const { tradeId, unsignedXdr } =
         await this.contractService.buildCreateTradeTx({
           buyerAddress,
           sellerAddress,
-          amount: normalizedAmountUsdc,
+          amountUsdc: normalizedAmountUsdc,
           buyerLossBps: buyerLossBps as number,
           sellerLossBps: sellerLossBps as number,
         });
-
       await this.tradeService.createPendingTrade({
         tradeId,
         buyerAddress,
@@ -108,193 +118,245 @@ export class TradeController {
 
       return res.status(201).json({ tradeId, unsignedXdr });
     } catch (error) {
+      if (error instanceof AppError) return next(error);
       appLogger.error({ error }, "Trade creation failed");
-      return res.status(500).json({ error: "Failed to create trade" });
+      return next(
+        new AppError(ErrorCode.TRADE_BUILD_FAILED, "Failed to create trade", 500),
+      );
     }
   };
 
   public buildDepositTx = async (
     req: AuthRequest,
     res: Response,
+    next: NextFunction,
   ): Promise<Response | void> => {
     try {
       const tradeId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!tradeId) {
-        return res.status(400).json({ error: "Trade id is required" });
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "Trade id is required", 400);
       }
 
       const callerAddress = req.user?.walletAddress;
       if (!callerAddress) {
-        return res
-          .status(400)
-          .json({ error: "Wallet address not found in token" });
+        throw new AppError(ErrorCode.AUTH_ERROR, "Wallet address not found in token", 401);
       }
 
       if (!this.isValidPublicKey(callerAddress)) {
-        return res.status(400).json({ error: "Invalid buyer wallet address" });
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "Invalid buyer wallet address", 400);
       }
 
       const trade = await this.tradeService.getTradeById(tradeId, callerAddress);
       if (!trade) {
-        return res.status(404).json({ error: "Trade not found" });
+        throw new AppError(ErrorCode.TRADE_NOT_FOUND, "Trade not found", 404);
       }
 
       if (trade.buyerAddress !== callerAddress) {
-        return res.status(403).json({ error: "Forbidden" });
+        throw new AppError(ErrorCode.TRADE_ACCESS_DENIED, "Forbidden", 403);
       }
 
       if (trade.status !== TradeStatus.CREATED) {
-        return res
-          .status(400)
-          .json({ error: "Trade must be in CREATED status" });
+        throw new AppError(
+          ErrorCode.TRADE_INVALID_STATUS,
+          "Trade must be in CREATED status",
+          400,
+          { currentStatus: trade.status },
+        );
       }
 
       const { unsignedXdr } = await this.contractService.buildDepositTx(trade);
       return res.status(200).json({ unsignedXdr });
     } catch (error) {
+      if (error instanceof AppError) return next(error);
       if (error instanceof TradeAccessDeniedError) {
-        return res.status(403).json({ error: "Forbidden" });
+        return next(new AppError(ErrorCode.TRADE_ACCESS_DENIED, "Forbidden", 403));
       }
-
       appLogger.error({ error }, "Deposit transaction build failed");
-      return res
-        .status(500)
-        .json({ error: "Failed to build deposit transaction" });
+      return next(
+        new AppError(ErrorCode.TRADE_BUILD_FAILED, "Failed to build deposit transaction", 500),
+      );
     }
   };
 
   public confirmDelivery = async (
     req: AuthRequest,
     res: Response,
+    next: NextFunction,
   ): Promise<void> => {
     const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     const caller = req.user?.walletAddress?.trim();
     if (!caller) {
-      res.status(401).json({ error: "Unauthorized" });
+      next(new AppError(ErrorCode.AUTH_ERROR, "Unauthorized", 401));
       return;
     }
 
     try {
       const trade = await this.tradeService.getTradeById(id, caller);
       if (!trade) {
-        res.status(404).json({ error: "Trade not found" });
+        next(new AppError(ErrorCode.TRADE_NOT_FOUND, "Trade not found", 404));
         return;
       }
 
       if (trade.status !== TradeStatus.FUNDED) {
-        res.status(400).json({
-          error: `Trade must be FUNDED to confirm delivery (current: ${trade.status})`,
-        });
+        next(
+          new AppError(
+            ErrorCode.TRADE_INVALID_STATUS,
+            `Trade must be FUNDED to confirm delivery (current: ${trade.status})`,
+            400,
+            { currentStatus: trade.status },
+          ),
+        );
         return;
       }
 
       if (!isBuyer(trade.buyerAddress, caller)) {
-        res.status(403).json({ error: "Only the buyer may confirm delivery" });
+        next(new AppError(ErrorCode.TRADE_ACCESS_DENIED, "Only the buyer may confirm delivery", 403));
         return;
       }
 
       const unsignedXdr = await buildConfirmDeliveryTx(trade, caller);
       res.status(200).json({ unsignedXdr });
     } catch (error) {
+      if (error instanceof AppError) {
+        next(error);
+        return;
+      }
       if (error instanceof TradeAccessDeniedError) {
-        res.status(403).json({ error: "Forbidden" });
+        next(new AppError(ErrorCode.TRADE_ACCESS_DENIED, "Forbidden", 403));
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: message });
+      next(new AppError(ErrorCode.TRADE_BUILD_FAILED, message, 500));
     }
   };
 
   public releaseFunds = async (
     req: AuthRequest,
     res: Response,
+    next: NextFunction,
   ): Promise<void> => {
     const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     const caller = req.user?.walletAddress?.trim();
     if (!caller) {
-      res.status(401).json({ error: "Unauthorized" });
+      next(new AppError(ErrorCode.AUTH_ERROR, "Unauthorized", 401));
       return;
     }
 
     try {
       const trade = await this.tradeService.getTradeById(id, caller);
       if (!trade) {
-        res.status(404).json({ error: "Trade not found" });
+        next(new AppError(ErrorCode.TRADE_NOT_FOUND, "Trade not found", 404));
         return;
       }
 
       if (trade.status !== TradeStatus.DELIVERED) {
-        res.status(400).json({
-          error: `Trade must be DELIVERED to release funds (current: ${trade.status})`,
-        });
+        next(
+          new AppError(
+            ErrorCode.TRADE_INVALID_STATUS,
+            `Trade must be DELIVERED to release funds (current: ${trade.status})`,
+            400,
+            { currentStatus: trade.status },
+          ),
+        );
         return;
       }
 
       if (!isBuyerOrAdmin(trade.buyerAddress, caller)) {
-        res
-          .status(403)
-          .json({ error: "Only the buyer or an admin may release funds" });
+        next(
+          new AppError(ErrorCode.TRADE_ACCESS_DENIED, "Only the buyer or an admin may release funds", 403),
+        );
         return;
       }
 
       const unsignedXdr = await buildReleaseFundsTx(trade, caller);
       res.status(200).json({ unsignedXdr });
     } catch (error) {
+      if (error instanceof AppError) {
+        next(error);
+        return;
+      }
       if (error instanceof TradeAccessDeniedError) {
-        res.status(403).json({ error: "Forbidden" });
+        next(new AppError(ErrorCode.TRADE_ACCESS_DENIED, "Forbidden", 403));
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: message });
+      next(new AppError(ErrorCode.TRADE_BUILD_FAILED, message, 500));
     }
   };
 
   public initiateDispute = async (
     req: AuthRequest,
     res: Response,
+    next: NextFunction,
   ): Promise<Response | void> => {
     try {
       const tradeId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!tradeId) {
-        return res.status(400).json({ error: "Trade id is required" });
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "Trade id is required", 400);
       }
 
       const callerAddress = req.user?.walletAddress;
       if (!callerAddress) {
-        return res.status(401).json({ error: "Unauthorized" });
+        throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized", 401);
       }
 
-      const { reason, category } = req.body as { reason?: unknown; category?: unknown };
+      const { reason, category, categoryId } = req.body as {
+        reason?: unknown;
+        category?: unknown;
+        categoryId?: unknown;
+      };
       if (!reason || typeof reason !== "string") {
-        return res.status(400).json({ error: "Reason string is required" });
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "Reason string is required", 400);
       }
-      if (!category || typeof category !== "string") {
-        return res.status(400).json({ error: "Category string is required" });
+
+      const parsedCategoryId =
+        categoryId !== undefined
+          ? typeof categoryId === "number" && Number.isInteger(categoryId) && categoryId > 0
+            ? categoryId
+            : null
+          : undefined;
+
+      if (categoryId !== undefined && parsedCategoryId === null) {
+        throw new AppError(ErrorCode.VALIDATION_ERROR, "categoryId must be a positive integer", 400);
       }
 
       const { unsignedXdr } = await this.tradeService.initiateDispute(
         tradeId,
         callerAddress,
         reason,
-        category,
+        typeof category === "string" ? category : "",
+        parsedCategoryId ?? undefined,
       );
 
       return res.status(200).json({ unsignedXdr });
     } catch (error) {
+      if (error instanceof AppError) return next(error);
       if (error instanceof TradeAccessDeniedError) {
-        return res.status(403).json({ error: "Forbidden" });
+        return next(new AppError(ErrorCode.TRADE_ACCESS_DENIED, "Forbidden", 403));
       }
       if (error instanceof DisputeTradeStatusError) {
-        return res.status(400).json({ error: error.message });
+        return next(
+          new AppError(ErrorCode.TRADE_INVALID_STATUS, error.message, 400, {
+            currentStatus: (error as any).status,
+          }),
+        );
+      }
+      if (error instanceof DisputeCategoryValidationError) {
+        return next(
+          new AppError(ErrorCode.DISPUTE_INVALID_CATEGORY, error.message, 400),
+        );
       }
       if (error instanceof Error && error.message === "Trade not found") {
-        return res.status(404).json({ error: "Trade not found" });
+        return next(new AppError(ErrorCode.TRADE_NOT_FOUND, "Trade not found", 404));
       }
 
-      console.error("Dispute initiation failed:", error);
-      return res.status(500).json({ error: "Failed to initiate dispute" });
+      appLogger.error({ error }, "Dispute initiation failed");
+      return next(
+        new AppError(ErrorCode.TRADE_BUILD_FAILED, "Failed to initiate dispute", 500),
+      );
     }
   };
+
   private isValidPublicKey(value: unknown): value is string {
     return (
       typeof value === "string" &&

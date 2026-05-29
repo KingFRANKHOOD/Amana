@@ -1,17 +1,15 @@
 import PinataClient from "@pinata/sdk";
-
-function requireEnv(name: string): string {
-    const value = process.env[name];
-    if (!value) throw new Error(`Missing required env var: ${name}`);
-    return value;
-}
+import { env } from "./env";
 
 let _pinata: PinataClient | null = null;
 
 export function getPinataClient(): PinataClient {
     if (!_pinata) {
-        const apiKey = requireEnv("PINATA_API_KEY");
-        const secret = requireEnv("PINATA_SECRET");
+        const apiKey = process.env.PINATA_API_KEY ?? env.PINATA_API_KEY;
+        const secret = process.env.PINATA_SECRET ?? env.PINATA_SECRET;
+        if (!apiKey || !secret) {
+            throw new Error("Missing required env vars: PINATA_API_KEY and PINATA_SECRET");
+        }
         _pinata = new PinataClient(apiKey, secret);
     }
     return _pinata;

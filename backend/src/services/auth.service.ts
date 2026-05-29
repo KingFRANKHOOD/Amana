@@ -5,8 +5,9 @@ import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import { Request } from 'express';
 import { findOrCreateUser } from './user.service';
 import { AppError, ErrorCode } from '../errors/errorCodes';
+import { env } from '../config/env';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL ?? env.REDIS_URL;
 const redis = new Redis(REDIS_URL);
 const CHALLENGE_PREFIX = 'challenge:';
 const REVOKED_PREFIX = 'revoked_jti:';
@@ -83,7 +84,7 @@ export class AuthService {
   }
 
   static async validateToken(token: string): Promise<JWTPayload> {
-    const secret = process.env.JWT_SECRET;
+    const secret = process.env.JWT_SECRET ?? env.JWT_SECRET;
     if (!secret) {
       throw new AppError(ErrorCode.INFRA_ERROR, 'JWT_SECRET not set', 500);
     }
@@ -91,8 +92,8 @@ export class AuthService {
     try {
       const decoded = jwt.verify(token, secret, {
         algorithms: ['HS256'],
-        issuer: process.env.JWT_ISSUER || 'amana',
-        audience: process.env.JWT_AUDIENCE || 'amana-api',
+        issuer: process.env.JWT_ISSUER ?? env.JWT_ISSUER,
+        audience: process.env.JWT_AUDIENCE ?? env.JWT_AUDIENCE,
       }) as JWTPayload;
 
       if (!decoded.jti) {
@@ -109,6 +110,11 @@ export class AuthService {
       if (error instanceof jwt.TokenExpiredError) {
         throw new AppError(ErrorCode.AUTH_ERROR, 'Token expired', 401);
       }
+      // NotBeforeError extends JsonWebTokenError, so this must be checked first
+      // to surface a precise "not yet valid" message instead of the generic one.
+      if (error instanceof jwt.NotBeforeError) {
+        throw new AppError(ErrorCode.AUTH_ERROR, 'Token not yet valid', 401);
+      }
       if (error instanceof jwt.JsonWebTokenError) {
         throw new AppError(ErrorCode.AUTH_ERROR, 'Invalid token', 401);
       }
@@ -118,7 +124,7 @@ export class AuthService {
 
   static async refreshToken(oldToken: string): Promise<string> {
     // For refresh, we allow slightly expired tokens if they are otherwise valid
-    const secret = process.env.JWT_SECRET;
+    const secret = process.env.JWT_SECRET ?? env.JWT_SECRET;
     if (!secret) {
       throw new AppError(ErrorCode.INFRA_ERROR, 'JWT_SECRET not set', 500);
     }
@@ -183,12 +189,12 @@ export class AuthService {
 
 
   private static issueToken(walletAddress: string): string {
-    const secret = process.env.JWT_SECRET;
+    const secret = process.env.JWT_SECRET ?? env.JWT_SECRET;
     if (!secret) {
       throw new Error('JWT_SECRET not set');
     }
 
-    const ttl = parseInt(process.env.JWT_EXPIRES_IN || '86400') || 86400;
+    const ttl = parseInt(process.env.JWT_EXPIRES_IN ?? env.JWT_EXPIRES_IN, 10) || 86400;
     const now = Math.floor(Date.now() / 1000);
     const jti = crypto.randomUUID();
 
@@ -196,8 +202,8 @@ export class AuthService {
       sub: walletAddress.toLowerCase(),
       walletAddress: walletAddress.toLowerCase(),
       jti,
-      iss: process.env.JWT_ISSUER || 'amana',
-      aud: process.env.JWT_AUDIENCE || 'amana-api',
+      iss: process.env.JWT_ISSUER ?? env.JWT_ISSUER,
+      aud: process.env.JWT_AUDIENCE ?? env.JWT_AUDIENCE,
       iat: now,
       nbf: now,
       exp: now + ttl,

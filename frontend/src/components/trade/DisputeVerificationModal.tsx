@@ -52,6 +52,7 @@ export function DisputeVerificationModal({
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStep("upload");
       setIpfsHash(null);
       setTxHash(null);
@@ -61,7 +62,15 @@ export function DisputeVerificationModal({
 
   // Lock body scroll when open
   useEffect(() => {
-    document.body.style.overflow = isOpen ? "hidden" : "unset";
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+      const firstButton = document.querySelector<HTMLButtonElement>(
+        '[role="dialog"] button:not([disabled])',
+      );
+      firstButton?.focus();
+    } else {
+      document.body.style.overflow = "unset";
+    }
     return () => {
       document.body.style.overflow = "unset";
     };

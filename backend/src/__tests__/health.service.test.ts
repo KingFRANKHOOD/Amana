@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { HealthService } from "../services/health.service";
 
 describe("HealthService", () => {
@@ -7,9 +6,9 @@ describe("HealthService", () => {
 
     beforeEach(() => {
         mockPrisma = {
-            $queryRaw: vi.fn(),
+            $queryRaw: jest.fn(),
             processedLedger: {
-                findFirst: vi.fn(),
+                findFirst: jest.fn(),
             },
         };
 

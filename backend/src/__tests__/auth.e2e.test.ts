@@ -439,29 +439,25 @@ describe("POST /auth/logout", () => {
 
 describe("Rate limiting", () => {
   it("allows 10 requests and rejects the 11th with 429", async () => {
-    // Use the actual (unmocked) express-rate-limit to mirror what auth.routes.ts configures
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { default: actualRateLimit } = jest.requireActual<any>("express-rate-limit");
+    const { RATE_LIMIT_CONFIG } = jest.requireActual<any>("../config/rateLimit");
 
     const limiter = actualRateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 10,
-      message: "Too many challenges/verify attempts, try again later.",
+      windowMs: RATE_LIMIT_CONFIG.auth.windowMs,
+      max: RATE_LIMIT_CONFIG.auth.max,
+      message: RATE_LIMIT_CONFIG.auth.message,
     });
 
-    // Minimal app: just the rate limiter in front of a trivial handler
     const app = express();
     app.post("/auth/challenge", limiter, (_req, res) => {
       res.json({ challenge: "test-challenge" });
     });
 
-    // First 10 requests must pass through
     for (let i = 0; i < 10; i++) {
       const res = await request(app).post("/auth/challenge").send({});
       expect(res.status).not.toBe(429);
     }
 
-    // 11th request must be rate-limited
     const rateLimitedRes = await request(app)
       .post("/auth/challenge")
       .send({});

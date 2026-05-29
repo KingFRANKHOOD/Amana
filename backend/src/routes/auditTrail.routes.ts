@@ -10,6 +10,7 @@ import {
     AuditTrailTradeNotFoundError,
 } from "../services/auditTrail.service";
 import { appLogger } from "../middleware/logger";
+import { getAuditSigningConfig } from "../config/auditSigning";
 
 export function createAuditTrailRouter(auditService = new AuditTrailService()) {
     const router = Router({ mergeParams: true });
@@ -104,7 +105,7 @@ export function createAuditTrailRouter(auditService = new AuditTrailService()) {
                 valid,
                 payloadHash,
                 algorithm: "ed25519",
-                keyId: process.env.AUDIT_SIGNING_KEY_ID ?? null,
+                keyId: getAuditSigningConfig().keyId ?? null,
             });
         } catch (err) {
             if (err instanceof AuditTrailTradeNotFoundError) {

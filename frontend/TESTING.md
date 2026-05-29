@@ -45,6 +45,14 @@ npm run test:coverage
 
 ## Writing Tests
 
+### Visual Regression Tests
+Visual snapshot tests live under `tests/visual` and are executed with Playwright.
+
+- `npm run test:visual` runs the snapshot suite.
+- `npm run test:visual:update` refreshes failing snapshots after intentional UI changes.
+
+Snapshot tests are structured for both mobile and desktop viewports.
+
 ### Unit Tests
 Place unit tests in `__tests__` directories next to the components:
 ```

@@ -173,3 +173,9 @@ Failures block merge for production branches (`main`).
 | Failed migration on staging | Fix SQL, re-run `migrate-safe.sh`, or rollback |
 | Failed migration on production | Page on-call immediately; execute Scenario B or C above |
 | Data loss suspected | Stop writes; page on-call; do NOT run any more migrations |
+
+### CI approval policy for risky DDL
+
+- PRs with risky DDL always receive a CI warning comment with remediation steps.
+- For PRs targeting `main`, risky DDL fails the migration safety workflow unless the PR has the `migration:destructive-approved` label.
+- Apply the label only after explicit DBA/on-call review, a tested `rollback.sql`, and a planned maintenance window.

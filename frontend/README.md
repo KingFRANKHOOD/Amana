@@ -1,36 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🌾 Amana Frontend
+
+The official Next.js web application for **Amana**, a decentralized escrow protocol designed to secure agricultural trade across different regions.
+
+Amana eliminates the "Trust Gap" between buyers and sellers using Soroban Smart Contracts on the Stellar network, ensuring fair trade even when parties are hundreds of miles apart.
+
+## About Amana
+
+**Amana** provides a programmable safety net for regional commodity trading:
+
+- **Smart Escrow**: Secure funds holding using cNGN/stablecoins on the Stellar network
+- **Dynamic Loss Sharing**: Negotiable risk-sharing ratios (e.g., 50/50, 70/30) for handling transit accidents
+- **Proof-of-Delivery (PoD)**: Mandatory video-based verification involving buyer and driver
+- **Automated Settlement**: Flat 1% platform fee deducted upon successful trade completion
+- **Volatility Protection**: Stellar Path Payments allow users to pay in local currency (NGN) while locking value in cNGN
+
+## Frontend Responsibilities
+
+This folder is the user-facing interface for buyers, sellers, and mediators interacting with the Amana escrow protocol.
+
+## Features
+
+- Next.js 16 App Router
+- React 19 UI components
+- Tailwind CSS styling
+- Playwright visual regression testing
+- Jest unit/integration testing
+- Stellar wallet integration via Freighter
+- Privacy-first analytics instrumentation
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 20+ / npm
+- A `.env.local` file configured for the frontend environment
+
+### Install dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### Environment
+
+Copy the example env file and configure your runtime variables:
+
+```bash
+cp .env.example .env.local
+```
+
+### Run in development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+```
 
-## Learn More
+### Start production server
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Linting
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run lint
+```
 
-## Deploy on Vercel
+### Tests
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm test
+npm run test:coverage
+npm run test:visual
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Visual regression tests
+
+```bash
+npm run test:visual
+npm run test:visual:update
+```
+
+## Notes
+
+- `app/` contains the Next.js application and page routing.
+- `src/` contains shared components, hooks, and utilities.
+- `public/` holds static assets and images.
+- `playwright.config.ts` controls Playwright visual regression.
+
+## Repository Scope
+
+This frontend lives inside the `frontend/` folder of the Amana monorepo. It serves as the UI for buyers, sellers, and mediators interacting with the backend API.
+
+If you are consuming the backend API, point the frontend environment configuration to the correct backend endpoint.

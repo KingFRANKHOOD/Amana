@@ -16,6 +16,8 @@ export interface TradeResponse {
   status: string;
   createdAt: string;
   updatedAt: string;
+  eta?: string;
+  carrier?: string;
 }
 
 export interface TradeListResponse {
@@ -73,6 +75,19 @@ export interface DepositResponse {
   unsignedXdr: string;
 }
 
+export interface SubmitManifestRequest {
+  driverName: string;
+  driverIdNumber: string;
+  vehicleRegistration: string;
+  routeDescription: string;
+  expectedDeliveryAt: string;
+}
+
+export interface SubmitManifestResponse {
+  manifestId: number;
+  unsignedXdr: string;
+}
+
 export interface PathPaymentQuote {
   source_amount: string;
   source_asset_type: string;
@@ -81,4 +96,29 @@ export interface PathPaymentQuote {
   destination_asset_type: string;
   destination_asset_code?: string;
   path: unknown[];
+}
+
+export interface DisputeResponse {
+  id: number;
+  tradeId: string;
+  initiator: string;
+  reason: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  trade: {
+    buyerAddress: string;
+    sellerAddress: string;
+    amountUsdc: string;
+  };
+}
+
+export interface DisputeListResponse {
+  items: DisputeResponse[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }

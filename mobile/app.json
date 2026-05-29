@@ -1,0 +1,48 @@
+{
+  "cli": {
+    "requireCommit": true
+  },
+  "expo": {
+    "name": "Amana",
+    "slug": "amana-mobile",
+    "version": "0.1.0",
+    "scheme": "amana",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTabletMode": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Amana uses local network to communicate with backend services",
+        "NSBonjourServiceTypes": ["_amana._tcp"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": ["android.permission.ACCESS_COARSE_LOCATION"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#ffffff",
+          "sounds": ["./assets/notification-sound.wav"]
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "amana-mobile-project-id"
+      }
+    }
+  }
+}

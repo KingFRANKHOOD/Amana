@@ -37,7 +37,7 @@ export function OfflineState({
         </svg>
       </div>
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-content">You're offline</h2>
+        <h2 className="text-lg font-semibold text-content">You&apos;re offline</h2>
         <p className="text-sm text-muted">
           Please check your internet connection and try again.
         </p>
