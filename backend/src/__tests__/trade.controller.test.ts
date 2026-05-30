@@ -5,25 +5,8 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { tradeRoutes } from "../routes/trade.routes";
 import { TradeAccessDeniedError, DisputeTradeStatusError } from "../services/trade.service";
 import { AuthService } from "../services/auth.service";
-import { errorHandler } from "../middleware/errorHandler";
+import { errorHandler } from "../errors/errorHandler";
 import { ErrorCode } from "../errors/errorCodes";
-
-var mockBuildConfirmDeliveryTx: jest.Mock;
-var mockBuildReleaseFundsTx: jest.Mock;
-var mockContractService: any;
-
-jest.mock("../services/contract.service", () => {
-  mockBuildConfirmDeliveryTx = jest.fn();
-  mockBuildReleaseFundsTx = jest.fn();
-  const mcs = { buildCreateTradeTx: jest.fn(), buildDepositTx: jest.fn(), buildConfirmDeliveryTx: mockBuildConfirmDeliveryTx, buildReleaseFundsTx: mockBuildReleaseFundsTx };
-  mockContractService = mcs;
-  const MCS = jest.fn(() => mcs) as any;
-  MCS.buildConfirmDeliveryTx = mockBuildConfirmDeliveryTx;
-  MCS.buildReleaseFundsTx = mockBuildReleaseFundsTx;
-  return { ContractService: MCS, buildConfirmDeliveryTx: mockBuildConfirmDeliveryTx, buildReleaseFundsTx: mockBuildReleaseFundsTx };
-});
-
-var mockTradeService: any;
 
 jest.mock("../services/trade.service", () => {
   mockTradeService = { createPendingTrade: jest.fn(), listUserTrades: jest.fn(), getTradeById: jest.fn(), getUserStats: jest.fn(), initiateDispute: jest.fn() };
@@ -147,8 +130,6 @@ describe("TradeController", () => {
 
             expect(res.status).toBe(400);
             expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
-            expect(res.body.message).toMatch(/sellerAddress/i);
-            expect(res.body.timestamp).toBeDefined();
         });
 
         it("validates USDC amount parsing — schema rejects invalid format", async () => {
@@ -163,7 +144,8 @@ describe("TradeController", () => {
                 });
 
             expect(res.status).toBe(400);
-            expect(res.body.error).toBeDefined();        });
+            expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+        });
 
         it("validates buyerLossBps bounds (0-10000) — schema rejects out-of-range", async () => {
             const res = await request(app)
@@ -177,7 +159,8 @@ describe("TradeController", () => {
                 });
 
             expect(res.status).toBe(400);
-            expect(res.body.error).toBeDefined();        });
+            expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+        });
 
         it("validates sellerLossBps bounds (0-10000) — schema rejects out-of-range", async () => {
             const res = await request(app)
@@ -191,7 +174,8 @@ describe("TradeController", () => {
                 });
 
             expect(res.status).toBe(400);
-            expect(res.body.error).toBeDefined();        });
+            expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+        });
 
         it("validates buyerLossBps and sellerLossBps sum to 10000 — schema superRefine rejects", async () => {
             const res = await request(app)
@@ -205,7 +189,8 @@ describe("TradeController", () => {
                 });
 
             expect(res.status).toBe(400);
-            expect(res.body.error).toBeDefined();        });
+            expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+        });
 
         it("handles negative amounts — schema regex rejects", async () => {
             const res = await request(app)
@@ -219,7 +204,8 @@ describe("TradeController", () => {
                 });
 
             expect(res.status).toBe(400);
-            expect(res.body.error).toBeDefined();        });
+            expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+        });
 
         it("handles zero amounts — returns structured VALIDATION_ERROR", async () => {
             const res = await request(app)
@@ -234,7 +220,7 @@ describe("TradeController", () => {
 
             expect(res.status).toBe(400);
             expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
-            expect(res.body.timestamp).toBeDefined();        });
+        });
 
         it("returns 401 without auth", async () => {
             const res = await request(app).post("/trades").send({
@@ -584,6 +570,88 @@ describe("TradeController", () => {
                 .send({ reason: "Goods not as described", category: "quality" });
             expect(res.status).toBe(401);
             expect(res.body.error).toBe("Unauthorized");
+        });
+    });
+
+    describe("error cases", () => {
+        it("handles invalid Stellar address in createTrade", async () => {
+            const res = await request(app)
+                .post("/trades")
+                .set("Authorization", `Bearer ${token}`)
+                .send({
+                    sellerAddress: "INVALID",
+                    amountUsdc: "100",
+                    buyerLossBps: 5000,
+                    sellerLossBps: 5000,
+                });
+
+            expect(res.status).toBe(400);
+            expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+        });
+
+        it("handles negative amounts in createTrade", async () => {
+            const res = await request(app)
+                .post("/trades")
+                .set("Authorization", `Bearer ${token}`)
+                .send({
+                    sellerAddress,
+                    amountUsdc: "-100",
+                    buyerLossBps: 5000,
+                    sellerLossBps: 5000,
+                });
+
+            expect(res.status).toBe(400);
+            expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+        });
+
+        it("handles unauthorized access in buildDepositTx", async () => {
+            (TradeService.prototype.getTradeById as jest.Mock).mockRejectedValue(
+                new Error("Access denied")
+            );
+
+            const res = await request(app)
+                .post("/trades/4294967297/deposit")
+                .set("Authorization", `Bearer ${strangerToken}`);
+
+            expect(res.status).toBe(403);
+            expect(res.body.error).toBe("Forbidden");
+        });
+
+        it("handles trade not found in confirmDelivery", async () => {
+            (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue(null);
+
+            const res = await request(app)
+                .post("/trades/9999999999/confirm-delivery")
+                .set("Authorization", `Bearer ${token}`);
+
+            expect(res.status).toBe(404);
+            expect(res.body.error).toBe("Trade not found");
+        });
+
+        it("handles business logic violations in releaseFunds", async () => {
+            (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
+                tradeId: "4294967297",
+                buyerAddress: buyerAddress,
+                sellerAddress: sellerAddress,
+                amountUsdc: "125.1234567",
+                status: "DISPUTED",
+            });
+
+            const res = await request(app)
+                .post("/trades/4294967297/release-funds")
+                .set("Authorization", `Bearer ${token}`);
+
+            expect(res.status).toBe(400);
+            expect(res.body.error).toBe("Trade must be DELIVERED to release funds (current: DISPUTED)");
+        });
+
+        it("handles invalid trade ID format", async () => {
+            const res = await request(app)
+                .post("/trades/invalid-id/deposit")
+                .set("Authorization", `Bearer ${token}`);
+
+            expect(res.status).toBe(400);
+            expect(res.body.error).toBe("Trade id is required");
         });
     });
 

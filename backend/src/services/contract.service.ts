@@ -3,12 +3,10 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { env } from "../config/env";
 import { withRpcMetrics } from "../lib/metrics";
 import { retryAsync } from "../lib/retry";
-import { TOKEN_CONFIG } from "../config/token";
+import { TOKEN_BASE, TOKEN_DECIMALS } from "../config/token";
 
 const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
 const DEFAULT_TIMEOUT_SECONDS = 300;
-const TOKEN_DECIMALS = BigInt(TOKEN_CONFIG.decimals);
-const TOKEN_BASE = 10n ** TOKEN_DECIMALS;
 
 type RpcServerFactory = (rpcUrl: string) => StellarSdk.rpc.Server;
 

@@ -2,16 +2,27 @@ import { StellarService } from "./stellar.service";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { retryAsync } from "../lib/retry";
 import { appLogger } from "../middleware/logger";
+import { USDC_ISSUER_MAINNET, USDC_ISSUER_TESTNET } from "../config/stellar";
+import { CircuitBreaker, CircuitBreakerOpenError } from "../lib/circuitBreaker";
 
 export class PathPaymentService {
   private stellarService: StellarService;
+  private readonly circuitBreaker: CircuitBreaker;
 
-  constructor() {
+  constructor(circuitBreaker?: CircuitBreaker) {
     this.stellarService = new StellarService();
+    this.circuitBreaker =
+      circuitBreaker ??
+      new CircuitBreaker("horizon-path-payment", {
+        failureThreshold: 5,
+        successThreshold: 2,
+        cooldownMs: 30_000,
+      });
   }
 
   /**
    * Discovers NGN -> USDC (or any asset to USDC) conversion routes.
+   * Retries on transient errors and trips a circuit breaker on sustained Horizon outages.
    */
   public async getPathPaymentQuote(
     sourceAmount: string,
@@ -20,29 +31,29 @@ export class PathPaymentService {
   ): Promise<any[]> {
     try {
       const server = this.stellarService.getServer();
-      
+
       const sourceAsset =
         sourceAssetCode === "XLM" || sourceAssetCode === "native"
           ? StellarSdk.Asset.native()
           : new StellarSdk.Asset(
               sourceAssetCode,
-              sourceAssetIssuer || "GAWEEQOIQ34O4YYUN4OTUMM2F2HVKJ6NYIKIUV6Z7O4PFWY3U5QY4MFI" // dummy/fallback issue, or expecting user to provide
+              sourceAssetIssuer || "GASIVS63V6PAKAMW3ZYEX2RNNB3Q4UMRKDIQHNMH3LRNTSWVHXMTANKE"
             );
-            
-      // For USDC, we also need an issuer, unless we specify a known one on testnet/public
+
       const network = this.stellarService.getNetworkPassphrase();
       const usdcIssuer =
         network === StellarSdk.Networks.PUBLIC
-          ? "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
-          : "GBBD47IF6LWK7P7MDEVSCWTTCJM4TWCH6TZZRVDI0Z00USDC"; // default testnet issuer example
+          ? USDC_ISSUER_MAINNET
+          : USDC_ISSUER_TESTNET;
 
       const destAssets = [new StellarSdk.Asset("USDC", usdcIssuer)];
 
-      const paths = await retryAsync(() =>
-        server.strictSendPaths(sourceAsset, sourceAmount, destAssets).call()
+      const paths = await this.circuitBreaker.call(() =>
+        retryAsync(() =>
+          server.strictSendPaths(sourceAsset, sourceAmount, destAssets).call()
+        )
       );
-      
-      // Map properties for easier frontend consumption
+
       return paths.records.map((record) => ({
         source_amount: record.source_amount,
         source_asset_type: record.source_asset_type,
@@ -53,6 +64,10 @@ export class PathPaymentService {
         path: record.path,
       }));
     } catch (error) {
+      if (error instanceof CircuitBreakerOpenError) {
+        appLogger.warn({ error }, "Path payment circuit breaker open");
+        throw new Error("Payment service temporarily unavailable");
+      }
       appLogger.error({ error }, "Path payment quote error");
       throw new Error("Failed to fetch path payment quotes");
     }

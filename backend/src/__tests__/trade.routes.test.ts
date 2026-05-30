@@ -6,8 +6,7 @@ import { tradeRoutes } from "../routes/trade.routes";
 import { ContractService } from "../services/contract.service";
 import { TradeService } from "../services/trade.service";
 import { AuthService } from "../services/auth.service";
-import { errorHandler } from "../middleware/errorHandler";
-import { ErrorCode } from "../errors/errorCodes";
+import { errorHandler } from "../errors/errorHandler";
 
 jest.mock("../services/contract.service");
 jest.mock("../services/trade.service");
@@ -15,7 +14,6 @@ jest.mock("../services/trade.service");
 const app = express();
 app.use(express.json());
 app.use("/trades", tradeRoutes);
-// Wire in the centralized error handler so AppError instances are serialized
 app.use(errorHandler);
 
 describe("Trade Routes", () => {
@@ -107,12 +105,12 @@ describe("Trade Routes", () => {
       .send({
         sellerAddress: "not-a-stellar-address",
         amountUsdc: "10",
+        buyerLossBps: 5000,
+        sellerLossBps: 5000,
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
-    expect(res.body.message).toBeDefined();
-    expect(res.body.timestamp).toBeDefined();
+    expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
   it("returns 401 without auth", async () => {

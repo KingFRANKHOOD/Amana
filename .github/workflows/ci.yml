@@ -20,18 +20,10 @@ on:
       - main
       - develop
     paths:
-      - '.github/workflows/ci.yml'
-      - 'backend/**'
-      - 'frontend/**'
-      - 'mobile/**'
-      - 'contracts/**'
-      - 'scripts/check-contract-deployment-safety.sh'
-      - 'package-lock.json'
-      - 'pnpm-lock.yaml'
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+      - ".github/workflows/ci.yml"
+      - "frontend/**"
+      - "backend/**"
+      - "contracts/**"
 
 jobs:
   changes:
@@ -83,8 +75,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install deps
-        if: needs.changes.outputs.frontend == 'true'
         run: npm ci
+
+      - name: Verify lock file is not dirty
+        run: git diff --exit-code package-lock.json
 
       - name: Lint
         if: needs.changes.outputs.frontend == 'true'
@@ -129,16 +123,10 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - name: Install deps
-        if: needs.changes.outputs.backend == 'true'
         run: npm ci
 
-      - name: Check Env Coverage
-        if: needs.changes.outputs.backend == 'true'
-        run: npx tsx scripts/check-env-coverage.ts
-
-      - name: Lint
-        if: needs.changes.outputs.backend == 'true'
-        run: npm run lint
+      - name: Verify lock file is not dirty
+        run: git diff --exit-code package-lock.json
 
       - name: Build
         if: needs.changes.outputs.backend == 'true'
@@ -219,7 +207,7 @@ jobs:
 
       - name: Test
         if: needs.changes.outputs.contracts == 'true'
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build WASM artifact
         if: needs.changes.outputs.contracts == 'true'

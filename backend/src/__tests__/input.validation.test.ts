@@ -33,12 +33,14 @@ import { ManifestService } from "../services/manifest.service";
 import { AuthService } from "../services/auth.service";
 import { tradeRoutes } from "../routes/trade.routes";
 import { createManifestRouter } from "../routes/manifest.routes";
+import { errorHandler } from "../errors/errorHandler";
 
 // ─── App setup ────────────────────────────────────────────────────────────────
 
 const app = express();
 app.use(express.json());
 app.use("/trades", tradeRoutes);
+app.use(errorHandler);
 
 // Mount manifest router under /trades/:id/manifest
 const manifestApp = express();
@@ -48,6 +50,7 @@ const manifestRouter = createManifestRouter(
   new ContractService() as jest.Mocked<ContractService>,
 );
 manifestApp.use("/trades/:id/manifest", manifestRouter);
+manifestApp.use(errorHandler);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -120,7 +123,7 @@ describe("Stellar address validation", () => {
       .set("Authorization", `Bearer ${buyerToken}`)
       .send({ ...validPayload, sellerAddress: "GABC123" });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/sellerAddress/i);
+    expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
   it("rejects address with wrong prefix (not G)", async () => {
@@ -229,7 +232,7 @@ describe("USDC amount validation", () => {
       .set("Authorization", `Bearer ${buyerToken}`)
       .send({ ...base, amountUsdc: "-100" });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/amountUsdc/i);
+    expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
   it("rejects zero amount", async () => {
@@ -343,7 +346,7 @@ describe("Loss ratio (bps) validation", () => {
       .set("Authorization", `Bearer ${buyerToken}`)
       .send({ ...base, buyerLossBps: -1000, sellerLossBps: 11000 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/buyerLossBps/i);
+    expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
   it("rejects buyerLossBps > 10000", async () => {
@@ -360,7 +363,7 @@ describe("Loss ratio (bps) validation", () => {
       .set("Authorization", `Bearer ${buyerToken}`)
       .send({ ...base, buyerLossBps: 5001, sellerLossBps: 5001 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/sum/i);
+    expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
   it("rejects sum < 10000 (3000 + 3000)", async () => {

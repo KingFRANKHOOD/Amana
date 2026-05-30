@@ -2,9 +2,7 @@ import { Prisma, PrismaClient, Goal, Vault } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { env } from "../config/env";
-
-const USDC_DECIMALS = 7n;
-const USDC_BASE = 10n ** USDC_DECIMALS;
+import { TOKEN_BASE } from "../config/token";
 
 interface GoalAnalytics {
     goalId: string;
