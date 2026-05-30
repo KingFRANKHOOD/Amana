@@ -1,9 +1,15 @@
 import { z } from "zod";
 import { TradeStatus } from "@prisma/client";
+import { StrKey } from "@stellar/stellar-sdk";
+
+const stellarPublicKey = (fieldName: string) =>
+  z.string().refine((v: string) => StrKey.isValidEd25519PublicKey(v), {
+    message: `Invalid Stellar public key for ${fieldName}`,
+  });
 
 export const createTradeSchema = z.object({
-  buyerAddress: z.string().min(1, "Buyer address is required").optional(),
-  sellerAddress: z.string().min(1, "Seller address is required"),
+  buyerAddress: stellarPublicKey("buyerAddress").optional(),
+  sellerAddress: stellarPublicKey("sellerAddress"),
   amountUsdc: z.union([
     z.string().regex(/^\d+(\.\d{1,7})?$/, "Invalid amount format"),
     z.number().positive("Amount must be positive").transform(String),

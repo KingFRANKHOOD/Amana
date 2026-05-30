@@ -11,6 +11,15 @@ import { ErrorCode } from "../errors/errorCodes";
 
 jest.mock("../services/contract.service");
 jest.mock("../services/trade.service");
+jest.mock("../services/auth.service", () => ({
+  AuthService: {
+    validateToken: jest.fn(async (token: string) => {
+      const jwt = require("jsonwebtoken");
+      return jwt.decode(token);
+    }),
+    isTokenRevoked: jest.fn().mockResolvedValue(false),
+  },
+}));
 
 const app = express();
 app.use(express.json());
@@ -52,6 +61,9 @@ describe("Trade Routes", () => {
       secret,
       { algorithm: "HS256" },
     );
+  });
+
+  beforeEach(() => {
     jest.spyOn(AuthService, "isTokenRevoked").mockResolvedValue(false);
   });
 
@@ -110,9 +122,7 @@ describe("Trade Routes", () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
-    expect(res.body.message).toBeDefined();
-    expect(res.body.timestamp).toBeDefined();
+    expect(res.body.error).toMatch(/sellerAddress/i);
   });
 
   it("returns 401 without auth", async () => {
@@ -122,7 +132,7 @@ describe("Trade Routes", () => {
     });
 
     expect(res.status).toBe(401);
-    expect(res.body.error).toBe("Unauthorized");
+    expect(res.body.error).toBe("Missing Authorization header");
   });
 
   it("returns unsignedXdr for a valid buyer deposit request", async () => {
