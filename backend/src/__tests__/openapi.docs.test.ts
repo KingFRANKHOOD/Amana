@@ -39,6 +39,7 @@ describe("OpenAPI documentation coverage", () => {
     "/health": ["get"],
     "/health/live": ["get"],
     "/health/ready": ["get"],
+    "/health/startup": ["get"],
     "/auth/challenge": ["post"],
     "/auth/verify": ["post"],
     "/auth/logout": ["post"],

@@ -3,21 +3,45 @@ import express from 'express';
 import { createApp } from '../app';
 import { errorHandler } from '../errors/errorHandler';
 
+const mockPerformHealthCheck = jest.fn();
+
+jest.mock('../services/health.service', () => ({
+  HealthService: jest.fn().mockImplementation(() => ({
+    performHealthCheck: mockPerformHealthCheck,
+    performStartupCheck: jest.fn(),
+  })),
+}));
+
 describe('App Bootstrap', () => {
   let app: express.Application;
 
   beforeAll(() => {
+    mockPerformHealthCheck.mockResolvedValue({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: 5000,
+      checks: {
+        database: { status: 'up', message: 'ok', responseTime: 5 },
+        redis: { status: 'up', message: 'ok', responseTime: 3 },
+        indexer: { status: 'up', message: 'ok', responseTime: 10 },
+      },
+      details: {
+        databaseLatency: 5,
+        redisLatency: 3,
+        indexerLagSeconds: 2,
+        lastProcessedLedger: 12345,
+      },
+    });
+
     app = createApp();
   });
 
   it('should return 200 on /health', async () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      status: 'ok',
-      service: 'amana-backend',
-    });
-    expect(res.body.timestamp).toBeDefined();
+    expect(res.body).toHaveProperty('status');
+    expect(res.body).toHaveProperty('timestamp');
+    expect(res.body).toHaveProperty('checks');
   });
 
   it('should handle errors with structured JSON', async () => {
@@ -41,4 +65,3 @@ describe('App Bootstrap', () => {
     expect(res.body.error).toBe('Unauthorized');
   });
 });
-

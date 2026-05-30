@@ -6,12 +6,6 @@ export function createHealthRouter(): Router {
     const router = Router();
     const healthService = new HealthService();
 
-    /**
-     * GET /health
-     * Comprehensive health check endpoint
-     * Returns detailed status for uptime integrations (Datadog, UptimeRobot, etc.)
-     * Responds with 503 if unhealthy for native fallback routing
-     */
     router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         try {
             const healthCheck = await healthService.performHealthCheck();
@@ -21,7 +15,6 @@ export function createHealthRouter(): Router {
                 "Health check performed"
             );
 
-            // Return 503 Service Unavailable if unhealthy for uptime integrations
             const statusCode = healthCheck.status === "unhealthy" ? 503 : 200;
 
             res.status(statusCode).json(healthCheck);
@@ -35,10 +28,6 @@ export function createHealthRouter(): Router {
         }
     });
 
-    /**
-     * GET /health/live
-     * Liveness probe - quick check if service is running
-     */
     router.get("/live", (req: Request, res: Response) => {
         res.status(200).json({
             status: "alive",
@@ -46,10 +35,6 @@ export function createHealthRouter(): Router {
         });
     });
 
-    /**
-     * GET /health/ready
-     * Readiness probe - checks if service is ready to accept traffic
-     */
     router.get("/ready", async (req: Request, res: Response, next: NextFunction) => {
         try {
             const healthCheck = await healthService.performHealthCheck();
@@ -67,6 +52,26 @@ export function createHealthRouter(): Router {
                 status: "not_ready",
                 timestamp: new Date().toISOString(),
                 error: "Readiness check failed",
+            });
+        }
+    });
+
+    router.get("/startup", async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const startupCheck = await healthService.performStartupCheck();
+
+            const statusCode = startupCheck.status === "ready" ? 200 : 503;
+            res.status(statusCode).json({
+                status: startupCheck.status,
+                timestamp: startupCheck.timestamp,
+                checks: startupCheck.checks,
+            });
+        } catch (error) {
+            appLogger.error({ error }, "Startup check failed");
+            res.status(503).json({
+                status: "not_ready",
+                timestamp: new Date().toISOString(),
+                error: "Startup check failed",
             });
         }
     });

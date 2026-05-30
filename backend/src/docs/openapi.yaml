@@ -289,6 +289,8 @@ components:
           properties:
             database:
               $ref: "#/components/schemas/HealthIndicator"
+            redis:
+              $ref: "#/components/schemas/HealthIndicator"
             indexer:
               $ref: "#/components/schemas/HealthIndicator"
             stellar:
@@ -347,9 +349,11 @@ components:
           properties:
             database:
               $ref: "#/components/schemas/HealthIndicator"
+            redis:
+              $ref: "#/components/schemas/HealthIndicator"
             indexer:
               $ref: "#/components/schemas/HealthIndicator"
-          required: [database, indexer]
+          required: [database, redis, indexer]
       required: [status, timestamp]
     WalletBalanceResponse:
       type: object
@@ -875,6 +879,29 @@ paths:
                 $ref: "#/components/schemas/ReadinessResponse"
         "503":
           description: Service is not ready.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ReadinessResponse"
+                  - $ref: "#/components/schemas/ErrorEnvelope"
+  /health/startup:
+    get:
+      tags: [Health]
+      summary: Check startup readiness
+      description: |-
+        Lightweight probe for slow-starting containers. Checks only core
+        dependencies (database, redis) without requiring the indexer to
+        have processed events yet.
+      responses:
+        "200":
+          description: Service has started successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: Service has not finished starting.
           content:
             application/json:
               schema:
