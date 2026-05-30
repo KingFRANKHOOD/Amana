@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
