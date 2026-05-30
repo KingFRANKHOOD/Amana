@@ -116,20 +116,15 @@ export default function ReputationPage() {
   }, [token]);
 
   useEffect(() => {
-    if (!isAuthenticated && !authLoading) {
-      setLoading(false);
-      return;
-    }
-    if (token) {
+    if (isAuthenticated && token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchReputation();
     }
-  }, [isAuthenticated, authLoading, token, fetchReputation]);
+  }, [isAuthenticated, token, fetchReputation]);
 
-  if (authLoading) {
-    return <SkeletonReputationPage />;
-  }
+  const isPageLoading = authLoading || (isAuthenticated && loading);
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center space-y-6">
         <div className="w-16 h-16 rounded-full bg-bg-elevated border border-border-default flex items-center justify-center">
@@ -143,7 +138,7 @@ export default function ReputationPage() {
     );
   }
 
-  if (loading) {
+  if (isPageLoading) {
     return <SkeletonReputationPage />;
   }
 
