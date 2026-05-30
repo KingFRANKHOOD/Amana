@@ -40,8 +40,8 @@ grep -q 'AlreadyInitialized' "$contract_src" \
 grep -q 'admin.require_auth()' "$contract_src" \
   || fail "admin-controlled deployment setup must require admin authorization"
 
-grep -q 'DataKey::CngnContract' "$contract_src" \
-  || fail "token contract storage key must remain explicit and migration-safe"
+grep -qE 'DataKey::(CngnContract|SourceToken)' "$contract_src" \
+  || fail "token contract storage key must remain explicit and migration-safe (CngnContract or SourceToken)"
 
 if grep -RInE '(SECRET_KEY|PRIVATE_KEY|MNEMONIC|SEED_PHRASE|S[A-Z0-9]{55})' "$contract_dir" \
   --exclude-dir target \

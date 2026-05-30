@@ -42,3 +42,7 @@ path = "tests/dispute_stress_tests.rs"
 [[test]]
 name = "event_emission_tests"
 path = "tests/event_emission_tests.rs"
+
+[[test]]
+name = "local_deployment_tests"
+path = "tests/local_deployment_tests.rs"
