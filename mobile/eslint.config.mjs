@@ -2,11 +2,12 @@ import eslint from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
 import prettier from 'eslint-config-prettier';
+import reactNative from 'eslint-plugin-react-native';
 
 export default [
   eslint.configs.recommended,
   {
-    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    files: ['**/*.{ts,tsx,js,jsx}'],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -26,18 +27,23 @@ export default [
         exports: 'readonly',
         module: 'readonly',
         require: 'readonly',
+        FormData: 'readonly',
+        Blob: 'readonly',
+        fetch: 'readonly',
       },
     },
     plugins: {
       '@typescript-eslint': tseslint,
+      'react-native': reactNative,
     },
     rules: {
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'react-native/no-unused-styles': 'warn',
     },
   },
   prettier,
   {
-    ignores: ['.eslintrc.js', 'app.config.ts'],
+    ignores: ['app.config.ts'],
   },
 ];
