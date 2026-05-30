@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 export interface RetryConfig {
   maxAttempts?: number;
@@ -34,7 +34,7 @@ export function useRetry<T>(
   state: RetryState<T>;
   reset: () => void;
 } {
-  const resolvedConfig = { ...DEFAULT_CONFIG, ...config };
+  const resolvedConfig = useMemo(() => ({ ...DEFAULT_CONFIG, ...config }), [config]);
   const [state, setState] = useState<RetryState<T>>({
     data: null,
     isLoading: false,
@@ -103,9 +103,6 @@ export function useRetry<T>(
         const shouldRetry = !isLastAttempt && isRetryable(error as Error);
 
         if (!shouldRetry) {
-          const errorMessage = error instanceof Error
-            ? error.message
-            : "Request failed";
           setState({
             data: null,
             isLoading: false,

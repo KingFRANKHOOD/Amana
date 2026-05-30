@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
@@ -23,7 +24,7 @@ function formatAddress(address: string) {
 
 export default function TradeDetailPage() {
   const params = useParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, isAuthenticated } = useAuth();
   const tradeId = params?.id ?? "UNKNOWN";
 
   const { trade, loading, error } = useTradeDetails(token, tradeId);

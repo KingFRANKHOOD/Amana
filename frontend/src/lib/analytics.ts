@@ -116,9 +116,6 @@ function publishEvent(event: AnalyticsEvent): void {
   }
 
   if (process.env.NODE_ENV !== "production") {
-    // In non-production environments, keep the output visible for developers.
-    // This is intentionally privacy-safe and avoids sending real user data.
-    // eslint-disable-next-line no-console
     console.debug("Analytics event:", event.eventName, scrubProperties(payload));
   }
 }
