@@ -58,7 +58,7 @@ impl Stress {
     fn disputed_trade(&self, amount: i128) -> u64 {
         self.mint(&self.buyer, amount);
         let tid = self.client().create_trade(
-            &self.buyer, &self.seller, &amount, &5000u32, &5000u32,
+            &self.buyer, &self.seller, &amount, &5000u32, &5000u32, &None,
         );
         self.client().deposit(&tid);
         self.client().initiate_dispute(
@@ -423,13 +423,13 @@ fn test_stress_evidence_lists_isolated_across_trades() {
     s.mint(&s.buyer, amount * 2);
 
     let tid_a = {
-        let tid = s.client().create_trade(&s.buyer, &s.seller, &amount, &5000u32, &5000u32);
+        let tid = s.client().create_trade(&s.buyer, &s.seller, &amount, &5000u32, &5000u32, &None);
         s.client().deposit(&tid);
         s.client().initiate_dispute(&tid, &s.buyer, &SStr::from_str(&s.env, "QmDisputeA"));
         tid
     };
     let tid_b = {
-        let tid = s.client().create_trade(&s.buyer, &s.seller, &amount, &5000u32, &5000u32);
+        let tid = s.client().create_trade(&s.buyer, &s.seller, &amount, &5000u32, &5000u32, &None);
         s.client().deposit(&tid);
         s.client().initiate_dispute(&tid, &s.buyer, &SStr::from_str(&s.env, "QmDisputeB"));
         tid

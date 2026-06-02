@@ -135,7 +135,7 @@ impl H {
         self.tok().mint(&self.buyer, &amount);
         let trade_id =
             self.c()
-                .create_trade(&self.buyer, &self.seller, &amount, &5000u32, &5000u32);
+                .create_trade(&self.buyer, &self.seller, &amount, &5000u32, &5000u32, &None);
         self.c().deposit(&trade_id);
         db_upsert(DbTrade {
             trade_id,

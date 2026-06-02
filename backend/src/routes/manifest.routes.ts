@@ -1,4 +1,4 @@
-import { Router, Response } from "express";
+import { NextFunction, Router, Response } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { AuthRequest } from "../services/auth.service";
@@ -29,7 +29,7 @@ export function createManifestRouter(
     const router = Router({ mergeParams: true });
 
     // GET /trades/:id/manifest
-    router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
+    router.get("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -54,13 +54,12 @@ export function createManifestRouter(
                 res.status(403).json({ error: err.message });
                 return;
             }
-            appLogger.error({ err }, "[ManifestRoute] Error");
-            res.status(500).json({ error: "Failed to get manifest" });
+            return next(err);
         }
     });
 
     // POST /trades/:id/manifest
-    router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
+    router.post("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -101,8 +100,7 @@ export function createManifestRouter(
                 res.status((err as any).status).json({ error: err.message });
                 return;
             }
-            appLogger.error({ err }, "[ManifestRoute] Error");
-            res.status(500).json({ error: "Failed to submit manifest" });
+            return next(err);
         }
     });
 

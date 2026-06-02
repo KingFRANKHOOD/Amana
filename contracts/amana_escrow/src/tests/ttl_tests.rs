@@ -94,7 +94,7 @@ mod ttl_tests {
         assert_eq!(ctx.ttl(), 1, "TTL must be 1 just before expiry");
 
         ctx.client()
-            .create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+            .create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         assert_eq!(
             ctx.ttl(),
@@ -114,7 +114,7 @@ mod ttl_tests {
 
         // Create trade
         let trade_id =
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         assert!(matches!(
             client.get_trade(&trade_id).status,
             TradeStatus::Created
@@ -160,7 +160,7 @@ mod ttl_tests {
         let client = ctx.client();
 
         let trade_id_1 =
-            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32);
+            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32, &None);
         assert_eq!(trade_id_1 & 0xFFFF_FFFF_u64, 1, "first trade counter must be 1");
 
         // Advance to 1 ledger before expiry
@@ -169,7 +169,7 @@ mod ttl_tests {
 
         // create_trade bumps TTL
         let trade_id_2 =
-            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32);
+            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32, &None);
         assert_eq!(trade_id_2 & 0xFFFF_FFFF_u64, 2, "second trade counter must be 2");
         assert_eq!(
             ctx.ttl(),
@@ -191,7 +191,7 @@ mod ttl_tests {
             assert_eq!(ctx.ttl(), 1, "TTL must be 1 before jump {i}");
 
             // Any hot-path call bumps TTL
-            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32);
+            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32, &None);
             assert_eq!(
                 ctx.ttl(),
                 INSTANCE_TTL_EXTEND_TO,
@@ -209,10 +209,10 @@ mod ttl_tests {
         let client = ctx.client();
 
         let trade_id =
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.confirm_delivery(&trade_id);
-        client.release_funds(&trade_id);
+        client.release_funds(&trade_id, &ctx.buyer);
 
         assert!(
             ctx.ttl() > 0,

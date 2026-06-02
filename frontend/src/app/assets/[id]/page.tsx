@@ -20,23 +20,23 @@ function mapStatusToDisplay(status: string): TradeDetail["status"] {
   return statusMap[status] || "PENDING";
 }
 
-function mapHistoryToTimeline(events: TradeHistoryEvent[]): TimelineEvent[] {
+export function mapHistoryToTimeline(events: TradeHistoryEvent[]): TimelineEvent[] {
   return events.map((event, index) => ({
     id: String(index + 1),
     type: event.eventType as TimelineEvent["type"],
     title: event.eventType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     description: JSON.stringify(event.metadata),
-    timestamp: new Date(event.timestamp).toLocaleString(),
+    timestamp: event.timestamp,
     status: index === events.length - 1 ? "current" : "completed",
   }));
 }
 
-function mapHistoryToTransactionTimeline(events: TradeHistoryEvent[]): TransactionEvent[] {
+export function mapHistoryToTransactionTimeline(events: TradeHistoryEvent[]): TransactionEvent[] {
   return events.map((event, index) => ({
     id: `tx-${index + 1}`,
     title: event.eventType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     actor: (event.actor || "system") as TransactionEvent["actor"],
-    timestamp: new Date(event.timestamp).toLocaleString(),
+    timestamp: event.timestamp,
     description: JSON.stringify(event.metadata),
     status: "completed",
   }));
@@ -55,7 +55,7 @@ function buildTradeDetail(
     quantity: `${trade.amountCngn} cNGN`,
     category: "Escrow Trade",
     status: mapStatusToDisplay(trade.status),
-    initiatedAt: new Date(trade.createdAt).toLocaleDateString(),
+    initiatedAt: new Date(trade.createdAt).toLocaleDateString("en-US"),
     buyer: {
       name: "Buyer",
       walletAddress: `${trade.buyerAddress.slice(0, 6)}...${trade.buyerAddress.slice(-4)}`,

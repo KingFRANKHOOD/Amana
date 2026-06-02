@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NavLink } from "@/components/ui/Navigation";
 
 interface AppTopNavProps {
   onToggleSidebar?: () => void;
@@ -18,11 +19,6 @@ const TOP_NAV = [
   { href: "/assets", label: "Assets" },
   { href: "/vault", label: "Vault" },
 ];
-
-const NAV_ITEM_BASE =
-  "rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2";
-const NAV_ITEM_ACTIVE = "bg-surface-2 text-gold shadow-elev-1";
-const NAV_ITEM_INACTIVE = "text-text-secondary hover:text-text-primary hover:bg-surface-2/60";
 
 export function AppTopNav({
   onToggleSidebar,
@@ -66,14 +62,9 @@ export function AppTopNav({
         {TOP_NAV.map((item) => {
           const isActive = pathname?.startsWith(item.href);
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`${NAV_ITEM_BASE} ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_INACTIVE}`}
-              aria-current={isActive ? "page" : undefined}
-            >
+            <NavLink key={item.href} href={item.href} isActive={isActive}>
               {item.label}
-            </Link>
+            </NavLink>
           );
         })}
       </nav>

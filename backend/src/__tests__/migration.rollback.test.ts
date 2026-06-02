@@ -67,10 +67,7 @@ describe("Rollback script presence", () => {
       const rollbackPath = path.join(dir, "rollback.sql");
       const rollbackExists = fs.existsSync(rollbackPath);
       // Report which patterns triggered the requirement
-      expect(
-        rollbackExists,
-        `Migration at ${path.basename(dir)} contains [${labels.join(", ")}] but has no rollback.sql`
-      ).toBe(true);
+      expect(rollbackExists).toBe(true);
     }
   });
 

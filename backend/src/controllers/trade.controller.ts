@@ -91,7 +91,9 @@ export class TradeController {
           400,
         );
       }
-      if ((buyerLossBps as number) + (sellerLossBps as number) !== 10000) {
+      const buyerBps = buyerLossBps;
+      const sellerBps = sellerLossBps;
+      if (buyerBps + sellerBps !== 10000) {
         throw new AppError(
           ErrorCode.VALIDATION_ERROR,
           "buyerLossBps and sellerLossBps must sum to 10000",
@@ -104,16 +106,16 @@ export class TradeController {
           buyerAddress,
           sellerAddress,
           amountUsdc: normalizedAmountUsdc,
-          buyerLossBps: buyerLossBps as number,
-          sellerLossBps: sellerLossBps as number,
+          buyerLossBps: buyerBps,
+          sellerLossBps: sellerBps,
         });
       await this.tradeService.createPendingTrade({
         tradeId,
         buyerAddress,
         sellerAddress,
         amountUsdc: normalizedAmountUsdc,
-        buyerLossBps: buyerLossBps as number,
-        sellerLossBps: sellerLossBps as number,
+        buyerLossBps: buyerBps,
+        sellerLossBps: sellerBps,
       });
 
       return res.status(201).json({ tradeId, unsignedXdr });

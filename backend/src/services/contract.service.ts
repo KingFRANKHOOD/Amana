@@ -167,6 +167,7 @@ export async function buildReleaseFundsTx(
         StellarSdk.xdr.ScVal.scvU64(
           StellarSdk.xdr.Uint64.fromString(trade.tradeId),
         ),
+        StellarSdk.Address.fromString(sourceAccountId).toScVal(),
       ),
     )
     .setTimeout(30)

@@ -24,11 +24,12 @@ router.post('/challenge', authLimiter, async (req, res) => {
     const { walletAddress } = challengeSchema.parse(req.body);
     const challenge = await AuthService.generateChallenge(walletAddress);
     res.json({ challenge });
-  } catch (err: any) {
-    if (err.name === 'ZodError') {
+  } catch (err: unknown) {
+    if (err instanceof z.ZodError) {
       res.status(400).json({ error: err.errors });
     } else {
-      res.status(400).json({ error: err.message });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
     }
   }
 });
@@ -45,11 +46,12 @@ router.post('/verify', authLimiter, async (req, res) => {
     const { walletAddress, signedChallenge } = verifySchema.parse(req.body);
     const token = await AuthService.verifySignatureAndIssueJWT(walletAddress, signedChallenge);
     res.json({ token });
-  } catch (err: any) {
-    if (err.name === 'ZodError') {
+  } catch (err: unknown) {
+    if (err instanceof z.ZodError) {
       res.status(400).json({ error: err.errors });
     } else {
-      res.status(401).json({ error: err.message });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(401).json({ error: msg });
     }
   }
 });
@@ -62,7 +64,7 @@ router.post('/logout', authMiddleware, async (req: AuthRequest, res) => {
       await AuthService.revokeToken(jti, exp);
     }
     res.json({ message: 'Logged out successfully' });
-  } catch (err: any) {
+  } catch (_err: unknown) {
     res.status(500).json({ error: 'Logout failed' });
   }
 });
@@ -76,8 +78,9 @@ router.post('/refresh', refreshLimiter, async (req, res) => {
     const token = authHeader.split(' ')[1];
     const newToken = await AuthService.refreshToken(token);
     res.json({ token: newToken });
-  } catch (err: any) {
-    res.status(401).json({ error: err.message });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(401).json({ error: msg });
   }
 });
 

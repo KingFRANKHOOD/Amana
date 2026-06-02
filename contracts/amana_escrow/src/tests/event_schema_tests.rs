@@ -119,7 +119,7 @@ mod event_schema_tests {
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         assert_last_event_topics(
             &env,
@@ -136,7 +136,7 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         client.deposit(&trade_id);
 
@@ -157,7 +157,7 @@ mod event_schema_tests {
             setup_path_env(&env, 5_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &5_000_i128, &4_500_i128, &path);
 
@@ -175,7 +175,7 @@ mod event_schema_tests {
             setup_path_env(&env, 5_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &5_000_i128, &4_500_i128, &path);
 
@@ -199,7 +199,7 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         client.cancel_trade(&trade_id, &buyer);
 
@@ -218,7 +218,7 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.confirm_delivery(&trade_id);
@@ -238,11 +238,11 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.confirm_delivery(&trade_id);
 
-        client.release_funds(&trade_id);
+        client.release_funds(&trade_id, &buyer);
 
         assert_last_event_topics(
             &env,
@@ -259,7 +259,7 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "QmReason"));
@@ -280,7 +280,7 @@ mod event_schema_tests {
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
         let mediator = Address::generate(&env);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "QmReason"));
         client.set_mediator(&mediator);
@@ -302,7 +302,7 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "QmReason"));
 
@@ -328,7 +328,7 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.submit_video_proof(&trade_id, &buyer, &String::from_str(&env, "QmCID"));
@@ -348,7 +348,7 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.submit_manifest(
@@ -415,7 +415,7 @@ mod event_schema_tests {
         let mediator = Address::generate(&env);
 
 <<<<<<< HEAD
-        client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         assert_last_event_topics(
             &env,
             &[symbol_short!("TRDCRT").into_val(&env)],
@@ -431,7 +431,7 @@ mod event_schema_tests {
         token::StellarAssetClient::new(&env, &usdc2).mint(&buyer, &10_000_i128);
         c2.initialize(&admin2, &usdc2, &treasury2, &100_u32, &usdc2);
         c2.set_mediator(&mediator);
-        let tid = c2.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let tid = c2.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         c2.deposit(&tid);
         c2.initiate_dispute(&tid, &buyer, &String::from_str(&env, "QmGolden"));
         c2.resolve_dispute(&tid, &mediator, &5_000_u32);
@@ -447,7 +447,7 @@ mod event_schema_tests {
         // lifecycle completes without regressions.
 =======
         client.set_mediator(&mediator);
-        let tid = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        let tid = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&tid);
         client.initiate_dispute(&tid, &buyer, &String::from_str(&env, "QmGolden"));
         client.resolve_dispute(&tid, &mediator, &5_000_u32);

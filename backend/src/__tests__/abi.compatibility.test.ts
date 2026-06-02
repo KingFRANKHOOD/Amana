@@ -69,7 +69,10 @@ const CONTRACT_ABI = {
     },
     release_funds: {
         name: "release_funds",
-        args: [{ name: "trade_id", type: "u64" }],
+        args: [
+            { name: "trade_id", type: "u64" },
+            { name: "caller", type: "Address" },
+        ],
         returnType: "void",
     },
     initiate_dispute: {
@@ -458,8 +461,9 @@ describe("ABI Compatibility Tests", () => {
 
             const abi = CONTRACT_ABI.release_funds;
 
-            // Validate argument type (trade_id: u64)
+            // Validate argument types (trade_id: u64, caller: Address)
             expect(validateScValType(callArgs!.args[0], abi.args[0].type)).toBe(true);
+            expect(validateScValType(callArgs!.args[1], abi.args[1].type)).toBe(true);
         });
 
         it("should call release_funds with correct argument order", async () => {
@@ -477,7 +481,8 @@ describe("ABI Compatibility Tests", () => {
             expect(callArgs!.functionName).toBe("release_funds");
 
             // Verify argument count
-            expect(callArgs!.args).toHaveLength(1);
+            const abi = CONTRACT_ABI.release_funds;
+            expect(callArgs!.args).toHaveLength(abi.args.length);
         });
     });
 

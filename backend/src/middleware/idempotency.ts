@@ -6,14 +6,16 @@ import { alertService } from "../services/alert.service";
 const IDEMPOTENCY_TTL = 60 * 60 * 24; // 24 hours
 const IDEMPOTENCY_LOCK_TTL = 30; // 30 seconds
 const IN_PROGRESS_POLL_MS = 25;
-const IN_PROGRESS_MAX_POLLS = 40;
+const IDEMPOTENCY_IN_PROGRESS_MAX_WAIT_MS = IDEMPOTENCY_LOCK_TTL * 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function waitForCachedResponse(cacheKey: string): Promise<string | null> {
-  for (let i = 0; i < IN_PROGRESS_MAX_POLLS; i += 1) {
+  const deadline = Date.now() + IDEMPOTENCY_IN_PROGRESS_MAX_WAIT_MS;
+
+  while (Date.now() < deadline) {
     await sleep(IN_PROGRESS_POLL_MS);
     const cached = await redis.get(cacheKey);
     if (cached) {
@@ -95,10 +97,11 @@ export const idempotencyMiddleware = async (
     res.once("finish", releaseLock);
     res.once("close", releaseLock);
 
-    // Intercept res.json to cache the response
+    // Intercept res.json and res.send to cache successful responses regardless of Express helper used.
     const originalJson = res.json.bind(res);
-    res.json = (body: any) => {
-      // Only cache successful responses
+    const originalSend = (res.send as any)?.bind(res);
+
+    const cacheResponse = (body: any) => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const responseData = {
           status: res.statusCode,
@@ -108,9 +111,19 @@ export const idempotencyMiddleware = async (
         redis.set(cacheKey, JSON.stringify(responseData), "EX", IDEMPOTENCY_TTL)
           .catch(err => appLogger.error({ err }, "Failed to cache idempotent response"));
       }
-      
+    };
+
+    res.json = (body: any) => {
+      cacheResponse(body);
       return originalJson(body);
     };
+
+    if (typeof originalSend === "function") {
+      res.send = (body: any) => {
+        cacheResponse(body);
+        return originalSend(body);
+      };
+    }
 
     next();
   } catch (error) {

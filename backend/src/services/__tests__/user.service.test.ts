@@ -10,6 +10,7 @@ jest.mock("../../lib/supabase", () => ({
   getSupabaseClient: jest.fn(),
 }));
 
+// Mock the validators module — path relative to user.service.ts location
 jest.mock("../../validators/user.validators", () => ({
   updateProfileSchema: {
     safeParse: (input: any) => mockSafeParse(input),
@@ -39,7 +40,7 @@ describe("UserService", () => {
         ? { success: true, data: input }
         : { success: false, error: { issues: [] } };
     });
-    
+
     // Setup deep mock for supabase chaining
     mockSupabase = {
       from: jest.fn().mockReturnThis(),
@@ -184,13 +185,13 @@ describe("UserService", () => {
     it("should update user successfully", async () => {
       const input = { displayName: "New Name", avatarUrl: "https://example.com/avatar.png" };
       mockSupabase.single.mockResolvedValue({
-        data: { ...input, address: realWallet.toLowerCase() },
+        data: { display_name: "New Name", address: realWallet.toLowerCase() },
         error: null,
       });
 
       const user = await updateUser(realWallet, input);
 
-      expect(user.displayName).toBe("New Name");
+      expect(user.display_name).toBe("New Name");
       expect(mockSupabase.update).toHaveBeenCalled();
     });
 
@@ -202,7 +203,7 @@ describe("UserService", () => {
     });
 
     it("should throw not found error if user doesn't exist", async () => {
-       mockSupabase.single.mockResolvedValue({
+      mockSupabase.single.mockResolvedValue({
         data: null,
         error: { code: "PGRST116" },
       });

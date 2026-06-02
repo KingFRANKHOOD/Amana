@@ -1,4 +1,4 @@
-import { Response, Router } from "express";
+import { NextFunction, Response, Router } from "express";
 import { z } from "zod";
 import { prisma as defaultPrisma } from "../lib/db";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
@@ -36,7 +36,11 @@ const listCategoriesQuerySchema = z.object({
 export class DisputeCategoryController {
   constructor(private categoryService: DisputeCategoryService) {}
 
-  public createCategory = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  public createCategory = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | void> => {
     const callerAddress = req.user?.walletAddress?.trim();
     if (!callerAddress) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -52,14 +56,18 @@ export class DisputeCategoryController {
       if (error instanceof DisputeCategoryNameConflictError) {
         return res.status(409).json({ error: error.message });
       }
-      console.error("Create dispute category failed:", error);
-      return res.status(500).json({ error: "Failed to create dispute category" });
+      return next(error);
     }
   };
 
-  public listCategories = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  public listCategories = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | void> => {
     try {
-      const includeInactive = (req.query as any).includeInactive === true;
+      const includeInactive =
+        (req.query as z.infer<typeof listCategoriesQuerySchema>).includeInactive === true;
       const callerAddress = req.user?.walletAddress?.trim();
       if (includeInactive && (!callerAddress || !isMediatorAddress(callerAddress))) {
         return res.status(403).json({ error: "Forbidden: mediator access required" });
@@ -68,12 +76,15 @@ export class DisputeCategoryController {
       const categories = await this.categoryService.listCategories(includeInactive);
       return res.status(200).json({ items: categories });
     } catch (error) {
-      console.error("List dispute categories failed:", error);
-      return res.status(500).json({ error: "Failed to list dispute categories" });
+      return next(error);
     }
   };
 
-  public getCategoryById = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  public getCategoryById = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | void> => {
     try {
       const id = Number((req.params as any).id);
       const category = await this.categoryService.getCategoryById(id);
@@ -82,12 +93,15 @@ export class DisputeCategoryController {
       if (error instanceof DisputeCategoryNotFoundError) {
         return res.status(404).json({ error: error.message });
       }
-      console.error("Get dispute category failed:", error);
-      return res.status(500).json({ error: "Failed to get dispute category" });
+      return next(error);
     }
   };
 
-  public updateCategory = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  public updateCategory = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | void> => {
     const callerAddress = req.user?.walletAddress?.trim();
     if (!callerAddress) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -107,12 +121,15 @@ export class DisputeCategoryController {
       if (error instanceof DisputeCategoryNameConflictError) {
         return res.status(409).json({ error: error.message });
       }
-      console.error("Update dispute category failed:", error);
-      return res.status(500).json({ error: "Failed to update dispute category" });
+      return next(error);
     }
   };
 
-  public deleteCategory = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  public deleteCategory = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | void> => {
     const callerAddress = req.user?.walletAddress?.trim();
     if (!callerAddress) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -129,8 +146,7 @@ export class DisputeCategoryController {
       if (error instanceof DisputeCategoryNotFoundError) {
         return res.status(404).json({ error: error.message });
       }
-      console.error("Delete dispute category failed:", error);
-      return res.status(500).json({ error: "Failed to delete dispute category" });
+      return next(error);
     }
   };
 }

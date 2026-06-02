@@ -10,6 +10,7 @@ export const USDC_ISSUER_TESTNET =
 const stellarNetwork = process.env.STELLAR_NETWORK || 'testnet';
 const stellarRpcUrl = process.env.STELLAR_RPC_URL || '';
 
+const networkType = stellarNetwork as 'testnet' | 'mainnet';
 const horizonUrl = networkType === 'testnet'
   ? 'https://horizon-testnet.stellar.org'
   : 'https://horizon.stellar.org';

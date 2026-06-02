@@ -102,7 +102,7 @@ impl H {
         self.tok().mint(&self.buyer, &amount);
         let trade_id =
             self.c()
-                .create_trade(&self.buyer, &self.seller, &amount, &5000u32, &5000u32);
+                .create_trade(&self.buyer, &self.seller, &amount, &5000u32, &5000u32, &None);
         self.c().deposit(&trade_id);
         trade_id
     }
@@ -140,7 +140,7 @@ fn create_trade_rejects_out_of_range_buyer_bps() {
     h.init();
     h.tok().mint(&h.buyer, &100i128);
     h.c()
-        .create_trade(&h.buyer, &h.seller, &100i128, &10_001u32, &0u32);
+        .create_trade(&h.buyer, &h.seller, &100i128, &10_001u32, &0u32, &None);
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn create_trade_rejects_out_of_range_seller_bps() {
     h.init();
     h.tok().mint(&h.buyer, &100i128);
     h.c()
-        .create_trade(&h.buyer, &h.seller, &100i128, &0u32, &10_001u32);
+        .create_trade(&h.buyer, &h.seller, &100i128, &0u32, &10_001u32, &None);
 }
 
 // ---------------------------------------------------------------------------

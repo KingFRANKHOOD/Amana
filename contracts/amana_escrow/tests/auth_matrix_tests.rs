@@ -56,7 +56,7 @@ impl Harness {
     fn funded_trade(&self, amount: i128) -> u64 {
         self.mint(&self.buyer, amount);
         let tid = self.client().create_trade(
-            &self.buyer, &self.seller, &amount, &5000u32, &5000u32,
+            &self.buyer, &self.seller, &amount, &5000u32, &5000u32, &None,
         );
         self.client().deposit(&tid);
         tid
@@ -90,7 +90,7 @@ fn test_auth_initialize_rejects_second_call() {
 fn test_auth_create_trade_buyer_allowed() {
     let h = Harness::new();
     // buyer creates a trade — allowed
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Created));
 }
 
@@ -98,7 +98,7 @@ fn test_auth_create_trade_buyer_allowed() {
 fn test_auth_create_trade_stranger_allowed() {
     let h = Harness::new();
     // Anyone can call create_trade (no auth guard on the caller itself)
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Created));
 }
 
@@ -106,7 +106,7 @@ fn test_auth_create_trade_stranger_allowed() {
 #[should_panic(expected = "buyer and seller must be different addresses")]
 fn test_auth_create_trade_rejects_self_trade() {
     let h = Harness::new();
-    h.client().create_trade(&h.buyer, &h.buyer, &1_000i128, &5000u32, &5000u32);
+    h.client().create_trade(&h.buyer, &h.buyer, &1_000i128, &5000u32, &5000u32, &None);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ fn test_auth_create_trade_rejects_self_trade() {
 fn test_auth_deposit_buyer_allowed() {
     let h = Harness::new();
     h.mint(&h.buyer, 1_000);
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().deposit(&tid);
     assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Funded));
 }
@@ -127,7 +127,7 @@ fn test_auth_deposit_buyer_allowed() {
 fn test_auth_deposit_seller_denied() {
     let h = Harness::new();
     h.mint(&h.buyer, 1_000);
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     // Provide auth only for seller — must fail because buyer.require_auth() is called
     h.client()
         .mock_auths(&[soroban_sdk::testutils::MockAuth {
@@ -208,7 +208,16 @@ fn test_auth_release_funds_buyer_allowed() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
     h.client().confirm_delivery(&tid);
-    h.client().release_funds(&tid);
+    h.client().release_funds(&tid, &h.buyer);
+    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Completed));
+}
+
+#[test]
+fn test_auth_release_funds_admin_allowed() {
+    let h = Harness::new();
+    let tid = h.funded_trade(1_000);
+    h.client().confirm_delivery(&tid);
+    h.client().release_funds(&tid, &h.admin);
     assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Completed));
 }
 
@@ -227,11 +236,12 @@ fn test_auth_release_funds_seller_denied() {
                 args: soroban_sdk::vec![
                     &h.env,
                     soroban_sdk::IntoVal::<Env, soroban_sdk::Val>::into_val(&tid, &h.env),
+                    soroban_sdk::IntoVal::<Env, soroban_sdk::Val>::into_val(&h.seller, &h.env),
                 ],
                 sub_invokes: &[],
             },
         }])
-        .release_funds(&tid);
+        .release_funds(&tid, &h.seller);
 }
 
 #[test]
@@ -249,11 +259,12 @@ fn test_auth_release_funds_stranger_denied() {
                 args: soroban_sdk::vec![
                     &h.env,
                     soroban_sdk::IntoVal::<Env, soroban_sdk::Val>::into_val(&tid, &h.env),
+                    soroban_sdk::IntoVal::<Env, soroban_sdk::Val>::into_val(&h.stranger, &h.env),
                 ],
                 sub_invokes: &[],
-            },
-        }])
-        .release_funds(&tid);
+                },
+            }])
+        .release_funds(&tid, &h.stranger);
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +274,7 @@ fn test_auth_release_funds_stranger_denied() {
 #[test]
 fn test_auth_cancel_trade_buyer_allowed_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.buyer);
     assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Cancelled));
 }
@@ -271,7 +282,7 @@ fn test_auth_cancel_trade_buyer_allowed_created() {
 #[test]
 fn test_auth_cancel_trade_seller_allowed_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.seller);
     assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Cancelled));
 }
@@ -279,7 +290,7 @@ fn test_auth_cancel_trade_seller_allowed_created() {
 #[test]
 fn test_auth_cancel_trade_admin_allowed_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.admin);
     assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Cancelled));
 }
@@ -288,7 +299,7 @@ fn test_auth_cancel_trade_admin_allowed_created() {
 #[should_panic(expected = "Unauthorized caller")]
 fn test_auth_cancel_trade_stranger_denied_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32);
+    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.stranger);
 }
 

@@ -190,4 +190,30 @@ describe("PathPaymentService network resilience", () => {
     expect(sleepMock).toHaveBeenNthCalledWith(2, 2000);
     expect(sleepMock).toHaveBeenNthCalledWith(3, 4000);
   });
+
+  it("throws CircuitBreakerOpenError when circuit breaker trips, showing service temporarily unavailable", async () => {
+    const { CircuitBreaker } = require("../lib/circuitBreaker");
+    const customBreaker = new CircuitBreaker("horizon-path-payment-test", {
+      failureThreshold: 2,
+      successThreshold: 1,
+      cooldownMs: 10000,
+    });
+    const service = new PathPaymentService(customBreaker);
+
+    strictSendPathsCall.mockRejectedValue({ response: { status: 500 } });
+
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
+      "Failed to fetch path payment quotes"
+    );
+
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
+      "Failed to fetch path payment quotes"
+    );
+
+    strictSendPathsCall.mockClear();
+    await expect(service.getPathPaymentQuote("1000", "XLM")).rejects.toThrow(
+      "Payment service temporarily unavailable"
+    );
+    expect(strictSendPathsCall).not.toHaveBeenCalled();
+  });
 });

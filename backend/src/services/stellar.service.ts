@@ -140,22 +140,33 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
         performance.now() - start,
       );
       return transaction.toXDR();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const outcome = classifySubmissionError(error);
       recordTransactionSubmission(
         "build_transaction",
-        classifySubmissionError(error),
+        outcome,
         performance.now() - start,
       );
-      if (error.response && error.response.status === 404) {
+      const status =
+        error !== null &&
+        typeof error === "object" &&
+        "response" in error &&
+        error.response !== null &&
+        typeof error.response === "object" &&
+        "status" in error.response
+          ? (error.response as { status: unknown }).status
+          : undefined;
+      if (status === 404) {
         appLogger.error({ error, sourceAccount }, "Source account not found");
         throw new Error("Source account does not exist");
       }
-      if (error.message && error.message.includes('operation')) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('operation')) {
         appLogger.error({ error }, "Invalid transaction operations");
-        throw new Error(`Invalid transaction operations: ${error.message}`);
+        throw new Error(`Invalid transaction operations: ${msg}`);
       }
       appLogger.error({ error }, "Failed to build transaction");
-      throw new Error(`Failed to build transaction: ${error.message || 'Unknown error'}`);
+      throw new Error(`Failed to build transaction: ${msg || 'Unknown error'}`);
     }
   }
 
@@ -175,7 +186,7 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
             this.networkPassphrase,
           );
 
-          const response = await this.sorobanRpc.sendTransaction(transaction as any);
+          const response = await this.sorobanRpc.sendTransaction(transaction);
 
           if (!response?.status) {
             recordTransactionSubmission(
@@ -201,6 +212,42 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
             timestamp: new Date().toISOString(),
             hash: response.hash,
           }, "Transaction submitted");
+
+          if (response.status === "DUPLICATE") {
+            appLogger.warn({
+              hash: response.hash ?? "unknown",
+              provider: "stellar",
+              timestamp: new Date().toISOString(),
+            }, "Transaction already submitted (DUPLICATE) — treating as accepted");
+            recordTransactionSubmission(
+              "submit_transaction",
+              "success",
+              performance.now() - start,
+            );
+            span.setAttributes({
+              "stellar.transaction.outcome": "success",
+              "stellar.transaction.hash": response.hash ?? "unknown",
+            });
+            return response;
+          }
+
+          if (response.status === "TRY_AGAIN_LATER") {
+            recordTransactionSubmission(
+              "submit_transaction",
+              "rpc_error",
+              performance.now() - start,
+            );
+            span.setAttributes({
+              "stellar.transaction.outcome": "rpc_error",
+              "stellar.transaction.hash": response.hash ?? "unknown",
+            });
+            appLogger.error({
+              provider: "stellar",
+              status: "rate_limited",
+              timestamp: new Date().toISOString(),
+            }, "Stellar RPC node is temporarily unavailable");
+            throw new Error("RPC Error: Stellar node unavailable (TRY_AGAIN_LATER)");
+          }
 
           if (response.status === "ERROR") {
             if (response.errorResult) {
@@ -251,7 +298,7 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
             "stellar.transaction.hash": response.hash ?? "unknown",
           });
           return response;
-        } catch (error: any) {
+        } catch (error: unknown) {
           const outcome = classifySubmissionError(error);
           if (
             outcome !== "contract_panic" &&
@@ -268,22 +315,43 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
             "stellar.transaction.outcome": outcome,
           });
 
-          if (error.message && error.message.includes("XDR")) {
+          const msg = error instanceof Error ? error.message : String(error);
+
+          if (msg && msg.includes("XDR")) {
             appLogger.error({ error }, "Invalid transaction XDR");
-            throw new Error(`Invalid transaction XDR: ${error.message}`);
+            throw new Error(`Invalid transaction XDR: ${msg}`);
           }
 
           if (
-            error.message &&
-            (error.message.includes("RPC Error:") ||
-              error.message.includes("Contract Panic:"))
+            msg &&
+            (msg.includes("RPC Error:") ||
+              msg.includes("Contract Panic:"))
           ) {
             throw error;
           }
 
+          const code =
+            error !== null && typeof error === "object" && "code" in error
+              ? (error as { code: unknown }).code
+              : undefined;
+          const isTimeout =
+            code === "ETIMEDOUT" ||
+            code === "ECONNABORTED" ||
+            /timeout|timed out|deadline/i.test(msg ?? "");
+
+          if (isTimeout) {
+            appLogger.error(
+              { error, provider: "stellar", timestamp: new Date().toISOString() },
+              "Stellar transaction submission timed out",
+            );
+            throw new Error(
+              `Transaction submission failed: Stellar RPC timed out — ${msg || "no details"}`,
+            );
+          }
+
           appLogger.error({ error }, "Transaction submission failed");
           throw new Error(
-            `Transaction submission failed: ${error.message || "Unknown error"}`,
+            `Transaction submission failed: ${msg || "Unknown error"}`,
           );
         }
       },

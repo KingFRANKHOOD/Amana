@@ -2,6 +2,7 @@ import { trace, SpanKind, SpanStatusCode, context, Span } from '@opentelemetry/a
 import { NextFunction, Request, Response } from 'express';
 import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, TracedRequest } from './correlationId.middleware';
 import { TracingHelper } from '../config/tracing';
+import { appLogger } from './logger';
 
 /**
  * OpenTelemetry middleware that creates spans for HTTP requests
@@ -99,7 +100,7 @@ export function tracingMiddleware(
         const bodySize = JSON.stringify(args[0]).length;
         span.setAttribute('http.response_body_size', bodySize);
       } catch (error) {
-        // Ignore serialization errors
+        appLogger.debug({ error }, 'Failed to serialize response body for tracing');
       }
     }
     return originalJson.apply(this, args as [body?: any]);

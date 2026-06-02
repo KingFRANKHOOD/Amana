@@ -6,6 +6,7 @@ interface AuthState {
   walletAddress: string | null;
   isLoading: boolean;
   setToken: (token: string) => Promise<void>;
+  setWalletAddress: (address: string) => void;
   getToken: () => Promise<string | null>;
   clearAuth: () => Promise<void>;
 }
@@ -18,6 +19,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   setToken: async (token: string) => {
     await SecureStore.setItemAsync('amana_token', token);
     set({ token });
+  },
+
+  setWalletAddress: (address: string) => {
+    set({ walletAddress: address });
   },
 
   getToken: async () => {

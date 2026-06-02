@@ -104,7 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       return { hasWallet, hasPermission, address };
-    } catch {
+    } catch (error) {
+      console.error('Failed to read wallet state:', error);
       return { hasWallet: false, hasPermission: false, address: null };
     }
   }, []);
@@ -237,8 +238,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (state.token) {
       try {
         await api.auth.logout(state.token);
-      } catch {
-        // Ignore logout errors
+      } catch (error) {
+        console.error('Logout request failed:', error);
       }
     }
 

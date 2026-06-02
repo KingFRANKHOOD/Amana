@@ -18,7 +18,7 @@ To provide a programmable safety net for regional commodity trading. Amana ensur
 
 - **Smart Escrow:** Secure funds holding using cNGN/stablecoins on the Stellar network.
 - **Dynamic Loss Sharing:** Negotiable risk-sharing ratios (e.g., 50/50, 70/30) hardcoded into every trade to handle transit accidents or theft.
-- **Proof-of-Delivery (PoD):** A mandatory video-based verification protocol involving the buyer and the driver to confirm the state of goods.
+- **Proof-of-Delivery (PoD):** An optional video-based verification protocol involving the buyer and the driver to confirm the state of goods. Video evidence can be submitted and stored on IPFS for dispute resolution.
 - **Volatility Protection:** Utilizes Stellar Path Payments to allow users to pay in local currency (NGN) while locking value in cNGN.
 - **Automated Settlement:** A flat 1% platform fee is automatically deducted upon successful trade completion.
 
@@ -117,23 +117,23 @@ For the protected branch (`main`), set these required status checks:
 
 ### Phase 1: The Vault (MVP)
 
-- [ ] Develop core Soroban contract logic (`deposit`, `release`, `refund`).
-- [ ] Implement basic Next.js UI for trade creation.
+- [x] Develop core Soroban contract logic (`deposit`, `release`, `refund`).
+- [x] Implement basic Next.js UI for trade creation.
 
 ### Phase 2: The Agreement Engine
 
-- [ ] Integrate `Loss_Ratio` variables into the smart contract.
-- [ ] Build the "Mediator" dashboard for dispute resolution.
+- [x] Integrate `Loss_Ratio` variables into the smart contract.
+- [x] Build the "Mediator" dashboard for dispute resolution.
 
 ### Phase 3: Evidence & Logistics
 
-- [ ] IPFS integration for video evidence uploads.
-- [ ] Driver manifest logging and tracking interface.
+- [x] IPFS integration for video evidence uploads.
+- [x] Driver manifest logging and tracking interface.
 
 ### Phase 4: Mainnet & Scale
 
 - [ ] Public pilot program with regional agricultural cooperatives.
-- [ ] Implementation of a "Trust Score" reputation system.
+- [x] Implementation of a "Trust Score" reputation system.
 
 ---
 
@@ -174,3 +174,5 @@ Amana is an open-source project aimed at improving food security and trade effic
 ## 📄 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+// setting up and starting out

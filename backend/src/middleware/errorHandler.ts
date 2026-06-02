@@ -1,10 +1,10 @@
 import { NextFunction, Request, Response } from 'express';
 import { env } from '../config/env';
-import { AppError, ErrorCode, StructuredErrorPayload } from '../errors/errorCodes';
+import { AppError, ErrorCode, StructuredErrorPayload, isAppError } from '../errors/errorCodes';
 import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, TracedRequest } from './correlationId.middleware';
 
 export function errorHandler(
-  err: Error,
+  err: unknown,
   req: Request,
   res: Response,
   _next: NextFunction,
@@ -20,13 +20,14 @@ export function errorHandler(
   const path = req.path;
 
   // Handle structured AppErrors with a consistent payload
-  if (err instanceof AppError) {
-    const payload = err.toPayload(path, requestId, correlationId);
-    return res.status(err.statusCode).json(payload);
+  if (isAppError(err)) {
+    const appErr = err as AppError;
+    const payload = appErr.toPayload(path, requestId, correlationId);
+    return res.status(appErr.statusCode).json(payload);
   }
 
-  const status = (err as any).status || 500;
-  const message = env.NODE_ENV === 'production' ? 'Internal server error' : err.message;
+  const status = (err && typeof (err as any).status === 'number') ? (err as any).status : 500;
+  const message = env.NODE_ENV === 'production' ? 'Internal server error' : (err instanceof Error ? err.message : String(err));
 
   const payload: StructuredErrorPayload = {
     code: ErrorCode.INTERNAL_ERROR,

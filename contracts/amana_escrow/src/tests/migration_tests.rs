@@ -76,7 +76,7 @@ mod migration_tests {
         let old_client = EscrowContractClient::new(&env, &old_contract);
 
         let trade_id =
-            old_client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+            old_client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         old_client.deposit(&trade_id);
 
         // Verify trade is bound to token-A
@@ -109,7 +109,7 @@ mod migration_tests {
 
         // ── Settle old trade — token-A balances must change ─────────────────
         old_client.confirm_delivery(&trade_id);
-        old_client.release_funds(&trade_id);
+        old_client.release_funds(&trade_id, &buyer);
 
         let tok_a = token::Client::new(&env, &token_a);
         let tok_b = token::Client::new(&env, &token_b);
@@ -145,7 +145,7 @@ mod migration_tests {
         old_client.set_mediator(&mediator);
 
         let trade_id =
-            old_client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+            old_client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         old_client.deposit(&trade_id);
         old_client.initiate_dispute(
             &trade_id,
@@ -198,9 +198,9 @@ mod migration_tests {
 
         // Create 3 trades before migration
         let amount = 10_000_i128;
-        let t1 = old_client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
-        let t2 = old_client.create_trade(&buyer, &seller, &amount, &3000_u32, &7000_u32);
-        let t3 = old_client.create_trade(&buyer, &seller, &amount, &7000_u32, &3000_u32);
+        let t1 = old_client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32, &None);
+        let t2 = old_client.create_trade(&buyer, &seller, &amount, &3000_u32, &7000_u32, &None);
+        let t3 = old_client.create_trade(&buyer, &seller, &amount, &7000_u32, &3000_u32, &None);
 
         old_client.deposit(&t1);
         old_client.deposit(&t2);
@@ -231,11 +231,11 @@ mod migration_tests {
 
         // Settle all three via the happy path
         old_client.confirm_delivery(&t1);
-        old_client.release_funds(&t1);
+        old_client.release_funds(&t1, &buyer);
         old_client.confirm_delivery(&t2);
-        old_client.release_funds(&t2);
+        old_client.release_funds(&t2, &buyer);
         old_client.confirm_delivery(&t3);
-        old_client.release_funds(&t3);
+        old_client.release_funds(&t3, &buyer);
 
         let tok_b = token::Client::new(&env, &token_b);
         // token-B must be completely untouched
@@ -255,7 +255,7 @@ mod migration_tests {
         let client = EscrowContractClient::new(&env, &contract_id);
 
         let trade_id =
-            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         let token_at_creation = client.get_trade(&trade_id).token.clone();
 
@@ -274,7 +274,7 @@ mod migration_tests {
             "token must be unchanged after confirm_delivery"
         );
 
-        client.release_funds(&trade_id);
+        client.release_funds(&trade_id, &buyer);
         assert_eq!(
             client.get_trade(&trade_id).token,
             token_at_creation,

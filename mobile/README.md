@@ -17,13 +17,9 @@ Amana eliminates the "Trust Gap" between buyers and sellers using Soroban Smart 
 ## Mobile Features
 
 - Wallet-based authentication via Stellar Freighter
-- Trade discovery and real-time status tracking
-- Evidence capture and IPFS upload
-- Real-time push notifications for trade events
 - Secure token storage on device
 - Offline-aware state management
 - Mediator dispute resolution
-- Driver manifest and tracking
 
 ## Tech Stack
 

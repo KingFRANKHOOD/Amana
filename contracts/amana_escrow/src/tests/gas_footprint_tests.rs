@@ -88,7 +88,7 @@ mod gas_footprint_tests {
         let client = ctx.client();
 
         let cost = ctx.measure(|| {
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         });
 
         cost.assert_under("create_trade", BASELINE_CREATE_TRADE_CPU, BASELINE_CREATE_TRADE_MEM);
@@ -98,7 +98,7 @@ mod gas_footprint_tests {
     fn test_gas_deposit() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         let cost = ctx.measure(|| {
             client.deposit(&trade_id);
@@ -111,7 +111,7 @@ mod gas_footprint_tests {
     fn test_gas_initiate_dispute() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         let cost = ctx.measure(|| {
@@ -129,7 +129,7 @@ mod gas_footprint_tests {
     fn test_gas_resolve_dispute() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.initiate_dispute(&trade_id, &ctx.buyer, &String::from_str(&ctx.env, "QmGasTestReason"));
 
@@ -146,7 +146,7 @@ mod gas_footprint_tests {
         let client = ctx.client();
 
         let cost = ctx.measure(|| {
-            let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32);
+            let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
             client.deposit(&trade_id);
             client.initiate_dispute(&trade_id, &ctx.buyer, &String::from_str(&ctx.env, "QmCombinedReason"));
             client.resolve_dispute(&trade_id, &ctx.mediator, &5_000_u32);

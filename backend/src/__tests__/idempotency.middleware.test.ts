@@ -58,6 +58,11 @@ function createRes() {
       this.emit("finish");
       return this;
     }),
+    send: jest.fn(function send(this: any, body: unknown) {
+      this.body = body;
+      this.emit("finish");
+      return this;
+    }),
   } as unknown as Response & EventEmitter & { body?: unknown };
 
   return { res, headers };
@@ -137,6 +142,26 @@ describe("idempotencyMiddleware", () => {
     expect(redisMock.del).toHaveBeenCalledWith("idempotency:lock:POST:/trades:idem-1");
   });
 
+  it("caches successful responses sent via res.send", async () => {
+    const req = createReq();
+    const { res, headers } = createRes();
+
+    await idempotencyMiddleware(req, res, () => {
+      res.status(201).send({ ok: true });
+    });
+
+    await Promise.resolve();
+
+    expect(redisMock.set).toHaveBeenCalledWith(
+      "idempotency:POST:/trades:idem-1",
+      expect.stringContaining('"body":{"ok":true}'),
+      "EX",
+      86400,
+    );
+    expect(headers["X-Idempotency-Cache"]).not.toBe("HIT");
+    expect(redisMock.del).toHaveBeenCalledWith("idempotency:lock:POST:/trades:idem-1");
+  });
+
   it("serves in-flight duplicate request from replay cache without duplicate side effects", async () => {
     let sideEffects = 0;
     let cachedPayload: string | null = null;
@@ -181,6 +206,69 @@ describe("idempotencyMiddleware", () => {
       setTimeout(() => {
         res1.status(201).json({ tradeId: "created-once" });
       }, 10);
+    });
+
+    const next2 = jest.fn(() => {
+      sideEffects += 1;
+    });
+
+    await Promise.all([
+      idempotencyMiddleware(req1, res1, next1),
+      idempotencyMiddleware(req2, res2, next2),
+    ]);
+
+    expect(sideEffects).toBe(1);
+    expect(next1).toHaveBeenCalledTimes(1);
+    expect(next2).not.toHaveBeenCalled();
+    expect(res2.status).toHaveBeenCalledWith(201);
+    expect((res2 as any).body).toEqual({ tradeId: "created-once" });
+    expect(headers2["X-Idempotency-Cache"]).toBe("HIT");
+  });
+
+  it("waits for a long-running in-flight request before returning a replay", async () => {
+    let sideEffects = 0;
+    let cachedPayload: string | null = null;
+    let lockHeld = false;
+
+    redisMock.get.mockImplementation(async (key: string) => {
+      if (key === "idempotency:POST:/trades:idem-1") {
+        return cachedPayload as any;
+      }
+      return null as any;
+    });
+
+    redisMock.set.mockImplementation(async (key: string, value: string, mode: string) => {
+      if (key === "idempotency:lock:POST:/trades:idem-1" && mode === "NX") {
+        if (lockHeld) return null as any;
+        lockHeld = true;
+        return "OK" as any;
+      }
+
+      if (key === "idempotency:POST:/trades:idem-1") {
+        cachedPayload = value;
+        return "OK" as any;
+      }
+
+      return "OK" as any;
+    });
+
+    redisMock.del.mockImplementation(async (key: string) => {
+      if (key === "idempotency:lock:POST:/trades:idem-1") {
+        lockHeld = false;
+      }
+      return 1 as any;
+    });
+
+    const req1 = createReq();
+    const req2 = createReq();
+    const { res: res1 } = createRes();
+    const { res: res2, headers: headers2 } = createRes();
+
+    const next1 = jest.fn(() => {
+      sideEffects += 1;
+      setTimeout(() => {
+        res1.status(201).json({ tradeId: "created-once" });
+      }, 1200);
     });
 
     const next2 = jest.fn(() => {

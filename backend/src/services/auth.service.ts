@@ -1,14 +1,12 @@
-import Redis from 'ioredis';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import { Request } from 'express';
 import { findOrCreateUser } from './user.service';
-import { AppError, ErrorCode } from '../errors/errorCodes';
+import { AppError, ErrorCode, isAppError } from '../errors/errorCodes';
 import { env } from '../config/env';
+import { redis } from '../lib/redis';
 
-const REDIS_URL = process.env.REDIS_URL ?? env.REDIS_URL;
-const redis = new Redis(REDIS_URL);
 const CHALLENGE_PREFIX = 'challenge:';
 const REVOKED_PREFIX = 'revoked_jti:';
 const CHALLENGE_TTL = 300; // 5 min
@@ -40,8 +38,8 @@ export class AuthService {
 
       await redis.set(key, challenge, 'EX', CHALLENGE_TTL);
       return challenge;
-    } catch (error) {
-      if (error instanceof AppError) throw error;
+    } catch (error: unknown) {
+      if (isAppError(error)) throw error;
       throw new AppError(ErrorCode.INFRA_ERROR, 'Authentication service dependency failure', 503);
     }
   }
@@ -77,8 +75,8 @@ export class AuthService {
       await findOrCreateUser(walletAddress);
 
       return this.issueToken(walletAddress);
-    } catch (error: any) {
-      if (error.name === 'AppError') throw error;
+    } catch (error: unknown) {
+      if (isAppError(error)) throw error;
       throw new AppError(ErrorCode.INFRA_ERROR, 'Authentication service dependency failure', 503);
     }
   }
@@ -105,8 +103,8 @@ export class AuthService {
       }
 
       return decoded;
-    } catch (error: any) {
-      if (error.name === 'AppError') throw error;
+    } catch (error: unknown) {
+      if (isAppError(error)) throw error;
       if (error instanceof jwt.TokenExpiredError) {
         throw new AppError(ErrorCode.AUTH_ERROR, 'Token expired', 401);
       }
@@ -157,8 +155,8 @@ export class AuthService {
       }
 
       return this.issueToken(decoded.walletAddress);
-    } catch (error: any) {
-      if (error.name === 'AppError') throw error;
+    } catch (error: unknown) {
+      if (isAppError(error)) throw error;
       throw new AppError(ErrorCode.AUTH_ERROR, 'Token refresh failed', 401);
     }
   }
@@ -166,12 +164,13 @@ export class AuthService {
   /** Add a token's jti to the revocation denylist. TTL matches remaining token lifetime. */
   static async revokeToken(jti: string, expiresAt: number): Promise<void> {
     try {
+      if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) return;
       const ttl = expiresAt - Math.floor(Date.now() / 1000);
       if (ttl <= 0) return; // already expired — no need to store
       const key = `${REVOKED_PREFIX}${jti}`;
       await redis.set(key, '1', 'EX', ttl);
-    } catch (error: any) {
-      if (error.name === 'AppError') throw error;
+    } catch (error: unknown) {
+      if (isAppError(error)) throw error;
       throw new AppError(ErrorCode.INFRA_ERROR, 'Revocation failed', 503);
     }
   }
@@ -181,8 +180,8 @@ export class AuthService {
     try {
       const key = `${REVOKED_PREFIX}${jti}`;
       return (await redis.exists(key)) === 1;
-    } catch (error: any) {
-      if (error.name === 'AppError') throw error;
+    } catch (error: unknown) {
+      if (isAppError(error)) throw error;
       throw new AppError(ErrorCode.INFRA_ERROR, 'Revocation check failed', 503);
     }
   }

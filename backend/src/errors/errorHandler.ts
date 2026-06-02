@@ -1,10 +1,11 @@
 import { Request, Response, NextFunction } from "express";
-import { AppError, ErrorCode, StructuredErrorPayload } from "./errorCodes";
+import { AppError, ErrorCode, StructuredErrorPayload, isAppError } from "./errorCodes";
+import { ZodError } from "zod";
 import { env } from "../config/env";
 import { appLogger } from "../middleware/logger";
 
 export const errorHandler = (
-  err: any,
+  err: unknown,
   req: Request,
   res: Response,
   next: NextFunction
@@ -13,20 +14,21 @@ export const errorHandler = (
   const correlationId = (req.headers["x-correlation-id"] as string) || undefined;
   const path = req.path;
 
-  if (err instanceof AppError) {
+  if (isAppError(err)) {
+    const appErr = err as AppError;
     appLogger.warn({
-      code: err.code,
-      message: err.message,
+      code: appErr.code,
+      message: appErr.message,
       requestId,
-      details: err.details,
+      details: appErr.details,
     }, "AppError handled");
 
-    const payload = err.toPayload(path, requestId, correlationId);
-    return res.status(err.statusCode).json(payload);
+    const payload = appErr.toPayload(path, requestId, correlationId);
+    return res.status(appErr.statusCode).json(payload);
   }
 
   // Handle Zod validation errors
-  if (err.name === "ZodError") {
+  if (err instanceof ZodError) {
     const payload: StructuredErrorPayload = {
       code: ErrorCode.VALIDATION_ERROR,
       message: "Validation failed",
@@ -43,11 +45,11 @@ export const errorHandler = (
   appLogger.error({
     err,
     requestId,
-    stack: err.stack,
+    stack: err instanceof Error ? err.stack : undefined,
   }, "Unhandled error");
 
   const message =
-    env.NODE_ENV === "production" ? "Internal server error" : err.message;
+    env.NODE_ENV === "production" ? "Internal server error" : (err instanceof Error ? err.message : String(err));
 
   const payload: StructuredErrorPayload = {
     code: ErrorCode.INTERNAL_ERROR,
@@ -59,5 +61,6 @@ export const errorHandler = (
     ...(correlationId && { correlationId }),
   };
 
-  res.status(err.status || 500).json(payload);
+  const status = (err && typeof (err as any).status === 'number') ? (err as any).status : 500;
+  res.status(status).json(payload);
 };

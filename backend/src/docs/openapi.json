@@ -408,12 +408,16 @@
               "database": {
                 "$ref": "#/components/schemas/HealthIndicator"
               },
+              "redis": {
+                "$ref": "#/components/schemas/HealthIndicator"
+              },
               "indexer": {
                 "$ref": "#/components/schemas/HealthIndicator"
               }
             },
             "required": [
               "database",
+              "redis",
               "indexer"
             ]
           },
@@ -421,6 +425,9 @@
             "type": "object",
             "properties": {
               "databaseLatency": {
+                "type": "number"
+              },
+              "redisLatency": {
                 "type": "number"
               },
               "indexerLagSeconds": {
@@ -433,6 +440,7 @@
             },
             "required": [
               "databaseLatency",
+              "redisLatency",
               "indexerLagSeconds",
               "lastProcessedLedger"
             ]
@@ -485,12 +493,16 @@
               "database": {
                 "$ref": "#/components/schemas/HealthIndicator"
               },
+              "redis": {
+                "$ref": "#/components/schemas/HealthIndicator"
+              },
               "indexer": {
                 "$ref": "#/components/schemas/HealthIndicator"
               }
             },
             "required": [
               "database",
+              "redis",
               "indexer"
             ]
           }
@@ -1234,6 +1246,44 @@
           },
           "503": {
             "description": "Service is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadinessResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/startup": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Check startup readiness",
+        "description": "Lightweight probe for slow-starting containers. Checks only core\ndependencies (database, redis) without requiring the indexer to\nhave processed events yet.",
+        "responses": {
+          "200": {
+            "description": "Service has started successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service has not finished starting.",
             "content": {
               "application/json": {
                 "schema": {

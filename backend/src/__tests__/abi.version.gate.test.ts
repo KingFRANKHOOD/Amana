@@ -48,7 +48,7 @@ const FROZEN_CONTRACT_ABI = {
       returnType: "void",
     },
     release_funds: {
-      args: ["trade_id:u64"],
+      args: ["trade_id:u64", "caller:Address"],
       returnType: "void",
     },
     initiate_dispute: {
@@ -100,8 +100,8 @@ const BACKEND_ASSUMPTIONS = {
     returnType: "void",
   },
   release_funds: {
-    argCount: 1,
-    argNames: ["trade_id"],
+    argCount: 2,
+    argNames: ["trade_id", "caller"],
     returnType: "void",
   },
   initiate_dispute: {
@@ -159,6 +159,13 @@ describe("ABI gate: argument order must match frozen snapshot (#422)", () => {
     const expected = BACKEND_ASSUMPTIONS.confirm_delivery.argNames;
     for (let i = 0; i < expected.length; i++) {
       expect(contractArgName("confirm_delivery", i)).toBe(expected[i]);
+    }
+  });
+
+  it("release_funds: argument names in correct order", () => {
+    const expected = BACKEND_ASSUMPTIONS.release_funds.argNames;
+    for (let i = 0; i < expected.length; i++) {
+      expect(contractArgName("release_funds", i)).toBe(expected[i]);
     }
   });
 });

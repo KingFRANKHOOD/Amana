@@ -1,11 +1,34 @@
 import { Request, Response, NextFunction } from "express";
-import { AnyZodObject, ZodError, ZodTypeAny } from "zod";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+
+type ParseAsyncSchema = {
+  parseAsync: (input: unknown) => Promise<unknown>;
+};
+
+type ZodLikeIssue = {
+  path: Array<string | number>;
+  message: string;
+};
+
+function getZodLikeIssues(error: unknown): ZodLikeIssue[] | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const err = error as any;
+  if (Array.isArray(err.issues)) {
+    return err.issues;
+  }
+  if (Array.isArray(err.errors)) {
+    return err.errors;
+  }
+
+  return null;
+}
 
 export const validateRequest = (schema: {
-  body?: ZodTypeAny;
-  query?: AnyZodObject;
-  params?: AnyZodObject;
+  body?: ParseAsyncSchema;
+  query?: ParseAsyncSchema;
+  params?: ParseAsyncSchema;
 }) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {

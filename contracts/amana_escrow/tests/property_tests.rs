@@ -82,7 +82,7 @@ impl PropEnv {
 
         token::StellarAssetClient::new(&self.env, &self.usdc_id).mint(&buyer, &amount);
         let trade_id =
-            client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps);
+            client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps, &None);
         client.deposit(&trade_id);
         client.initiate_dispute(&trade_id, &buyer, &SStr::from_str(&self.env, "QmPropTest"));
         client.set_mediator(&mediator);
@@ -218,7 +218,7 @@ fn test_prop_invalid_lifecycle_transitions_seeded() {
 
         let amount = rng.gen_range(1i128..=100_000);
         token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
-        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000u32, &5000u32);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000u32, &5000u32, &None);
         client.deposit(&trade_id);
 
         // Attempting to deposit again must panic (trade is Funded, not Created)
@@ -237,7 +237,7 @@ fn test_prop_invalid_lifecycle_transitions_seeded() {
             c2.initialize(&admin2, &usdc2, &treasury2, &100u32, &usdc2);
             let amt2 = 1_000i128;
             token::StellarAssetClient::new(&env2, &usdc2).mint(&buyer2, &(amt2 * 2));
-            let tid2 = c2.create_trade(&buyer2, &seller2, &amt2, &5000u32, &5000u32);
+            let tid2 = c2.create_trade(&buyer2, &seller2, &amt2, &5000u32, &5000u32, &None);
             c2.deposit(&tid2);
             c2.deposit(&tid2); // must panic
         }));

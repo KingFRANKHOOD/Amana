@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
+import { NavLink } from "@/components/ui/Navigation";
 
 export interface SideNavBarProps {
   activePath: string;
@@ -104,11 +105,6 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-const NAV_ITEM_BASE =
-  "flex items-center py-3 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2";
-const NAV_ITEM_ACTIVE = "bg-surface-2 text-gold shadow-elev-1";
-const NAV_ITEM_INACTIVE = "text-text-secondary hover:text-text-primary hover:bg-surface-2/60";
-
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-6)}`;
 }
@@ -175,19 +171,17 @@ export function SideNavBar({
 
             return (
               <li key={item.href} role="none">
-                <Link
+                <NavLink
                   href={item.href}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`${NAV_ITEM_BASE} ${
-                    collapsed ? "justify-center px-2" : "px-4"
-                  } ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_INACTIVE}`}
+                  isActive={isActive}
                   title={collapsed ? item.label : undefined}
+                  className={`${collapsed ? "justify-center px-2 py-3" : "flex items-center px-4 py-3"}`}
                 >
                   <span className="w-5 h-5 flex items-center justify-center">
                     {item.icon}
                   </span>
                   {!collapsed && <span className="ml-3 text-sm">{item.label}</span>}
-                </Link>
+                </NavLink>
               </li>
             );
           })}

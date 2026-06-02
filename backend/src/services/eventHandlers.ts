@@ -2,10 +2,7 @@ import { Prisma, TradeStatus } from "@prisma/client";
 import { EventType, ParsedEvent, EVENT_TO_STATUS } from "../types/events";
 import { appLogger } from "../middleware/logger";
 import { webhookService } from "./webhook.service";
-import {
-  syncDisputeInitiatedFromChain,
-  syncDisputeResolvedFromChain,
-} from "./disputeTransitions";
+import { logEscrowEvent } from "../lib/escrowAudit";
 
 type TradeCreatePayload = {
   tradeId: string;
@@ -64,6 +61,16 @@ export async function handleTradeCreated(tx: Prisma.TransactionClient, event: Pa
     status: EVENT_TO_STATUS[EventType.TradeCreated],
     version: 1,
   });
+  logEscrowEvent({
+    tradeId: event.tradeId,
+    eventType: "TradeCreated",
+    toStatus: TradeStatus.CREATED,
+    ledgerSequence: event.ledgerSequence,
+    contractId: event.contractId,
+    actor: (event.data.buyer as string) || undefined,
+    amountUsdc: event.data.amount_usdc != null ? String(event.data.amount_usdc) : undefined,
+    extra: { seller: event.data.seller },
+  });
   appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] TradeCreated");
   webhookService.dispatch(event.tradeId, TradeStatus.CREATED, { ledger: event.ledgerSequence });
 }
@@ -75,6 +82,15 @@ export async function handleTradeFunded(tx: Prisma.TransactionClient, event: Par
     sellerAddress: "",
     status: EVENT_TO_STATUS[EventType.TradeFunded],
     version: 1,
+  });
+  logEscrowEvent({
+    tradeId: event.tradeId,
+    eventType: "TradeFunded",
+    toStatus: TradeStatus.FUNDED,
+    ledgerSequence: event.ledgerSequence,
+    contractId: event.contractId,
+    amountUsdc: event.data.amount_usdc != null ? String(event.data.amount_usdc) : undefined,
+    extra: { note: "funds_locked_in_escrow" },
   });
   appLogger.info({
     requestId: undefined,
@@ -96,6 +112,13 @@ export async function handleDeliveryConfirmed(tx: Prisma.TransactionClient, even
     status: EVENT_TO_STATUS[EventType.DeliveryConfirmed],
     version: 1,
   });
+  logEscrowEvent({
+    tradeId: event.tradeId,
+    eventType: "DeliveryConfirmed",
+    toStatus: TradeStatus.DELIVERED,
+    ledgerSequence: event.ledgerSequence,
+    contractId: event.contractId,
+  });
   appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DeliveryConfirmed");
   webhookService.dispatch(event.tradeId, TradeStatus.DELIVERED, { ledger: event.ledgerSequence });
 }
@@ -107,6 +130,15 @@ export async function handleFundsReleased(tx: Prisma.TransactionClient, event: P
     sellerAddress: "",
     status: EVENT_TO_STATUS[EventType.FundsReleased],
     version: 1,
+  });
+  logEscrowEvent({
+    tradeId: event.tradeId,
+    eventType: "FundsReleased",
+    toStatus: TradeStatus.COMPLETED,
+    ledgerSequence: event.ledgerSequence,
+    contractId: event.contractId,
+    amountUsdc: event.data.amount_usdc != null ? String(event.data.amount_usdc) : undefined,
+    extra: { note: "funds_released_to_seller" },
   });
   appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] FundsReleased");
   webhookService.dispatch(event.tradeId, TradeStatus.COMPLETED, { ledger: event.ledgerSequence });
@@ -120,11 +152,15 @@ export async function handleDisputeInitiated(tx: Prisma.TransactionClient, event
     status: EVENT_TO_STATUS[EventType.DisputeInitiated],
     version: 1,
   });
-  await syncDisputeInitiatedFromChain(
-    tx,
-    event.tradeId,
-    String(event.data.initiator ?? ""),
-  );
+  logEscrowEvent({
+    tradeId: event.tradeId,
+    eventType: "DisputeInitiated",
+    toStatus: TradeStatus.DISPUTED,
+    ledgerSequence: event.ledgerSequence,
+    contractId: event.contractId,
+    actor: (event.data.initiator as string) || undefined,
+    extra: { reason: event.data.reason },
+  });
   appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DisputeInitiated");
   webhookService.dispatch(event.tradeId, TradeStatus.DISPUTED, { ledger: event.ledgerSequence });
 }
@@ -137,7 +173,15 @@ export async function handleDisputeResolved(tx: Prisma.TransactionClient, event:
     status: EVENT_TO_STATUS[EventType.DisputeResolved],
     version: 1,
   });
-  await syncDisputeResolvedFromChain(tx, event.tradeId);
+  logEscrowEvent({
+    tradeId: event.tradeId,
+    eventType: "DisputeResolved",
+    toStatus: TradeStatus.COMPLETED,
+    ledgerSequence: event.ledgerSequence,
+    contractId: event.contractId,
+    actor: (event.data.resolver as string) || undefined,
+    extra: { resolution: event.data.resolution },
+  });
   appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DisputeResolved");
   webhookService.dispatch(event.tradeId, TradeStatus.COMPLETED, { ledger: event.ledgerSequence });
 }

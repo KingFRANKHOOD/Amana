@@ -52,6 +52,42 @@ describe("Dispute Category Routes", () => {
     jest.clearAllMocks();
   });
 
+  it("lists inactive categories when includeInactive=true and caller is admin", async () => {
+    const prisma = createMockPrisma();
+    prisma.disputeCategory.findMany.mockResolvedValue([
+      {
+        id: 1,
+        name: "DAMAGE",
+        description: "Goods damaged",
+        isActive: true,
+        createdAt: mockDate,
+        updatedAt: mockDate,
+      },
+      {
+        id: 2,
+        name: "RETIRED",
+        description: null,
+        isActive: false,
+        createdAt: mockDate,
+        updatedAt: mockDate,
+      },
+    ]);
+
+    const app = express();
+    app.use(express.json());
+    app.use("/dispute-categories", createDisputeCategoryRouter(prisma as any));
+
+    const res = await request(app)
+      .get("/dispute-categories?includeInactive=true")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(prisma.disputeCategory.findMany).toHaveBeenCalledWith({
+      where: undefined,
+      orderBy: { name: "asc" },
+    });
+  });
+
   it("lists active dispute categories for authenticated users", async () => {
     const prisma = createMockPrisma();
     prisma.disputeCategory.findMany.mockResolvedValue([
