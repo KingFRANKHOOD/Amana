@@ -181,6 +181,10 @@ jobs:
         if: needs.changes.outputs.mobile == 'true'
         run: npm run lint
 
+      - name: Test
+        if: needs.changes.outputs.mobile == 'true'
+        run: npm test
+
       - name: Skip note (no mobile changes)
         if: needs.changes.outputs.mobile != 'true'
         run: echo "No mobile file changes detected, required gate passed."
