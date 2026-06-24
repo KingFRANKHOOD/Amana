@@ -8,12 +8,12 @@ function parseResultCodes(resultXdr: string): { transaction: string; operations:
     const xdr = Buffer.from(resultXdr, "base64");
     const result = StellarSdk.xdr.TransactionResult.fromXDR(xdr);
     const resultCode = result.result().switch();
-    const transactionCode = StellarSdk.xdr.TransactionResultCode.name(resultCode);
+    const transactionCode = (resultCode as any).name || "unknown";
 
     const opResults = result.result().results() || [];
     const operationCodes = opResults.map((op) => {
       const opResult = op.tr().switch();
-      return StellarSdk.xdr.OperationType.name(opResult);
+      return (opResult as any).name || "unknown";
     });
 
     return {
@@ -29,7 +29,7 @@ export function createStellarTxStatusRouter(): Router {
   const router = Router();
 
   router.get("/:hash/status", async (req: Request, res: Response) => {
-    const { hash } = req.params;
+    const hash = req.params.hash as string;
 
     if (!hash || hash.length !== 64) {
       res.status(400).json({ error: "Invalid transaction hash" });

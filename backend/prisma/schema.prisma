@@ -60,6 +60,7 @@ model User {
   initiatedDisputes Dispute[]      @relation("initiator")
   vaults          Vault[]
   goals           Goal[]
+  refreshTokens   RefreshToken[]
 
   @@index([walletAddress])
 }
@@ -280,4 +281,18 @@ model Goal {
   @@index([vaultId])
   @@index([userId])
   @@index([status])
+}
+
+/// RefreshToken model for tracking active sessions and preventing reuse
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique @db.VarChar(255)
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
 }

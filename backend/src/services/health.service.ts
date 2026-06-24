@@ -33,6 +33,7 @@ interface HealthCheckResponse {
     stellarNetwork: string;
     ipfsGateway: string;
     missingEnvVars: string[];
+    circuitBreakers: Array<{ name: string; state: string }>;
   };
 }
 

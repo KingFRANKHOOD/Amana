@@ -20,13 +20,14 @@ function dispatchRedisAlert(message: string, details: Record<string, unknown> = 
   void alertService.dispatch("redis_connection_failure", message, details);
 }
 
-// ioredis Redis class extends EventEmitter at runtime; the .d.ts implements it via DataHandledable
-(redis as unknown as EventEmitter).on("error", (err: Error) => {
-  appLogger.error({ error: err }, "Redis error");
-  dispatchRedisAlert("Redis client error", { error: err.message });
-});
+if (typeof (redis as any).on === "function") {
+  (redis as unknown as EventEmitter).on("error", (err: Error) => {
+    appLogger.error({ error: err }, "Redis error");
+    dispatchRedisAlert("Redis client error", { error: err.message });
+  });
 
-(redis as unknown as EventEmitter).on("close", () => {
-  appLogger.warn("Redis connection closed");
-  dispatchRedisAlert("Redis connection closed");
-});
+  (redis as unknown as EventEmitter).on("close", () => {
+    appLogger.warn("Redis connection closed");
+    dispatchRedisAlert("Redis connection closed");
+  });
+}
