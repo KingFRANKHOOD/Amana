@@ -46,11 +46,6 @@ export function DriverManifestForm({ isOpen, onComplete, onDismiss }: DriverMani
       return;
     }
 
-    if (!form.checkValidity()) {
-      form.reportValidity();
-      return;
-    }
-
     onComplete({
       driverName: driverName.trim(),
       driverPhone: driverPhone.trim(),

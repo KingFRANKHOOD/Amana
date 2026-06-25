@@ -75,7 +75,7 @@ describe('Step3Review', () => {
             renderWithProvider();
 
             const commodityRow = screen.getByText('Commodity').closest('div');
-            expect(commodityRow).toHaveTextContent('');
+            expect(commodityRow).toHaveTextContent('Commodity');
         });
 
         it('should display quantity with unit', () => {

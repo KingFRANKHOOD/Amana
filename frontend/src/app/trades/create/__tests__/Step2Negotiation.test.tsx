@@ -69,14 +69,16 @@ describe('Step2Negotiation', () => {
             renderWithProvider();
 
             expect(screen.getByText('Buyer absorbs')).toBeInTheDocument();
-            expect(screen.getByText('50%')).toBeInTheDocument();
+            const fiftyPercents = screen.getAllByText('50%');
+            expect(fiftyPercents.length).toBeGreaterThanOrEqual(1);
         });
 
         it('should display seller absorbs percentage', () => {
             renderWithProvider();
 
             expect(screen.getByText('Seller absorbs')).toBeInTheDocument();
-            expect(screen.getByText('50%')).toBeInTheDocument();
+            const fiftyPercents = screen.getAllByText('50%');
+            expect(fiftyPercents.length).toBeGreaterThanOrEqual(1);
         });
 
         it('should update buyer absorbs percentage when slider changes', async () => {

@@ -79,22 +79,22 @@ describe('AuditLogCard Component', () => {
 
     it('renders biometric entry with correct icon', () => {
         render(<AuditLogCard {...defaultProps} />);
-        const biometricEntry = screen.getByText('Biometric validation passed').closest('div');
-        const svgIcon = biometricEntry?.querySelector('svg');
+        const entryRow = screen.getByText('Biometric validation passed').closest('.flex.items-start');
+        const svgIcon = entryRow?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
     it('renders multi-sig entry with correct icon', () => {
         render(<AuditLogCard {...defaultProps} />);
-        const multiSigEntry = screen.getByText('Multi-sig request broadcast').closest('div');
-        const imgIcon = multiSigEntry?.querySelector('img');
+        const entryRow = screen.getByText('Multi-sig request broadcast').closest('.flex.items-start');
+        const imgIcon = entryRow?.querySelector('img');
         expect(imgIcon).toBeInTheDocument();
     });
 
     it('renders ledger entry with correct icon', () => {
         render(<AuditLogCard {...defaultProps} />);
-        const ledgerEntry = screen.getByText('Ledger synchronization').closest('div');
-        const svgIcon = ledgerEntry?.querySelector('svg');
+        const entryRow = screen.getByText('Ledger synchronization').closest('.flex.items-start');
+        const svgIcon = entryRow?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
