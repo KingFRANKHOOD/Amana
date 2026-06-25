@@ -99,7 +99,7 @@ const Avatar: React.FC<AvatarProps> = ({
       )}
 
       {/* Online indicator */}
-      {online && (
+      {online && !verified && (
         <div
           className={`absolute bottom-0 left-0 translate-x-[-25%] translate-y-[25%] rounded-full bg-emerald border-2 border-bg-primary ${badgeSizeClass}`}
           aria-label="Online"

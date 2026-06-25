@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { VaultDashboard } from '../VaultDashboard';
 
 // Mock all child components
@@ -100,9 +100,10 @@ describe('VaultDashboard Component', () => {
 
     it('passes correct props to VaultValueCard', () => {
         render(<VaultDashboard />);
-        expect(screen.getByText('2480000')).toBeInTheDocument();
-        expect(screen.getByText('USD')).toBeInTheDocument();
-        expect(screen.getByText('Insured')).toBeInTheDocument();
+        const card = screen.getByTestId('vault-value-card');
+        expect(within(card).getByText('2480000')).toBeInTheDocument();
+        expect(within(card).getByText('USD')).toBeInTheDocument();
+        expect(within(card).getByText('Insured')).toBeInTheDocument();
     });
 
     it('renders the ContractManifestCard component', () => {
@@ -137,8 +138,9 @@ describe('VaultDashboard Component', () => {
 
     it('passes correct props to PaymentOverviewCard', () => {
         render(<VaultDashboard />);
-        expect(screen.getByText('2480000')).toBeInTheDocument();
-        expect(screen.getByText('1580')).toBeInTheDocument();
+        const card = screen.getByTestId('payment-overview-card');
+        expect(within(card).getByText('2480000')).toBeInTheDocument();
+        expect(within(card).getByText('1580')).toBeInTheDocument();
     });
 
     it('renders the NetworkBackboneCard component', () => {

@@ -26,8 +26,9 @@ export default function Step1Details() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <label className="text-sm text-text-secondary">Commodity</label>
+        <label htmlFor="commodity" className="text-sm text-text-secondary">Commodity</label>
         <select
+          id="commodity"
           value={data.commodity}
           onChange={(e) => update({ commodity: e.target.value })}
           className="bg-bg-input border border-border-default rounded-md px-4 py-3 text-text-primary focus:outline-none focus:border-border-focus"
@@ -41,8 +42,9 @@ export default function Step1Details() {
 
       <div className="flex gap-4">
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-sm text-text-secondary">Quantity</label>
+          <label htmlFor="quantity" className="text-sm text-text-secondary">Quantity</label>
           <input
+            id="quantity"
             type="number"
             min="0"
             placeholder="e.g. 500"
@@ -52,8 +54,9 @@ export default function Step1Details() {
           />
         </div>
         <div className="flex flex-col gap-1 w-36">
-          <label className="text-sm text-text-secondary">Unit</label>
+          <label htmlFor="unit" className="text-sm text-text-secondary">Unit</label>
           <select
+            id="unit"
             value={data.unit}
             onChange={(e) => update({ unit: e.target.value })}
             className="bg-bg-input border border-border-default rounded-md px-4 py-3 text-text-primary focus:outline-none focus:border-border-focus"
@@ -67,8 +70,9 @@ export default function Step1Details() {
 
       <div className="flex gap-4">
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-sm text-text-secondary">Price per unit (NGN)</label>
+          <label htmlFor="price-per-unit" className="text-sm text-text-secondary">Price per unit (NGN)</label>
           <input
+            id="price-per-unit"
             type="number"
             min="0"
             placeholder="e.g. 450"
@@ -78,8 +82,9 @@ export default function Step1Details() {
           />
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <label className="text-sm text-text-secondary">Currency</label>
+          <label htmlFor="currency" className="text-sm text-text-secondary">Currency</label>
           <select
+            id="currency"
             value={data.currency}
             onChange={(e) => update({ currency: e.target.value })}
             className="bg-bg-input border border-border-default rounded-md px-4 py-3 text-text-primary focus:outline-none focus:border-border-focus"
@@ -99,8 +104,9 @@ export default function Step1Details() {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm text-text-secondary">Seller Stellar Address</label>
+        <label htmlFor="seller-address" className="text-sm text-text-secondary">Seller Stellar Address</label>
         <input
+          id="seller-address"
           type="text"
           placeholder="G..."
           value={data.sellerAddress}

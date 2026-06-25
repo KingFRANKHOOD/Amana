@@ -26,6 +26,7 @@ import { stellarFeesRoutes } from "./routes/stellar.fees";
 import { stellarTxStatusRoutes } from "./routes/stellar.tx.status";
 import { stellarAssetRoutes } from "./routes/stellar.asset";
 import { stellarAccountBalanceRoutes } from "./routes/stellar.account.balance";
+import { webhooksRoutes } from "./routes/webhooks.routes";
 import { env } from "./config/env";
 
 /** Parse the CORS_ORIGINS env var into a usable allowlist.
@@ -142,6 +143,9 @@ export function createApp(): express.Application {
 
   // Treasury management
   app.use("/treasury", createTreasuryRouter());
+
+  // Webhooks: CRUD /webhooks
+  app.use("/webhooks", webhooksRoutes);
 
   // Error handler is registered last so it catches errors from all routes,
   // including any routes added to the app after createApp() returns.

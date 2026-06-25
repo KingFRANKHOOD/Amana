@@ -141,7 +141,7 @@ describe('DriverManifestForm Component', () => {
 
     it('calls onComplete with form data when submit is clicked', () => {
         const onComplete = jest.fn();
-        render(<DriverManifestForm {...defaultProps} onComplete={onComplete} />);
+        const { container } = render(<DriverManifestForm {...defaultProps} onComplete={onComplete} />);
 
         const driverNameInput = screen.getByPlaceholderText('e.g. Amina Khalid');
         const driverPhoneInput = screen.getByPlaceholderText('e.g. +234 803 000 0000');
@@ -151,8 +151,8 @@ describe('DriverManifestForm Component', () => {
         fireEvent.change(driverPhoneInput, { target: { value: '+2348030000000' } });
         fireEvent.change(licensePlateInput, { target: { value: 'ABC 123' } });
 
-        const submitButton = screen.getByText('Submit Manifest');
-        fireEvent.click(submitButton);
+        const form = container.querySelector('form')!;
+        fireEvent.submit(form);
 
         expect(onComplete).toHaveBeenCalledWith({
             driverName: 'John Doe',
@@ -173,7 +173,7 @@ describe('DriverManifestForm Component', () => {
 
     it('clears form fields after successful submission', () => {
         const onComplete = jest.fn();
-        render(<DriverManifestForm {...defaultProps} onComplete={onComplete} />);
+        const { container } = render(<DriverManifestForm {...defaultProps} onComplete={onComplete} />);
 
         const driverNameInput = screen.getByPlaceholderText('e.g. Amina Khalid');
         const driverPhoneInput = screen.getByPlaceholderText('e.g. +234 803 000 0000');
@@ -183,8 +183,8 @@ describe('DriverManifestForm Component', () => {
         fireEvent.change(driverPhoneInput, { target: { value: '+2348030000000' } });
         fireEvent.change(licensePlateInput, { target: { value: 'ABC 123' } });
 
-        const submitButton = screen.getByText('Submit Manifest');
-        fireEvent.click(submitButton);
+        const form = container.querySelector('form')!;
+        fireEvent.submit(form);
 
         expect(driverNameInput).toHaveValue('');
         expect(driverPhoneInput).toHaveValue('');
@@ -244,7 +244,7 @@ describe('DriverManifestForm Component', () => {
 
     it('trims whitespace from form data', () => {
         const onComplete = jest.fn();
-        render(<DriverManifestForm {...defaultProps} onComplete={onComplete} />);
+        const { container } = render(<DriverManifestForm {...defaultProps} onComplete={onComplete} />);
 
         const driverNameInput = screen.getByPlaceholderText('e.g. Amina Khalid');
         const driverPhoneInput = screen.getByPlaceholderText('e.g. +234 803 000 0000');
@@ -254,8 +254,8 @@ describe('DriverManifestForm Component', () => {
         fireEvent.change(driverPhoneInput, { target: { value: '  +2348030000000  ' } });
         fireEvent.change(licensePlateInput, { target: { value: '  ABC 123  ' } });
 
-        const submitButton = screen.getByText('Submit Manifest');
-        fireEvent.click(submitButton);
+        const form = container.querySelector('form')!;
+        fireEvent.submit(form);
 
         expect(onComplete).toHaveBeenCalledWith({
             driverName: 'John Doe',

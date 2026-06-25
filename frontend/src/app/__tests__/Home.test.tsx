@@ -1,28 +1,31 @@
 import { render, screen } from "@testing-library/react";
 import Home from "../page";
 
+jest.mock("@/components/landing/LandingCtaButtons", () => ({
+  LandingCtaButtons: () => <div data-testid="landing-cta-buttons" />,
+}));
+
 describe("Home", () => {
   it("presents the product entry points without linking to missing dashboard routes", () => {
     render(<Home />);
 
-    expect(screen.getByRole("heading", { name: "Amana" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /start trade/i })).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: /agricultural trade/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /start a trade/i })).toHaveAttribute(
       "href",
       "/trades/create"
     );
-    expect(screen.getByRole("link", { name: /open workspace/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /open dashboard/i })).toHaveAttribute(
       "href",
-      "/assets"
+      "/dashboard"
     );
-    expect(screen.queryByRole("link", { name: /dashboard/i })).not.toBeInTheDocument();
   });
 
   it("surfaces the escrow workflow for buyers, sellers, and mediators", () => {
     render(<Home />);
 
     expect(screen.getByText("Create a trade")).toBeInTheDocument();
-    expect(screen.getByText("Track vault activity")).toBeInTheDocument();
-    expect(screen.getByText("Resolve disputes")).toBeInTheDocument();
-    expect(screen.getByText("Evidence packet")).toBeInTheDocument();
+    expect(screen.getByText("Track delivery")).toBeInTheDocument();
+    expect(screen.getByText("Verify & complete")).toBeInTheDocument();
+    expect(screen.getByText("Evidence-backed disputes")).toBeInTheDocument();
   });
 });

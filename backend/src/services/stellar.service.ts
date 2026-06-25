@@ -5,6 +5,7 @@ import {
   networkPassphrase 
 } from '../config/stellar';
 import { retryAsync } from "../lib/retry";
+import { withCircuitBreaker, CircuitBreaker, getCircuitBreaker } from "../lib/circuit-breaker";
 import { appLogger } from "../middleware/logger";
 import { TracingHelper } from "../config/tracing";
 import { TOKEN_CONFIG } from "../config/token";
@@ -13,15 +14,83 @@ import {
   recordTransactionSubmission,
 } from "../lib/metrics";
 
+export type StellarErrorCategory =
+  | "timeout"
+  | "connection_refused"
+  | "not_found"
+  | "rate_limited"
+  | "invalid_xdr"
+  | "contract_panic"
+  | "rpc_error"
+  | "network_error";
+
+export interface ClassifiedStellarError {
+  category: StellarErrorCategory;
+  message: string;
+  isRetryable: boolean;
+}
+
+export function classifyStellarError(error: unknown): ClassifiedStellarError {
+  const msg = error instanceof Error ? error.message : String(error);
+  const code =
+    error !== null && typeof error === "object" && "code" in error
+      ? (error as { code: unknown }).code
+      : undefined;
+  const status =
+    error !== null &&
+    typeof error === "object" &&
+    "response" in error &&
+    error.response !== null &&
+    typeof error.response === "object" &&
+    "status" in error.response
+      ? (error.response as { status: unknown }).status
+      : undefined;
+
+  if (code === "ETIMEDOUT" || code === "ECONNABORTED" || /timeout|timed out|deadline exceeded/i.test(msg)) {
+    return { category: "timeout", message: `Stellar RPC timed out: ${msg}`, isRetryable: true };
+  }
+
+  if (code === "ECONNREFUSED" || /connection refused/i.test(msg)) {
+    return { category: "connection_refused", message: `Stellar service unavailable: ${msg}`, isRetryable: true };
+  }
+
+  if (status === 404 || /not found/i.test(msg)) {
+    return { category: "not_found", message: msg, isRetryable: false };
+  }
+
+  if (status === 429 || /rate limit/i.test(msg) || /TRY_AGAIN_LATER/i.test(msg)) {
+    return { category: "rate_limited", message: `Stellar rate limited: ${msg}`, isRetryable: true };
+  }
+
+  if (/invalid.*xdr|xdr/i.test(msg)) {
+    return { category: "invalid_xdr", message: `Invalid transaction XDR: ${msg}`, isRetryable: false };
+  }
+
+  if (/contract panic/i.test(msg)) {
+    return { category: "contract_panic", message: msg, isRetryable: false };
+  }
+
+  if (/rpc error/i.test(msg)) {
+    return { category: "rpc_error", message: msg, isRetryable: false };
+  }
+
+  return { category: "network_error", message: `Stellar network error: ${msg}`, isRetryable: true };
+}
+
 export class StellarService {
   private horizonServer: Horizon.Server;
   private sorobanRpc: rpc.Server;
   private networkPassphrase: string;
+  private paymentCircuitBreaker: CircuitBreaker;
 
   constructor() {
     this.horizonServer = horizonServer;
     this.sorobanRpc = sorobanRpcClient;
     this.networkPassphrase = networkPassphrase;
+    this.paymentCircuitBreaker = new CircuitBreaker({
+      failureThreshold: 5,
+      resetTimeoutMs: 30_000,
+    });
   }
 
   // Temporary backward compatibility methods - to be removed
@@ -31,6 +100,10 @@ export class StellarService {
 
   public getNetworkPassphrase(): string {
     return this.networkPassphrase;
+  }
+
+  public getPaymentCircuitBreakerState(): string {
+    return this.paymentCircuitBreaker.getState();
   }
 
 public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONFIG.symbol): Promise<string> {
@@ -171,7 +244,8 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
   }
 
   public async submitTransaction(signedXdr: string): Promise<rpc.Api.SendTransactionResponse> {
-    return TracingHelper.withSpan(
+    return withCircuitBreaker(async () => {
+      return TracingHelper.withSpan(
       "stellar.submit_transaction",
       async (span) => {
         const start = performance.now();
@@ -232,18 +306,23 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
           }
 
           if (response.status === "TRY_AGAIN_LATER") {
+            const classified = classifyStellarError(new Error("TRY_AGAIN_LATER"));
             recordTransactionSubmission(
               "submit_transaction",
-              "rpc_error",
+              classified.category === "rate_limited" ? "rpc_error" : classifySubmissionError(new Error("TRY_AGAIN_LATER")),
               performance.now() - start,
             );
             span.setAttributes({
               "stellar.transaction.outcome": "rpc_error",
               "stellar.transaction.hash": response.hash ?? "unknown",
+              "stellar.error.category": classified.category,
+              "stellar.error.retryable": classified.isRetryable,
             });
             appLogger.error({
               provider: "stellar",
               status: "rate_limited",
+              category: classified.category,
+              retryable: classified.isRetryable,
               timestamp: new Date().toISOString(),
             }, "Stellar RPC node is temporarily unavailable");
             throw new Error("RPC Error: Stellar node unavailable (TRY_AGAIN_LATER)");
@@ -260,11 +339,15 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
               span.setAttributes({
                 "stellar.transaction.outcome": "contract_panic",
                 "stellar.transaction.hash": response.hash ?? "unknown",
+                "stellar.error.category": "contract_panic",
+                "stellar.error.retryable": false,
               });
               appLogger.error({
                 errorMessage,
                 provider: "stellar",
                 status: "authorization_denied",
+                category: "contract_panic",
+                retryable: false,
                 timestamp: new Date().toISOString(),
               }, "Contract Panic");
               throw new Error(`Contract Panic: ${errorMessage}`);
@@ -278,11 +361,15 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
             span.setAttributes({
               "stellar.transaction.outcome": "rpc_error",
               "stellar.transaction.hash": response.hash ?? "unknown",
+              "stellar.error.category": "rpc_error",
+              "stellar.error.retryable": false,
             });
             appLogger.error({
               response,
               provider: "stellar",
               status: "authorization_failed",
+              category: "rpc_error",
+              retryable: false,
               timestamp: new Date().toISOString(),
             }, "RPC Error");
             throw new Error(`RPC Error: ${response.status}`);
@@ -299,6 +386,7 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
           });
           return response;
         } catch (error: unknown) {
+          const classified = classifyStellarError(error);
           const outcome = classifySubmissionError(error);
           if (
             outcome !== "contract_panic" &&
@@ -313,35 +401,28 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
 
           span.setAttributes({
             "stellar.transaction.outcome": outcome,
+            "stellar.error.category": classified.category,
+            "stellar.error.retryable": classified.isRetryable,
           });
 
           const msg = error instanceof Error ? error.message : String(error);
 
-          if (msg && msg.includes("XDR")) {
-            appLogger.error({ error }, "Invalid transaction XDR");
+          if (classified.category === "invalid_xdr") {
+            appLogger.error({ error, category: classified.category }, "Invalid transaction XDR");
             throw new Error(`Invalid transaction XDR: ${msg}`);
           }
 
           if (
-            msg &&
-            (msg.includes("RPC Error:") ||
-              msg.includes("Contract Panic:"))
+            classified.category === "rpc_error" ||
+            classified.category === "contract_panic" ||
+            classified.category === "rate_limited"
           ) {
             throw error;
           }
 
-          const code =
-            error !== null && typeof error === "object" && "code" in error
-              ? (error as { code: unknown }).code
-              : undefined;
-          const isTimeout =
-            code === "ETIMEDOUT" ||
-            code === "ECONNABORTED" ||
-            /timeout|timed out|deadline/i.test(msg ?? "");
-
-          if (isTimeout) {
+          if (classified.category === "timeout") {
             appLogger.error(
-              { error, provider: "stellar", timestamp: new Date().toISOString() },
+              { error, provider: "stellar", category: classified.category, timestamp: new Date().toISOString() },
               "Stellar transaction submission timed out",
             );
             throw new Error(
@@ -349,7 +430,17 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
             );
           }
 
-          appLogger.error({ error }, "Transaction submission failed");
+          if (classified.category === "connection_refused") {
+            appLogger.error(
+              { error, provider: "stellar", category: classified.category, timestamp: new Date().toISOString() },
+              "Stellar service connection refused",
+            );
+            throw new Error(
+              `Transaction submission failed: Stellar service unavailable — ${msg || "connection refused"}`,
+            );
+          }
+
+          appLogger.error({ error, category: classified.category }, "Transaction submission failed");
           throw new Error(
             `Transaction submission failed: ${msg || "Unknown error"}`,
           );
@@ -362,6 +453,7 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
         },
       },
     );
+    }, this.paymentCircuitBreaker);
   }
 
   private parseContractError(errorResult: any): string {

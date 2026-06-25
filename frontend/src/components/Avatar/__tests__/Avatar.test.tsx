@@ -262,7 +262,7 @@ describe('Avatar Component', () => {
 
   it('renders verified badge with border', () => {
     const { container } = render(<Avatar {...defaultProps} verified={true} />);
-    const badge = container.querySelector('.border-2.border-bg-primary');
+    const badge = container.querySelector('.border.border-bg-primary');
     expect(badge).toBeInTheDocument();
   });
 

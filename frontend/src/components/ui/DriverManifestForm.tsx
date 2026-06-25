@@ -23,7 +23,7 @@ export function DriverManifestForm({ isOpen, onComplete, onDismiss }: DriverMani
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
   const [licensePlate, setLicensePlate] = useState("");
-  const [submitEnabled, setSubmitEnabled] = useState(false);
+  const submitEnabled = driverName.trim() !== '' && driverPhone.trim() !== '' && licensePlate.trim() !== '';
 
   useEffect(() => {
     const bodyOverflow = document.body.style.overflow;
@@ -43,12 +43,6 @@ export function DriverManifestForm({ isOpen, onComplete, onDismiss }: DriverMani
     const form = formRef.current;
 
     if (!form) {
-      return;
-    }
-
-    if (!form.checkValidity()) {
-      form.reportValidity();
-      setSubmitEnabled(false);
       return;
     }
 
@@ -90,9 +84,7 @@ export function DriverManifestForm({ isOpen, onComplete, onDismiss }: DriverMani
               </div>
             </div>
 
-            <form ref={formRef} onSubmit={handleSubmit} onChange={() => {
-              if (formRef.current) setSubmitEnabled(formRef.current.checkValidity());
-            }} className="overflow-y-auto p-6 space-y-4 flex-1">
+            <form ref={formRef} onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-4 flex-1">
               <FormField label="Driver Name" name="driver-name" required>
                 <input
                   type="text"

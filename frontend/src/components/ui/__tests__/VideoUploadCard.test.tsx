@@ -6,6 +6,7 @@ import { VideoUploadCard } from '../VideoUploadCard';
 jest.mock('../BentoCard', () => ({
     BentoCard: ({ children, title, glowVariant, className }: { children: React.ReactNode, title?: string, icon?: React.ReactNode, glowVariant?: string, className?: string }) => (
         <div data-testid="bento-card" data-title={title} data-glow={glowVariant} className={className}>
+            {title && <h3>{title}</h3>}
             {children}
         </div>
     ),

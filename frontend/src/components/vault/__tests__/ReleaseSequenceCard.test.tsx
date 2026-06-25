@@ -6,6 +6,7 @@ import { ReleaseSequenceCard } from '../ReleaseSequenceCard';
 jest.mock('@/components/ui/BentoCard', () => ({
     BentoCard: ({ children, title, glowVariant, className }: { children: React.ReactNode, title?: string, icon?: React.ReactNode, glowVariant?: string, className?: string }) => (
         <div data-testid="bento-card" data-title={title} data-glow={glowVariant} className={className}>
+            {title && <h3>{title}</h3>}
             {children}
         </div>
     ),
@@ -59,21 +60,21 @@ describe('ReleaseSequenceCard Component', () => {
 
     it('renders completed step with correct icon', () => {
         render(<ReleaseSequenceCard {...defaultProps} />);
-        const completedStep = screen.getByText('Agreement').closest('div');
+        const completedStep = screen.getByText('Agreement').closest('.flex.flex-col');
         const svgIcon = completedStep?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
     it('renders in-progress step with correct icon', () => {
         render(<ReleaseSequenceCard {...defaultProps} />);
-        const inProgressStep = screen.getByText('Audit Phase').closest('div');
+        const inProgressStep = screen.getByText('Audit Phase').closest('.flex.flex-col');
         const svgIcon = inProgressStep?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });
 
     it('renders pending step with correct icon', () => {
         render(<ReleaseSequenceCard {...defaultProps} />);
-        const pendingStep = screen.getByText('Final Release').closest('div');
+        const pendingStep = screen.getByText('Final Release').closest('.flex.flex-col');
         const svgIcon = pendingStep?.querySelector('svg');
         expect(svgIcon).toBeInTheDocument();
     });

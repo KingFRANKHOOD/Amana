@@ -84,9 +84,12 @@ export function VideoUploadCard({ onUpload }: VideoUploadCardProps) {
     >
       {/* Drop zone */}
       <div
+        role="button"
+        tabIndex={0}
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click(); }}
         className="
           border-2 border-dashed border-border-default
           rounded-xl p-6 flex flex-col items-center justify-center gap-3

@@ -237,7 +237,7 @@ describe('DisputeVerificationModal Component', () => {
         });
 
         await waitFor(() => {
-            expect(screen.getByText('Upload video evidence before proceeding')).toBeInTheDocument();
+            expect(screen.getByTestId('video-upload-card')).toBeInTheDocument();
         });
     });
 
@@ -427,7 +427,7 @@ describe('DisputeVerificationModal Component', () => {
         });
 
         await waitFor(() => {
-            expect(screen.getByText('Upload video evidence before proceeding')).toBeInTheDocument();
+            expect(screen.getByTestId('video-upload-card')).toBeInTheDocument();
         });
     });
 
