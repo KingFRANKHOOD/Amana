@@ -79,7 +79,7 @@ const runSeed = async () => {
   let main: () => Promise<void>;
   jest.isolateModules(() => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    ({ main } = require('../../../prisma/seed.staging') as { main: () => Promise<void> });
+    ({ main } = require('../../prisma/seed.staging') as { main: () => Promise<void> });
   });
   await main!();
 };

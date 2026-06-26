@@ -189,10 +189,11 @@ export class EventListenerService {
     } catch (error) {
       if (error instanceof CircuitBreakerOpenError) {
         appLogger.warn({}, "[EventListener] Circuit breaker open — skipping poll");
+        this.scheduleNextPoll(this.stellarCircuit.cooldownMsValue);
       } else {
         appLogger.error({ error }, "[EventListener] Poll failed");
+        this.handleBackoff();
       }
-      this.handleBackoff();
     }
   }
 

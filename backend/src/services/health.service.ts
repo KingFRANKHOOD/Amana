@@ -37,7 +37,15 @@ interface HealthCheckResponse {
   };
 }
 
-type HealthDatabase = any;
+interface HealthDatabase {
+  $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]>;
+  processedLedger: {
+    findFirst(args?: {
+      orderBy?: { ledgerSequence?: "asc" | "desc" };
+      take?: number;
+    }): Promise<{ ledgerSequence: number; processedAt: Date } | null>;
+  };
+}
 interface HealthRedis {
   ping(): Promise<string>;
 }

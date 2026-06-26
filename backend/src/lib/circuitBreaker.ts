@@ -65,6 +65,10 @@ export class CircuitBreaker {
     return this.openedAt;
   }
 
+  get cooldownMsValue(): number {
+    return this.cooldownMs;
+  }
+
   async call<T>(operation: () => Promise<T>): Promise<T> {
     this.transitionIfCooldownElapsed();
 
