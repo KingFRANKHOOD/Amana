@@ -1,4 +1,4 @@
-import { Horizon, rpc, TransactionBuilder, BASE_FEE, StrKey, xdr } from '@stellar/stellar-sdk';
+import { Horizon, rpc, TransactionBuilder, BASE_FEE, StrKey, xdr, scValToNative } from '@stellar/stellar-sdk';
 import { 
   horizonServer, 
   sorobanRpcClient, 
@@ -13,6 +13,10 @@ import {
   classifySubmissionError,
   recordTransactionSubmission,
 } from "../lib/metrics";
+import {
+  classifyStellarServiceError,
+  StellarError,
+} from "../errors/service.errors";
 
 export type StellarErrorCategory =
   | "timeout"
@@ -28,6 +32,23 @@ export interface ClassifiedStellarError {
   category: StellarErrorCategory;
   message: string;
   isRetryable: boolean;
+}
+
+export interface ContractTradeState {
+  tradeId?: string;
+  buyer?: string;
+  seller?: string;
+  token?: string;
+  amount?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  fundedAt?: string | null;
+  deliveredAt?: string | null;
+  buyerLossBps?: number;
+  sellerLossBps?: number;
+  expiresAt?: string | null;
+  [key: string]: unknown;
 }
 
 export function classifyStellarError(error: unknown): ClassifiedStellarError {
@@ -77,6 +98,97 @@ export function classifyStellarError(error: unknown): ClassifiedStellarError {
   return { category: "network_error", message: `Stellar network error: ${msg}`, isRetryable: true };
 }
 
+function isValidSorobanContractId(contractId: string): boolean {
+  return /^C[A-Z2-7]{55}$/.test(contractId);
+}
+
+function normalizeTradeState(value: unknown): ContractTradeState {
+  if (value instanceof Map) {
+    return normalizeTradeMap(value);
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return normalizeTradeObject(value as Record<string, unknown>);
+  }
+
+  return { value: normalizeScValue(value) };
+}
+
+function normalizeTradeMap(value: Map<unknown, unknown>): ContractTradeState {
+  const raw: Record<string, unknown> = {};
+  for (const [key, mapValue] of value.entries()) {
+    raw[String(key)] = mapValue;
+  }
+  return normalizeTradeObject(raw);
+}
+
+function normalizeTradeObject(value: Record<string, unknown>): ContractTradeState {
+  const aliases: Record<string, string> = {
+    amount: "amount",
+    buyer: "buyer",
+    buyer_loss_bps: "buyerLossBps",
+    created_at: "createdAt",
+    delivered_at: "deliveredAt",
+    expires_at: "expiresAt",
+    funded_at: "fundedAt",
+    seller: "seller",
+    seller_loss_bps: "sellerLossBps",
+    status: "status",
+    token: "token",
+    trade_id: "tradeId",
+    updated_at: "updatedAt",
+  };
+
+  return Object.entries(value).reduce<ContractTradeState>((state, [key, raw]) => {
+    state[aliases[key] ?? key] = normalizeScValue(raw);
+    return state;
+  }, {});
+}
+
+function normalizeScValue(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (value instanceof Map) return normalizeTradeMap(value);
+  if (Array.isArray(value)) return value.map(normalizeScValue);
+  if (typeof value === "object" && value !== null) {
+    if ("toString" in value && value.constructor?.name === "Address") {
+      return String(value);
+    }
+
+    return Object.entries(value as Record<string, unknown>).reduce<Record<string, unknown>>(
+      (record, [key, raw]) => {
+        record[key] = normalizeScValue(raw);
+        return record;
+      },
+      {},
+    );
+  }
+  return value;
+}
+
+function extractContractDataScVal(entry: unknown): xdr.ScVal | undefined {
+  const maybeEntry = entry as {
+    val?: unknown;
+    xdr?: unknown;
+  };
+
+  if (typeof maybeEntry.val === "function") {
+    const ledgerEntryData = (maybeEntry.val as () => unknown)() as {
+      contractData?: () => { val: () => xdr.ScVal };
+    };
+    return ledgerEntryData.contractData?.().val();
+  }
+
+  if (maybeEntry.val instanceof xdr.ScVal) {
+    return maybeEntry.val;
+  }
+
+  if (typeof maybeEntry.xdr === "string") {
+    return xdr.LedgerEntryData.fromXDR(maybeEntry.xdr, "base64").contractData().val();
+  }
+
+  return undefined;
+}
+
 export class StellarService {
   private horizonServer: Horizon.Server;
   private sorobanRpc: rpc.Server;
@@ -104,6 +216,56 @@ export class StellarService {
 
   public getPaymentCircuitBreakerState(): string {
     return this.paymentCircuitBreaker.getState();
+  }
+
+  public async getContractTradeState(
+    contractId: string,
+    tradeId: string,
+  ): Promise<ContractTradeState> {
+    if (!isValidSorobanContractId(contractId)) {
+      throw new StellarError({
+        code: "STELLAR_INVALID_CONTRACT_ID",
+        message: "Invalid Soroban contract ID",
+        httpStatus: 404,
+        retryable: false,
+      });
+    }
+
+    if (!/^\d+$/.test(tradeId)) {
+      throw new StellarError({
+        code: "STELLAR_INVALID_TRADE_ID",
+        message: "Invalid trade ID",
+        httpStatus: 400,
+        retryable: false,
+      });
+    }
+
+    const tradeKey = xdr.ScVal.scvVec([
+      xdr.ScVal.scvSymbol("Trade"),
+      xdr.ScVal.scvU64(xdr.Uint64.fromString(tradeId)),
+    ]);
+
+    try {
+      const entry = await this.sorobanRpc.getContractData(
+        contractId,
+        tradeKey,
+        rpc.Durability.Persistent,
+      );
+      const scVal = extractContractDataScVal(entry);
+      if (!scVal) {
+        throw new StellarError({
+          code: "STELLAR_CONTRACT_DATA_NOT_FOUND",
+          message: "Soroban contract trade state was not found",
+          httpStatus: 404,
+          retryable: false,
+        });
+      }
+
+      return normalizeTradeState(scValToNative(scVal));
+    } catch (error) {
+      if (error instanceof StellarError) throw error;
+      throw classifyStellarServiceError(error);
+    }
   }
 
 public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONFIG.symbol): Promise<string> {

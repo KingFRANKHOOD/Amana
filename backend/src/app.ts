@@ -32,6 +32,7 @@ import { stellarTxStatusRoutes } from "./routes/stellar.tx.status";
 import { stellarAssetRoutes } from "./routes/stellar.asset";
 import { stellarAccountBalanceRoutes } from "./routes/stellar.account.balance";
 import { stellarAccountCreateRoutes } from "./routes/stellar.account.create";
+import { createContractStateRouter } from "./routes/contract.state.routes";
 import { webhooksRoutes } from "./routes/webhooks.routes";
 import { env } from "./config/env";
 
@@ -152,6 +153,7 @@ export function createApp(): express.Application {
   app.use("/stellar/assets", stellarAssetRoutes);
   app.use("/stellar/account", stellarAccountCreateRoutes);
   app.use("/stellar/account", stellarAccountBalanceRoutes);
+  app.use("/contract", createContractStateRouter());
 
   // Treasury management
   app.use("/treasury", createTreasuryRouter());

@@ -3,8 +3,8 @@
 #[cfg(test)]
 mod tests;
 use soroban_sdk::{
-    Address, Bytes, Env, String, Symbol, Vec, contract, contractevent, contractimpl, contracttype,
-    symbol_short, token,
+    Address, Bytes, BytesN, Env, String, Symbol, Vec, contract, contractevent, contractimpl,
+    contracttype, symbol_short, token,
 };
 
 // ---------------------------------------------------------------------------
@@ -80,6 +80,20 @@ pub struct TradeCancelledEvent {
     pub trade_id: u64,
     pub refund_amount: i128,
     pub caller: Address,
+}
+
+#[contractevent(topics = ["TCNBYR"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TradeCancelledByBuyerEvent {
+    pub trade_id: u64,
+    pub buyer: Address,
+}
+
+#[contractevent(topics = ["UPGRAD"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContractUpgradedEvent {
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
 }
 
 #[contractevent(topics = ["DELCNF"])]
@@ -497,6 +511,28 @@ impl EscrowContract {
             .unwrap_or(CURRENT_SCHEMA_VERSION)
     }
 
+    /// Upgrade this contract instance to a previously installed WASM hash.
+    ///
+    /// Only the admin may call this. Soroban preserves instance and persistent
+    /// storage across `update_current_contract_wasm`, so existing trade state
+    /// remains available to the upgraded code.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        admin.require_auth();
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+        ContractUpgradedEvent {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
+        Self::bump_instance_ttl(&env);
+    }
+
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
@@ -880,6 +916,39 @@ impl EscrowContract {
         } else {
             panic!("Cannot cancel trade in current status");
         }
+    }
+
+    /// Allow the buyer to cancel a trade before funds are deposited.
+    ///
+    /// This is intentionally narrower than `cancel_trade`: only the buyer may
+    /// call it and only while the trade is still `Created`.
+    pub fn cancel_by_buyer(env: Env, trade_id: u64) {
+        let key = DataKey::Trade(trade_id);
+        let mut trade: Trade = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .expect("Trade not found");
+
+        trade.buyer.require_auth();
+        assert!(
+            matches!(trade.status, TradeStatus::Created),
+            "Trade must be in Created status"
+        );
+
+        trade.status = TradeStatus::Cancelled;
+        trade.updated_at = env.ledger().timestamp();
+        env.storage().persistent().set(&key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.cancelled_at = Some(at);
+        });
+
+        TradeCancelledByBuyerEvent {
+            trade_id,
+            buyer: trade.buyer,
+        }
+        .publish(&env);
+        Self::bump_instance_ttl(&env);
     }
 
     /// Unilaterally refund a funded or delivered trade.

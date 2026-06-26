@@ -34,7 +34,7 @@ export interface StructuredErrorPayload {
 
 export class AppError extends Error {
   constructor(
-    public code: ErrorCode,
+    public code: ErrorCode | string,
     public message: string,
     public statusCode: number = 400,
     public details: Record<string, unknown> = {}
