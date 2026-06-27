@@ -20,3 +20,5 @@ export { ErrorState } from "./ErrorState";
 export type { ErrorStateProps } from "./ErrorState";
 export { OfflineState } from "./OfflineState";
 export type { OfflineStateProps } from "./OfflineState";
+export { LoadingState } from "./LoadingState";
+export type { LoadingStateProps } from "./LoadingState";

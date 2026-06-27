@@ -82,3 +82,15 @@ export interface PathPaymentQuote {
   destination_asset_code?: string;
   path: unknown[];
 }
+
+export interface SearchResultItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+}
+
+export interface SearchResponse {
+  trades: SearchResultItem[];
+  users: SearchResultItem[];
+  contracts: SearchResultItem[];
+}
