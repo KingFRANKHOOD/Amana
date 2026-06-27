@@ -5,7 +5,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { PrismaClient } from "@prisma/client";
 import { createNotificationsRouter } from "../routes/notifications.inapp.routes";
 import { AuthService } from "../services/auth.service";
-import { errorHandler } from "../errors/errorHandler";
+import { errorHandler } from "../middleware/errorHandler";
 
 jest.mock("../services/auth.service", () => ({
   AuthService: {

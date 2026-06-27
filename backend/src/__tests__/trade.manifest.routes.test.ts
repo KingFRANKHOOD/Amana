@@ -5,7 +5,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { createTradeManifestRouter } from "../routes/trade.manifest.routes";
 import { AuthService } from "../services/auth.service";
 import { ServiceUnavailableError } from "../services/ipfs.service";
-import { errorHandler } from "../errors/errorHandler";
+import { errorHandler } from "../middleware/errorHandler";
 
 jest.mock("../services/auth.service", () => ({
   AuthService: {

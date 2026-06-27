@@ -5,7 +5,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { tradeRoutes } from "../routes/trade.routes";
 import { TradeAccessDeniedError, DisputeTradeStatusError } from "../services/trade.service";
 import { AuthService } from "../services/auth.service";
-import { errorHandler } from "../errors/errorHandler";
+import { errorHandler } from "../middleware/errorHandler";
 import { ErrorCode } from "../errors/errorCodes";
 
 jest.mock("../services/trade.service", () => {

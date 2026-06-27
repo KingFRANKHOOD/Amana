@@ -5,7 +5,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { PrismaClient, TradeStatus } from "@prisma/client";
 import { createAdminTradeBatchRouter } from "../routes/admin.trades.batch.routes";
 import { AuthService } from "../services/auth.service";
-import { errorHandler } from "../errors/errorHandler";
+import { errorHandler } from "../middleware/errorHandler";
 
 jest.mock("../services/auth.service", () => ({
   AuthService: {

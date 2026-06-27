@@ -1,7 +1,7 @@
 import request from 'supertest';
 import express from 'express';
 import { createApp } from '../app';
-import { errorHandler } from '../errors/errorHandler';
+import { errorHandler } from '../middleware/errorHandler';
 
 const mockPerformHealthCheck = jest.fn();
 

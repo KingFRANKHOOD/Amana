@@ -8,7 +8,7 @@ import {
   REQUEST_ID_HEADER,
 } from "../middleware/correlationId.middleware";
 
-jest.mock("pino", () => jest.fn(() => ({ mocked: true })));
+jest.mock("pino", () => jest.fn(() => ({ mocked: true, warn: jest.fn(), error: jest.fn(), info: jest.fn() })));
 
 const pinoHttpMock = jest.fn(() => "logger-middleware");
 jest.mock("pino-http", () => pinoHttpMock);

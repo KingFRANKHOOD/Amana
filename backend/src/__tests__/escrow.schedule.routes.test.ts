@@ -4,7 +4,7 @@ import request from "supertest";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { createEscrowScheduleRouter } from "../routes/escrow.schedule.routes";
 import { AuthService } from "../services/auth.service";
-import { errorHandler } from "../errors/errorHandler";
+import { errorHandler } from "../middleware/errorHandler";
 
 jest.mock("../services/auth.service", () => ({
   AuthService: {

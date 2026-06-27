@@ -33,7 +33,7 @@ import { ManifestService } from "../services/manifest.service";
 import { AuthService } from "../services/auth.service";
 import { tradeRoutes } from "../routes/trade.routes";
 import { createManifestRouter } from "../routes/manifest.routes";
-import { errorHandler } from "../errors/errorHandler";
+import { errorHandler } from "../middleware/errorHandler";
 
 // ─── App setup ────────────────────────────────────────────────────────────────
 
