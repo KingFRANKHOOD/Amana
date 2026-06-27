@@ -12,6 +12,7 @@ import WalletConnectScreen from './screens/WalletConnectScreen';
 import TradeListScreen from './screens/TradeListScreen';
 import TradeDetailScreen from './screens/TradeDetailScreen';
 import EvidenceCaptureScreen from './screens/EvidenceCaptureScreen';
+import VaultDashboard from './screens/VaultDashboard';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -43,6 +44,7 @@ export default function App() {
             <Stack.Screen name="TradeList" component={TradeListScreen} />
             <Stack.Screen name="TradeDetail" component={TradeDetailScreen} />
             <Stack.Screen name="EvidenceCapture" component={EvidenceCaptureScreen} />
+            <Stack.Screen name="VaultDashboard" component={VaultDashboard} />
           </Stack.Navigator>
         </NavigationContainer>
         <StatusBar style="dark" />
