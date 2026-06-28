@@ -6,6 +6,7 @@ import { correlationIdMiddleware } from './middleware/correlationId.middleware';
 import { tracingMiddleware } from './middleware/tracing.middleware';
 import loggerMiddleware, { appLogger } from './middleware/logger';
 import { requestIdMiddleware } from "./middleware/requestId";
+import { requestLoggerMiddleware } from "./middleware/request.logger.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { walletRoutes } from "./routes/wallet.routes";
 import { createTradeRouter } from "./routes/trade.routes";
@@ -112,6 +113,8 @@ export function createApp(): express.Application {
   // OpenTelemetry tracing middleware - integrates with correlation IDs
   app.use(tracingMiddleware);
   app.use(loggerMiddleware);
+  // Structured per-request logger: method, path, status, durationMs, correlationId, userId, userAgent, ip
+  app.use(requestLoggerMiddleware);
 
   // Enhanced health check with deep introspection
   app.use("/health", createHealthRouter());
