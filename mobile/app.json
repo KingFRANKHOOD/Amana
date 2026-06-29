@@ -6,13 +6,14 @@
     "name": "Amana",
     "slug": "amana-mobile",
     "version": "0.1.0",
-    "scheme": "amana",
+    "scheme": "amanavault",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTabletMode": true,
+      "scheme": "amanavault",
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Amana uses local network to communicate with backend services",
         "NSBonjourServiceTypes": ["_amana._tcp"]
@@ -23,6 +24,28 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "scheme": "amanavault",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "https",
+              "host": "amanavault.app",
+              "pathPrefix": "/trades"
+            },
+            {
+              "scheme": "https",
+              "host": "amanavault.app",
+              "pathPrefix": "/disputes"
+            },
+            {
+              "scheme": "amanavault"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "permissions": ["android.permission.ACCESS_COARSE_LOCATION"]
     },
     "web": {
