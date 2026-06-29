@@ -3,6 +3,7 @@ import { PrismaClient, TradeStatus } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
 import { getMediatorAllowlist } from "../lib/accessControl";
 import { env } from "../config/env";
+import { EncryptionService } from "./encryption.service";
 
 export interface SubmitManifestInput {
     tradeId: string;
@@ -68,7 +69,7 @@ function sha256(value: string): string {
 
 type ManifestDatabase = {
     trade: Pick<PrismaClient["trade"], "findUnique">;
-    deliveryManifest: Pick<PrismaClient["deliveryManifest"], "findUnique" | "create">;
+    deliveryManifest: Pick<PrismaClient["deliveryManifest"], "findUnique" | "create" | "update">;
 };
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -108,6 +109,8 @@ function isOutsideRetentionWindow(createdAt: Date): boolean {
 }
 
 export class ManifestService {
+    private readonly encryptionService = new EncryptionService();
+
     constructor(private readonly prisma: ManifestDatabase = defaultPrisma as unknown as ManifestDatabase) { }
 
     async submitManifest(input: SubmitManifestInput) {
@@ -141,10 +144,10 @@ export class ManifestService {
             manifest = await this.prisma.deliveryManifest.create({
                 data: {
                     tradeId: input.tradeId,
-                    driverName: input.driverName,
-                    driverIdNumber: input.driverIdNumber,
-                    vehicleRegistration: input.vehicleRegistration,
-                    routeDescription: input.routeDescription,
+                    driverName: this.encryptionService.encrypt(input.driverName, input.tradeId),
+                    driverIdNumber: this.encryptionService.encrypt(input.driverIdNumber, input.tradeId),
+                    vehicleRegistration: this.encryptionService.encrypt(input.vehicleRegistration, input.tradeId),
+                    routeDescription: this.encryptionService.encrypt(input.routeDescription, input.tradeId),
                     expectedDeliveryAt: new Date(input.expectedDeliveryAt),
                     driverNameHash,
                     driverIdHash,
@@ -179,15 +182,19 @@ export class ManifestService {
         if (!manifest) throw new ManifestNotFoundError();
 
         const retentionExpired = isOutsideRetentionWindow(manifest.createdAt);
+        const decryptedDriverName = this.encryptionService.decrypt(manifest.driverName, tradeId);
+        const decryptedDriverIdNumber = this.encryptionService.decrypt(manifest.driverIdNumber, tradeId);
+        const decryptedVehicleRegistration = this.encryptionService.decrypt(manifest.vehicleRegistration, tradeId);
+        const decryptedRouteDescription = this.encryptionService.decrypt(manifest.routeDescription, tradeId);
 
         if (isBuyer) {
             return {
                 tradeId,
                 roleView: "buyer" as const,
-                driverName: maskDriverName(manifest.driverName),
+                driverName: maskDriverName(decryptedDriverName),
                 driverIdNumber: maskDriverIdNumber(),
-                vehicleRegistration: manifest.vehicleRegistration,
-                routeDescription: manifest.routeDescription,
+                vehicleRegistration: decryptedVehicleRegistration,
+                routeDescription: decryptedRouteDescription,
                 expectedDeliveryAt: manifest.expectedDeliveryAt,
                 createdAt: manifest.createdAt,
                 retentionExpired,
@@ -216,8 +223,8 @@ export class ManifestService {
                 driverIdNumber: "REDACTED",
                 driverNameHash: manifest.driverNameHash,
                 driverIdHash: manifest.driverIdHash,
-                vehicleRegistration: manifest.vehicleRegistration,
-                routeDescription: manifest.routeDescription,
+                vehicleRegistration: decryptedVehicleRegistration,
+                routeDescription: decryptedRouteDescription,
                 expectedDeliveryAt: manifest.expectedDeliveryAt,
                 createdAt: manifest.createdAt,
                 retentionExpired,
@@ -227,12 +234,12 @@ export class ManifestService {
         return {
             tradeId,
             roleView: "seller" as const,
-            driverName: manifest.driverName,
-            driverIdNumber: manifest.driverIdNumber,
+            driverName: decryptedDriverName,
+            driverIdNumber: decryptedDriverIdNumber,
             driverNameHash: manifest.driverNameHash,
             driverIdHash: manifest.driverIdHash,
-            vehicleRegistration: manifest.vehicleRegistration,
-            routeDescription: manifest.routeDescription,
+            vehicleRegistration: decryptedVehicleRegistration,
+            routeDescription: decryptedRouteDescription,
             expectedDeliveryAt: manifest.expectedDeliveryAt,
             createdAt: manifest.createdAt,
             retentionExpired,
