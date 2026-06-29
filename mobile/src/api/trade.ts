@@ -19,14 +19,28 @@ export const tradeApi = {
   async createTrade(data: {
     sellerAddress: string;
     amountUsdc: string;
-    lossRatio?: number;
-  }): Promise<Trade> {
+    buyerLossBps?: number;
+    sellerLossBps?: number;
+    commodity?: string;
+    quantity?: string;
+    unit?: string;
+  }): Promise<{ tradeId: string; unsignedXdr: string }> {
     const response = await apiClient.post('/trades', data);
     return response.data;
   },
 
   async confirmDelivery(tradeId: string): Promise<Trade> {
     const response = await apiClient.post(`/trades/${tradeId}/confirm`);
+    return response.data;
+  },
+
+  async releaseFunds(tradeId: string): Promise<{ unsignedXdr: string }> {
+    const response = await apiClient.post(`/trades/${tradeId}/release`);
+    return response.data;
+  },
+
+  async deposit(tradeId: string): Promise<{ unsignedXdr: string }> {
+    const response = await apiClient.post(`/trades/${tradeId}/deposit`);
     return response.data;
   },
 

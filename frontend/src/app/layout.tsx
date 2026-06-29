@@ -9,6 +9,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { ToastProvider } from "@/hooks/useToast";
+import RegisterSW from "@/components/RegisterSW";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,18 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "Amana — Secure Agricultural Escrow",
   description: "Blockchain-powered agricultural trade settlement",
+  manifest: "/manifest.json",
+  themeColor: "#1a3a1a",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Amana",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-status-bar-style": "black-translucent",
+  },
 };
 
 export default function RootLayout({
@@ -45,6 +58,7 @@ export default function RootLayout({
           <AuthProvider>
             <ToastProvider>
               <AppShell>{children}</AppShell>
+              <RegisterSW />
               <ToastContainer />
             </ToastProvider>
           </AuthProvider>

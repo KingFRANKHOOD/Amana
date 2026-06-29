@@ -28,6 +28,22 @@ const STATUS_COLORS: Record<TradeStatus, string> = {
   REFUNDED: '#6B7280',
 };
 
+const STATUS_LABELS: Record<TradeStatus, string> = {
+  PENDING: 'Pending',
+  FUNDED: 'Funded',
+  IN_TRANSIT: 'In Transit',
+  DELIVERED: 'Delivered',
+  DISPUTED: 'Disputed',
+  COMPLETED: 'Completed',
+  REFUNDED: 'Refunded',
+};
+
+type TimelineStep = {
+  label: string;
+  done: boolean;
+  active: boolean;
+};
+
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <View style={styles.infoRow}>
@@ -37,10 +53,59 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
+function ContractCard({ trade }: { trade: NonNullable<ReturnType<typeof useTradeStore>['currentTrade']> }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Contract</Text>
+      <InfoRow label="Loss Ratio" value={`Buyer ${trade.buyerLossBps ?? 5000} / Seller ${trade.sellerLossBps ?? 5000} bps`} />
+      <InfoRow label="Fee" value="1% (seller)" />
+      <InfoRow label="Token" value="cNGN" />
+      {trade.commodity && <InfoRow label="Commodity" value={trade.commodity} />}
+      {trade.quantity && <InfoRow label="Quantity" value={`${trade.quantity} ${trade.unit ?? ''}`} />}
+    </View>
+  );
+}
+
+function TradeTimeline({ trade }: { trade: NonNullable<ReturnType<typeof useTradeStore>['currentTrade']> }) {
+  const statusOrder: TradeStatus[] = ['PENDING', 'FUNDED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED'];
+  const currentIdx = statusOrder.indexOf(trade.status);
+
+  const steps: TimelineStep[] = [
+    { label: 'Created', done: true, active: false },
+    { label: 'Funded', done: currentIdx >= 1, active: currentIdx === 1 },
+    { label: 'In Transit', done: currentIdx >= 2, active: currentIdx === 2 },
+    { label: 'Delivered', done: currentIdx >= 3, active: currentIdx === 3 },
+    { label: 'Completed', done: currentIdx >= 4, active: currentIdx === 4 },
+  ];
+
+  if (trade.status === 'DISPUTED') {
+    steps.push({ label: 'Disputed', done: true, active: true });
+  }
+  if (trade.status === 'REFUNDED') {
+    steps.push({ label: 'Refunded', done: true, active: true });
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Timeline</Text>
+      {steps.map((step, i) => (
+        <View key={i} style={styles.timelineRow}>
+          <View style={styles.timelineDot}>
+            {step.done && <View style={[styles.timelineDotInner, step.active && styles.timelineDotActive]} />}
+          </View>
+          <Text style={[styles.timelineLabel, step.active && styles.timelineLabelActive]}>
+            {step.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export default function TradeDetailScreen({ route, navigation }: Props) {
   const { tradeId } = route.params;
   const insets = useSafeAreaInsets();
-  const { currentTrade, isLoading, error, fetchTrade, confirmDelivery, initiateDispute, clearError } =
+  const { currentTrade, isLoading, error, fetchTrade, confirmDelivery, initiateDispute, releaseFunds, deposit, clearError } =
     useTradeStore();
 
   const [disputeModalVisible, setDisputeModalVisible] = useState(false);
@@ -50,6 +115,25 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
   useEffect(() => {
     fetchTrade(tradeId);
   }, [tradeId, fetchTrade]);
+
+  const handleDeposit = useCallback(() => {
+    Alert.alert(
+      'Deposit Funds',
+      'Send the trade amount to the escrow contract?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Deposit',
+          style: 'default',
+          onPress: async () => {
+            setActionLoading(true);
+            await deposit(tradeId);
+            setActionLoading(false);
+          },
+        },
+      ]
+    );
+  }, [tradeId, deposit]);
 
   const handleConfirmDelivery = useCallback(() => {
     Alert.alert(
@@ -70,6 +154,25 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
     );
   }, [tradeId, confirmDelivery]);
 
+  const handleReleaseFunds = useCallback(() => {
+    Alert.alert(
+      'Release Funds',
+      'Release funds to the seller? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Release',
+          style: 'destructive',
+          onPress: async () => {
+            setActionLoading(true);
+            await releaseFunds(tradeId);
+            setActionLoading(false);
+          },
+        },
+      ]
+    );
+  }, [tradeId, releaseFunds]);
+
   const handleDisputeSubmit = useCallback(async () => {
     if (!disputeReason.trim()) {
       Alert.alert('Reason required', 'Please describe the issue before submitting a dispute.');
@@ -82,12 +185,15 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
     setDisputeReason('');
   }, [tradeId, disputeReason, initiateDispute]);
 
-  const canConfirm = currentTrade?.status === 'IN_TRANSIT' || currentTrade?.status === 'FUNDED';
+  const status = currentTrade?.status ?? 'PENDING';
+  const canDeposit = status === 'PENDING';
+  const canConfirm = status === 'IN_TRANSIT' || status === 'FUNDED';
+  const canRelease = status === 'DELIVERED';
   const canDispute =
-    currentTrade?.status === 'IN_TRANSIT' ||
-    currentTrade?.status === 'FUNDED' ||
-    currentTrade?.status === 'DELIVERED';
-  const canUploadEvidence = currentTrade?.status === 'DISPUTED';
+    status === 'IN_TRANSIT' ||
+    status === 'FUNDED' ||
+    status === 'DELIVERED';
+  const canUploadEvidence = status === 'DISPUTED';
 
   if (isLoading && !currentTrade) {
     return (
@@ -108,7 +214,7 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const statusColor = STATUS_COLORS[currentTrade.status] ?? '#6B7280';
+  const statusColor = STATUS_COLORS[status] ?? '#6B7280';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -126,9 +232,12 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
         <View style={styles.statusCard}>
           <Text style={styles.tradeIdText}>#{currentTrade.tradeId.slice(0, 12)}…</Text>
           <View style={[styles.statusBadge, { backgroundColor: `${statusColor}22` }]}>
-            <Text style={[styles.statusText, { color: statusColor }]}>{currentTrade.status}</Text>
+            <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status]}</Text>
           </View>
           <Text style={styles.amountText}>{currentTrade.amountUsdc} USDC</Text>
+          {currentTrade.commodity && (
+            <Text style={styles.commodityText}>{currentTrade.commodity}{currentTrade.quantity ? ` — ${currentTrade.quantity} ${currentTrade.unit ?? ''}` : ''}</Text>
+          )}
         </View>
 
         {/* Error banner */}
@@ -152,9 +261,29 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
           )}
         </View>
 
+        {/* Contract card */}
+        <ContractCard trade={currentTrade} />
+
+        {/* Timeline */}
+        <TradeTimeline trade={currentTrade} />
+
         {/* Actions */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Actions</Text>
+
+          {canDeposit && (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.depositBtn, actionLoading && styles.btnDisabled]}
+              onPress={handleDeposit}
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>💰 Deposit Funds</Text>
+              )}
+            </TouchableOpacity>
+          )}
 
           {canConfirm && (
             <TouchableOpacity
@@ -166,6 +295,20 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.actionBtnText}>✅ Confirm Delivery</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {canRelease && (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.releaseBtn, actionLoading && styles.btnDisabled]}
+              onPress={handleReleaseFunds}
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>💸 Release Funds</Text>
               )}
             </TouchableOpacity>
           )}
@@ -189,7 +332,7 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           )}
 
-          {!canConfirm && !canDispute && !canUploadEvidence && (
+          {!canDeposit && !canConfirm && !canRelease && !canDispute && !canUploadEvidence && (
             <Text style={styles.noActionsText}>No actions available for this trade status.</Text>
           )}
         </View>
@@ -272,6 +415,7 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 16 },
   statusText: { fontSize: 13, fontWeight: '700' },
   amountText: { fontSize: 28, fontWeight: '800', color: '#1a3a1a' },
+  commodityText: { fontSize: 14, color: '#555', marginTop: 4 },
   errorBanner: {
     backgroundColor: '#FEE2E2',
     padding: 12,
@@ -296,12 +440,35 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 13, color: '#888', flex: 1 },
   infoValue: { fontSize: 13, color: '#1a3a1a', flex: 2, textAlign: 'right' },
   mono: { fontFamily: 'monospace', fontSize: 11 },
+  timelineRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  timelineDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#d0d8d0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timelineDotInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#2d6a2d',
+  },
+  timelineDotActive: {
+    backgroundColor: '#14B8A6',
+  },
+  timelineLabel: { fontSize: 13, color: '#888' },
+  timelineLabelActive: { color: '#1a3a1a', fontWeight: '600' },
   actionBtn: {
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
   },
+  depositBtn: { backgroundColor: '#3B82F6' },
   confirmBtn: { backgroundColor: '#2d6a2d' },
+  releaseBtn: { backgroundColor: '#14B8A6' },
   disputeBtn: { backgroundColor: '#DC2626' },
   evidenceBtn: { backgroundColor: '#2563EB' },
   btnDisabled: { opacity: 0.6 },
