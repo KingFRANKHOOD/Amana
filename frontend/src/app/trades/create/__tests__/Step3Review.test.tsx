@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import Step3Review from '../steps/Step3Review';
-import { TradeProvider, useTrade } from '../TradeContext';
+import { TradeProvider, useTrade, TradeData } from '../TradeContext';
 import { api } from '@/lib/api';
 import { signTransaction } from '@stellar/freighter-api';
 
@@ -67,17 +67,17 @@ jest.mock('next/navigation', () => ({
     }),
 }));
 
-const TestWrapper = ({ initialData, children }: { initialData?: any; children: React.ReactNode }) => {
+const TestWrapper = ({ initialData, children }: { initialData?: Partial<TradeData>; children: React.ReactNode }) => {
     const { update } = useTrade();
     React.useEffect(() => {
         if (initialData) {
             update(initialData);
         }
-    }, [initialData]);
+    }, [initialData, update]);
     return <>{children}</>;
 };
 
-const renderWithProvider = (initialData?: any) => {
+const renderWithProvider = (initialData?: Partial<TradeData>) => {
     return render(
         <TradeProvider>
             <TestWrapper initialData={initialData}>

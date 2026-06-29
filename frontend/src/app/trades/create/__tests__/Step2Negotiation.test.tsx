@@ -306,7 +306,6 @@ describe('Step2Negotiation', () => {
         });
 
         it('should handle special characters in notes', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const textarea = screen.getByPlaceholderText(/goods must be bagged/i);
