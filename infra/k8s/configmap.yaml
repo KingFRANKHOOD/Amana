@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amana-config
+  namespace: default
+data:
+  NODE_ENV: "production"
+  PORT: "4000"
+  TRUST_PROXY: "true"
+  STELLAR_NETWORK: "testnet"
+  STELLAR_RPC_URL: "https://soroban-testnet.stellar.org"
+  IPFS_GATEWAY_URL: "https://gateway.pinata.cloud/ipfs"
+  BACKEND_URL: "http://backend-service:4000"
+  NEXT_PUBLIC_API_URL: "https://api.amanavault.com"
