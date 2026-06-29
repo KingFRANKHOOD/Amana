@@ -1,7 +1,13 @@
+import { createHash } from "crypto";
 import { Request, Response, NextFunction } from "express";
 import { redis } from "../lib/redis";
 import { appLogger } from "./logger";
 import { alertService } from "../services/alert.service";
+
+function bodyHash(body: unknown): string {
+  const normalized = JSON.stringify(body ?? null);
+  return createHash("sha256").update(normalized).digest("hex");
+}
 
 const IDEMPOTENCY_TTL = 60 * 60 * 24; // 24 hours
 const IDEMPOTENCY_LOCK_TTL = 30; // 30 seconds
@@ -50,14 +56,21 @@ export const idempotencyMiddleware = async (
 
     if (cachedResponse) {
       appLogger.info({ key, path: req.path }, "Idempotency cache hit");
-      const { status, body, headers } = JSON.parse(cachedResponse);
-      
+      const { status, body, headers, requestBodyHash } = JSON.parse(cachedResponse);
+
+      // 409 if same key but different request body
+      if (requestBodyHash !== undefined && requestBodyHash !== bodyHash(req.body)) {
+        return res.status(409).json({
+          error: "Idempotency key already used with a different request body",
+        });
+      }
+
       // Set cached headers
       Object.entries(headers).forEach(([k, v]) => {
         res.setHeader(k, v as string);
       });
       res.setHeader("X-Idempotency-Cache", "HIT");
-      
+
       return res.status(status).json(body);
     }
 
@@ -107,6 +120,7 @@ export const idempotencyMiddleware = async (
           status: res.statusCode,
           body,
           headers: res.getHeaders(),
+          requestBodyHash: bodyHash(req.body),
         };
         redis.set(cacheKey, JSON.stringify(responseData), "EX", IDEMPOTENCY_TTL)
           .catch(err => appLogger.error({ err }, "Failed to cache idempotent response"));

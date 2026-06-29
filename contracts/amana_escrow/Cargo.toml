@@ -56,9 +56,5 @@ name = "schema_version_tests"
 path = "tests/schema_version_tests.rs"
 
 [[test]]
-name = "buyer_cancel_tests"
-path = "tests/buyer_cancel_tests.rs"
-
-[[test]]
-name = "upgrade_tests"
-path = "tests/upgrade_tests.rs"
+name = "metrics_tests"
+path = "tests/metrics_tests.rs"

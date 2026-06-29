@@ -288,6 +288,36 @@ describe("idempotencyMiddleware", () => {
     expect(headers2["X-Idempotency-Cache"]).toBe("HIT");
   });
 
+  it("returns 409 when same key is reused with a different request body", async () => {
+    const crypto = await import("crypto");
+    const originalBodyHash = crypto
+      .createHash("sha256")
+      .update(JSON.stringify({ amount: 100 }))
+      .digest("hex");
+
+    redisMock.get.mockResolvedValueOnce(
+      JSON.stringify({
+        status: 201,
+        body: { tradeId: "t-original" },
+        headers: {},
+        requestBodyHash: originalBodyHash,
+      }) as any,
+    );
+
+    // Request with a different body but the same idempotency key
+    const req = createReq({ body: { amount: 999 } } as any);
+    const { res } = createRes();
+    const next = jest.fn();
+
+    await idempotencyMiddleware(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect((res as any).body).toMatchObject({
+      error: expect.stringContaining("different request body"),
+    });
+  });
+
   it("continues request flow when Redis storage fails", async () => {
     redisMock.get.mockRejectedValueOnce(new Error("redis down") as any);
 

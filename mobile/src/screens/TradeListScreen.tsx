@@ -97,9 +97,14 @@ export default function TradeListScreen({ navigation }: Props) {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🌾 Trades</Text>
-        <TouchableOpacity onPress={handleLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => navigation.navigate('CreateTrade')}>
+            <Text style={styles.createBtnText}>+ New</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Filter tabs */}
@@ -171,6 +176,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e8e0',
   },
   headerTitle: { fontSize: 20, fontWeight: '700', color: '#1a3a1a' },
+  headerActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
+  createBtnText: { fontSize: 14, color: '#2d6a2d', fontWeight: '700' },
   logoutText: { fontSize: 14, color: '#2d6a2d', fontWeight: '500' },
   filterRow: {
     flexDirection: 'row',

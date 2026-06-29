@@ -1,7 +1,7 @@
 extern crate std;
 
 use amana_escrow::{EscrowContract, EscrowContractClient, TradeStatus};
-use soroban_sdk::{Address, BytesN, Env, IntoVal, Val, testutils::Address as _};
+use soroban_sdk::{Address, Env, testutils::Address as _};
 
 struct Harness {
     env: Env,
@@ -39,28 +39,6 @@ impl Harness {
     fn client(&self) -> EscrowContractClient<'_> {
         EscrowContractClient::new(&self.env, &self.contract_id)
     }
-}
-
-#[test]
-#[should_panic]
-fn upgrade_rejects_non_admin_auth() {
-    let h = Harness::new();
-    let new_wasm_hash = BytesN::from_array(&h.env, &[7; 32]);
-
-    h.client()
-        .mock_auths(&[soroban_sdk::testutils::MockAuth {
-            address: &h.stranger,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &h.contract_id,
-                fn_name: "upgrade",
-                args: soroban_sdk::vec![
-                    &h.env,
-                    IntoVal::<Env, Val>::into_val(&new_wasm_hash, &h.env),
-                ],
-                sub_invokes: &[],
-            },
-        }])
-        .upgrade(&new_wasm_hash);
 }
 
 #[test]

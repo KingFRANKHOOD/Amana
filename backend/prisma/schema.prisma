@@ -104,6 +104,7 @@ model Trade {
   dispute       Dispute?
   manifest      DeliveryManifest?
   evidence      TradeEvidence[]
+  notes           TradeNote[]
   watchlistEntries UserWatchlist[]
   releaseMilestones EscrowReleaseMilestone[]
 
@@ -447,6 +448,24 @@ model NotificationPreference {
   user        User     @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
 
   @@index([userAddress])
+}
+
+/// TradeNote — private encrypted notes attached to a trade by a buyer or seller.
+/// Each note is encrypted at rest with AES-256-GCM. Only the author can decrypt
+/// their own notes. Notes are limited to 2000 characters of plaintext.
+model TradeNote {
+  id          Int      @id @default(autoincrement())
+  tradeId     String   @db.VarChar(255)
+  authorAddress String @db.VarChar(255)
+  /// AES-256-GCM encrypted note content (base64-encoded iv + ciphertext + tag)
+  content     String   @db.Text
+  createdAt   DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [tradeId], onDelete: Cascade)
+
+  @@index([tradeId, authorAddress, createdAt])
+  @@index([tradeId, createdAt])
+  @@index([authorAddress])
 }
 
 /// EscrowReleaseMilestone represents one pre-defined partial release point.

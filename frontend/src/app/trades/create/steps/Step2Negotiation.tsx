@@ -1,13 +1,17 @@
 "use client";
-import { StrKey } from "@stellar/stellar-sdk";
+import { useState } from "react";
 import { useTrade } from "../TradeContext";
+import { validateStep2 } from "../validation";
 
 export default function Step2Negotiation() {
   const { data, update, setStep } = useTrade();
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   const handleBuyerRatio = (val: number) => {
     const clamped = Math.min(100, Math.max(0, val));
     update({ buyerRatio: clamped, sellerRatio: 100 - clamped });
+    setErrors((prev) => ({ ...prev, sum: "", buyerRatio: "", sellerRatio: "" }));
   };
 
   const totalValue =
@@ -15,16 +19,38 @@ export default function Step2Negotiation() {
       ? parseFloat(data.quantity) * parseFloat(data.pricePerUnit)
       : 0;
 
-  const step1Qty = parseFloat(data.quantity);
-  const step1Price = parseFloat(data.pricePerUnit);
-  const step1Valid =
-    data.commodity !== "" &&
-    data.quantity !== "" && !isNaN(step1Qty) && step1Qty > 0 &&
-    data.pricePerUnit !== "" && !isNaN(step1Price) && step1Price > 0 &&
-    data.sellerAddress !== "" && StrKey.isValidEd25519PublicKey(data.sellerAddress.trim());
-
   const buyerLoss = totalValue ? ((data.buyerRatio / 100) * totalValue).toLocaleString("en-NG") : "—";
   const sellerLoss = totalValue ? ((data.sellerRatio / 100) * totalValue).toLocaleString("en-NG") : "—";
+
+  const handleBlur = (field: string) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+    const errs = validateStep2({
+      buyerRatio: data.buyerRatio,
+      sellerRatio: data.sellerRatio,
+      deliveryDays: data.deliveryDays,
+    });
+    setErrors((prev) => ({
+      ...prev,
+      [field]: errs[field] || "",
+    }));
+  };
+
+  const handleReview = () => {
+    const allTouched: Record<string, boolean> = {};
+    for (const key of ["buyerRatio", "sellerRatio", "deliveryDays"]) {
+      allTouched[key] = true;
+    }
+    setTouched(allTouched);
+    const errs = validateStep2({
+      buyerRatio: data.buyerRatio,
+      sellerRatio: data.sellerRatio,
+      deliveryDays: data.deliveryDays,
+    });
+    setErrors(errs);
+    if (Object.keys(errs).length === 0) {
+      setStep(3);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,6 +89,7 @@ export default function Step2Negotiation() {
             )}
           </div>
         </div>
+        {errors.sum && touched.buyerRatio && <p className="text-status-danger text-xs text-center">{errors.sum}</p>}
       </div>
 
       {/* Delivery window */}
@@ -77,9 +104,12 @@ export default function Step2Negotiation() {
             const raw = parseInt(e.target.value);
             const clamped = isNaN(raw) ? 1 : Math.min(90, Math.max(1, raw));
             update({ deliveryDays: String(clamped) });
+            setErrors((prev) => ({ ...prev, deliveryDays: "" }));
           }}
+          onBlur={() => handleBlur("deliveryDays")}
           className="bg-bg-input border border-border-default rounded-md px-4 py-3 text-text-primary focus:outline-none focus:border-border-focus"
         />
+        {errors.deliveryDays && touched.deliveryDays && <p className="text-status-danger text-xs mt-1">{errors.deliveryDays}</p>}
       </div>
 
       {/* Notes */}
@@ -108,8 +138,7 @@ export default function Step2Negotiation() {
           Back
         </button>
         <button
-          disabled={!step1Valid}
-          onClick={() => setStep(3)}
+          onClick={handleReview}
           className="flex-1 h-12 rounded-full bg-gradient-gold-cta text-text-inverse font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Review Trade

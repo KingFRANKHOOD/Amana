@@ -630,4 +630,65 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
       return 'Unknown contract error';
     }
   }
+
+  public async loadAccount(publicKey: string): Promise<Horizon.AccountResponse> {
+    try {
+      return await this.horizonServer.loadAccount(publicKey);
+    } catch (error) {
+      throw classifyStellarServiceError(error);
+    }
+  }
+
+  public async findPaymentPath(params: {
+    sourceAssets: any[];
+    destinationAsset: any;
+    destinationAmount: string;
+  }): Promise<any[]> {
+    try {
+      const result = await this.horizonServer
+        .strictReceivePaths(params.sourceAssets, params.destinationAsset, params.destinationAmount)
+        .call();
+      return result.records;
+    } catch (error) {
+      throw classifyStellarServiceError(error);
+    }
+  }
+
+  public buildStrictSendOp(params: {
+    sendAsset: any;
+    sendAmount: string;
+    destination: string;
+    destAsset: any;
+    destMin: string;
+    path?: any[];
+  }) {
+    return {
+      type: 'pathPaymentStrictSend' as const,
+      sendAsset: params.sendAsset,
+      sendAmount: params.sendAmount,
+      destination: params.destination,
+      destAsset: params.destAsset,
+      destMin: params.destMin,
+      path: params.path ?? [],
+    };
+  }
+
+  public buildStrictReceiveOp(params: {
+    sendAsset: any;
+    sendMax: string;
+    destination: string;
+    destAsset: any;
+    destAmount: string;
+    path?: any[];
+  }) {
+    return {
+      type: 'pathPaymentStrictReceive' as const,
+      sendAsset: params.sendAsset,
+      sendMax: params.sendMax,
+      destination: params.destination,
+      destAsset: params.destAsset,
+      destAmount: params.destAmount,
+      path: params.path ?? [],
+    };
+  }
 }

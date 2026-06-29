@@ -77,6 +77,9 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Security audit
+        run: npm audit --audit-level=high
+
       - name: Verify lock file is not dirty
         run: git diff --exit-code package-lock.json
 
@@ -124,6 +127,9 @@ jobs:
 
       - name: Install deps
         run: npm ci
+
+      - name: Security audit
+        run: npm audit --audit-level=high
 
       - name: Verify lock file is not dirty
         run: git diff --exit-code package-lock.json
@@ -200,6 +206,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+
+      - name: Cache cargo-audit binary
+        id: cache-cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}-v0.21
+
+      - name: Install cargo-audit
+        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked
+
+      - name: Security audit (cargo)
+        working-directory: contracts
+        run: cargo audit
 
       - name: Deployment safety checks
         if: needs.changes.outputs.contracts == 'true'

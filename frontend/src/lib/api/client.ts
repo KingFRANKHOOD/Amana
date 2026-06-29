@@ -1,10 +1,16 @@
 import { getApiBaseUrl } from "./env";
 import { trackApiFailure } from "@/lib/analytics";
 import { parseBackendError, BackendErrorResponse } from "../errorHandler";
+import { z } from "zod";
 
 export type FetchOptions = RequestInit & {
   token?: string | null;
+  skipAuth?: boolean;
 };
+
+export type ApiResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: ApiError };
 
 export class ApiError extends Error {
   status: number;
@@ -18,6 +24,13 @@ export class ApiError extends Error {
     this.data = data;
     this.backendError = parseBackendError(this);
   }
+}
+
+const TOKEN_STORAGE_KEY = "amana_jwt";
+
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
 }
 
 function createHeaders(
@@ -67,12 +80,14 @@ export async function request<T>(
   endpoint: string,
   options: FetchOptions = {},
 ): Promise<T> {
-  const { token, headers, ...fetchOptions } = options;
+  const { token, skipAuth, headers, ...fetchOptions } = options;
+
+  const authToken = token ?? (!skipAuth ? getStoredToken() : null);
 
   try {
     const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       ...fetchOptions,
-      headers: createHeaders(headers, token),
+      headers: createHeaders(headers, authToken),
     });
 
     const data = await response.json().catch(() => null);
@@ -101,5 +116,47 @@ export async function request<T>(
       0,
       error instanceof Error ? error.message : "Network error",
     );
+  }
+}
+
+export async function requestWithResult<T>(
+  endpoint: string,
+  schema?: z.ZodSchema<T>,
+  options: FetchOptions = {},
+): Promise<ApiResult<T>> {
+  try {
+    const data = await request<T>(endpoint, options);
+
+    if (schema) {
+      const validationResult = schema.safeParse(data);
+      if (!validationResult.success) {
+        throw new ApiError(
+          500,
+          "Response validation failed",
+          validationResult.error,
+        );
+      }
+      return { success: true, data: validationResult.data };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 401) {
+        const storedToken = getStoredToken();
+        if (storedToken) {
+          sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+          window.location.reload();
+        }
+      }
+      return { success: false, error };
+    }
+    return {
+      success: false,
+      error: new ApiError(
+        0,
+        error instanceof Error ? error.message : "Unknown error",
+      ),
+    };
   }
 }

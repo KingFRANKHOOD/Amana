@@ -2,7 +2,7 @@ extern crate std;
 
 use amana_escrow::{EscrowContract, EscrowContractClient, TradeStatus};
 use soroban_sdk::{
-    Address, Env, IntoVal, Val, symbol_short,
+    Address, Env, IntoVal, TryIntoVal, Val, symbol_short,
     testutils::{Address as _, Events as _},
     token,
     xdr::ContractEventBody,
@@ -73,13 +73,16 @@ fn cancel_by_buyer_cancels_created_trade_and_emits_event() {
     let trade = h.client().get_trade(&trade_id);
     assert!(matches!(trade.status, TradeStatus::Cancelled));
 
-    let events = h.env.events().all().events();
+    let all_events = h.env.events().all();
+    let events = all_events.events();
     let event = events.last().expect("cancel event should be emitted");
     match &event.body {
         ContractEventBody::V0(v0) => {
+            let expected: soroban_sdk::xdr::ScVal =
+                IntoVal::<Env, Val>::into_val(&symbol_short!("TCNBYR"), &h.env).try_into_val(&h.env).unwrap();
             assert_eq!(
                 v0.topics.get(0).unwrap(),
-                symbol_short!("TCNBYR").into_val(&h.env)
+                &expected
             );
             match &v0.data {
                 soroban_sdk::xdr::ScVal::Vec(Some(payload)) => assert_eq!(payload.len(), 2),

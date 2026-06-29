@@ -17,10 +17,12 @@ import { createEscrowReleaseRouter } from "./routes/escrow.release.routes";
 import { createEscrowScheduleRouter } from "./routes/escrow.schedule.routes";
 import { createTradeManifestRouter } from "./routes/trade.manifest.routes";
 import { createManifestRouter } from "./routes/manifest.routes";
+import { createTradeNotesRouter } from "./routes/trade.notes.routes";
 import { createEvidenceRouter } from "./routes/evidence.routes";
 import { createAuditTrailRouter } from "./routes/auditTrail.routes";
 import { createGoalsRouter } from "./routes/goals.routes";
 import { createHealthRouter } from "./routes/health.routes";
+import { createHealthDetailRouter } from "./routes/health.detail.routes";
 import { createNotificationPreferencesRouter } from "./routes/notifications.preferences.routes";
 import { createNotificationsRouter } from "./routes/notifications.inapp.routes";
 import { disputeRoutes } from "./routes/dispute.routes";
@@ -113,6 +115,7 @@ export function createApp(): express.Application {
 
   // Enhanced health check with deep introspection
   app.use("/health", createHealthRouter());
+  app.use("/health", createHealthDetailRouter());
 
   app.use("/auth", authRoutes);
   app.use("/wallet", walletRoutes);
@@ -129,6 +132,9 @@ export function createApp(): express.Application {
   app.use("/trades", createEscrowReleaseRouter());
   app.use("/trades", createEscrowScheduleRouter());
   app.use("/trades", createTradeRouter());
+
+  // Notes: POST /trades/:id/notes and GET /trades/:id/notes
+  app.use("/trades", createTradeNotesRouter());
 
   // Manifest: POST /trades/:id/manifest
   app.use("/trades/:id/manifest", createTradeManifestRouter());

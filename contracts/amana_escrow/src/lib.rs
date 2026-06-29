@@ -27,6 +27,10 @@ pub const MAX_HASH_LEN: u32 = 256;
 /// `get_schema_version()` and run the matching migration. See SECURITY.md.
 pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 
+/// Maximum single-trade escrow value in stroops (i128). Set to 1 trillion cNGN
+/// to guard against fat-finger amounts that would exhaust token supply.
+pub const MAX_TRADE_VALUE: i128 = 1_000_000_000_000_i128;
+
 /// Minimum allowed platform fee in basis points (0.01%).
 pub const MIN_FEE_BPS: u32 = 1;
 /// Maximum allowed platform fee in basis points (5%).
@@ -166,6 +170,15 @@ pub struct TradeExpiredEvent {
     pub caller: Address,
 }
 
+/// Emitted when both parties agree to extend the delivery deadline.
+#[contractevent(topics = ["DEDEXT"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeadlineExtendedEvent {
+    pub trade_id: u64,
+    pub old_deadline: u64,
+    pub new_deadline: u64,
+}
+
 /// Emitted when seller submits hashed delivery manifest fields.
 #[contractevent(topics = ["MNFST"])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -198,6 +211,14 @@ pub struct FeeRateUpdatedEvent {
     pub new_fee_bps: u32,
 }
 
+/// Emitted when the admin withdraws accrued platform fees from the contract.
+#[contractevent(topics = ["FEEWTH"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FeesWithdrawnEvent {
+    pub amount: i128,
+    pub destination: Address,
+}
+
 /// Emitted when a buyer initiates a path payment deposit.
 #[contractevent(topics = ["PTHINT"])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,6 +241,19 @@ pub struct PathPaymentExecutedEvent {
     pub source_amount: i128,
     pub dest_token: Address,
     pub dest_amount: i128,
+}
+
+// ---------------------------------------------------------------------------
+// Trade history — stored event record
+// ---------------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TradeEvent {
+    pub event_type: soroban_sdk::String,
+    pub timestamp: u64,
+    pub actor: Address,
+    pub data: soroban_sdk::String,
 }
 
 // ---------------------------------------------------------------------------
@@ -340,6 +374,8 @@ pub struct ReleaseSequence {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataKey {
     Trade(u64),
+    /// Ordered list of TradeEvent records for a given trade, appended on each state transition.
+    TradeHistory(u64),
     Initialized,
     Admin,
     CngnContract,
@@ -367,6 +403,15 @@ pub enum DataKey {
     PathPaymentIntent(u64),
     /// Stores release sequencing timestamps for a trade.
     ReleaseSequence(u64),
+    /// Aggregate number of trades ever created.
+    TotalTrades,
+    /// Aggregate number of disputes ever initiated.
+    TotalDisputes,
+    /// Aggregate number of disputes ever resolved.
+    TotalResolved,
+    /// Cumulative platform fees accrued from trade completions and dispute
+    /// resolutions. Admin may withdraw any portion via `withdraw_fees()`.
+    AccruedFees,
     /// Monotonic storage-schema version, written at initialize() and read via
     /// get_schema_version(). Enables forward-compatible migrations without
     /// disturbing any existing key. Appended last so the XDR encoding of every
@@ -554,6 +599,48 @@ impl EscrowContract {
         FeeRateUpdatedEvent { old_fee_bps, new_fee_bps }.publish(&env);
     }
 
+    /// Withdraw accrued platform fees from the contract to `destination`.
+    /// Only the admin may call this. Reverts if `amount` is zero or exceeds
+    /// the currently accrued fees. Emits `FeesWithdrawn`.
+    pub fn withdraw_fees(env: Env, amount: i128, destination: Address) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        admin.require_auth();
+        assert!(amount > 0, "amount must be greater than zero");
+        let accrued_fees: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccruedFees)
+            .unwrap_or(0);
+        assert!(
+            amount <= accrued_fees,
+            "insufficient accrued fees"
+        );
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::CngnContract)
+            .expect("Not initialized");
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer(&env.current_contract_address(), &destination, &amount);
+        env.storage()
+            .instance()
+            .set(&DataKey::AccruedFees, &(accrued_fees - amount));
+        FeesWithdrawnEvent { amount, destination }.publish(&env);
+        Self::bump_instance_ttl(&env);
+    }
+
+    /// Return the total accrued platform fees that remain unwithdrawn.
+    pub fn get_accrued_fees(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::AccruedFees)
+            .unwrap_or(0)
+    }
+
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
@@ -683,6 +770,10 @@ impl EscrowContract {
         let ledger_seq = env.ledger().sequence() as u64;
         let trade_id = (ledger_seq << 32) | next_id;
         env.storage().instance().set(&NEXT_TRADE_ID, &(next_id + 1));
+        let total_trades: u64 = env.storage().instance().get(&DataKey::TotalTrades).unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalTrades, &(total_trades + 1));
         let cngn_address: Address = env
             .storage()
             .instance()
@@ -708,6 +799,7 @@ impl EscrowContract {
             &DataKey::ReleaseSequence(trade_id),
             &Self::default_release_sequence(&trade),
         );
+        Self::record_trade_event(&env, trade_id, "created", trade.buyer.clone(), "trade created");
         TradeCreatedEvent {
             trade_id,
             buyer,
@@ -737,6 +829,7 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.funded_at = Some(at);
         });
+        Self::record_trade_event(&env, trade_id, "funded", trade.buyer.clone(), "escrow funded");
         TradeFundedEvent {
             trade_id,
             amount: trade.amount,
@@ -818,6 +911,38 @@ impl EscrowContract {
             .instance()
             .get(&DataKey::SourceToken)
             .expect("SourceToken not configured")
+    }
+
+    /// Return the admin address.
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized")
+    }
+
+    /// Return the token contract address (formerly cngn_contract).
+    pub fn get_token_contract(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::CngnContract)
+            .expect("Not initialized")
+    }
+
+    /// Return the treasury address.
+    pub fn get_treasury(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Treasury)
+            .expect("Not initialized")
+    }
+
+    /// Return the current platform fee in basis points.
+    pub fn get_fee_bps(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::FeeBps)
+            .unwrap_or(0)
     }
 
     /// Finalize a previously initiated path payment once cNGN has been received.
@@ -1060,6 +1185,58 @@ impl EscrowContract {
         .publish(&env);
     }
 
+    /// Allow both the buyer and seller to mutually agree to extend the delivery
+    /// deadline on a funded trade. The caller is the buyer (who triggers the
+    /// extension), and the contract also requires the seller's authorization.
+    ///
+    /// Reverts if:
+    /// - The trade is not in `Funded` status.
+    /// - The current ledger timestamp is at or past the existing deadline.
+    /// - The new deadline is not strictly in the future.
+    pub fn extend_deadline(env: Env, trade_id: u64, new_deadline: u64) {
+        let key = DataKey::Trade(trade_id);
+        let mut trade: Trade = Self::load_trade(&env, &key);
+
+        // Require authorization from both parties
+        trade.buyer.require_auth();
+        trade.seller.require_auth();
+
+        assert!(
+            matches!(trade.status, TradeStatus::Funded),
+            "Trade must be Funded to extend deadline"
+        );
+
+        let old_deadline = trade
+            .expires_at
+            .expect("Trade has no deadline to extend");
+
+        let now = env.ledger().timestamp();
+        assert!(now < old_deadline, "Cannot extend a deadline that has already passed");
+        assert!(
+            new_deadline > now,
+            "New deadline must be in the future"
+        );
+
+        trade.expires_at = Some(new_deadline);
+        trade.updated_at = now;
+        Self::save_trade(&env, &key, &trade);
+        Self::record_trade_event(
+            &env,
+            trade_id,
+            "deadline_extended",
+            trade.buyer.clone(),
+            "delivery deadline extended",
+        );
+
+        DeadlineExtendedEvent {
+            trade_id,
+            old_deadline,
+            new_deadline,
+        }
+        .publish(&env);
+        Self::bump_instance_ttl(&env);
+    }
+
     fn execute_cancellation(env: &Env, trade: &mut Trade, refund_amount: i128, caller: Address) {
         if refund_amount > 0 {
             let token_client = token::Client::new(env, &trade.token);
@@ -1077,6 +1254,7 @@ impl EscrowContract {
             sequence.cancelled_at = Some(at);
         });
 
+        Self::record_trade_event(env, trade.trade_id, "cancelled", caller.clone(), "trade cancelled");
         TradeCancelledEvent {
             trade_id: trade.trade_id,
             refund_amount,
@@ -1101,6 +1279,7 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.delivered_at = Some(at);
         });
+        Self::record_trade_event(&env, trade_id, "delivered", trade.buyer.clone(), "delivery confirmed");
         DeliveryConfirmedEvent {
             trade_id,
             delivered_at: now,
@@ -1118,17 +1297,17 @@ impl EscrowContract {
 
         caller.require_auth();
 
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
         assert!(
             caller == trade.buyer || caller == admin,
             "Unauthorized caller"
         );
 
         let fee_bps: u32 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
-        let treasury: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Treasury)
-            .expect("Treasury not set");
         let fee_amount = checked_fee_amount(trade.amount, fee_bps);
         let seller_amount = trade.amount - fee_amount;
         assert!(
@@ -1144,7 +1323,14 @@ impl EscrowContract {
             &seller_amount,
         );
         if fee_amount > 0 {
-            token_client.transfer(&env.current_contract_address(), &treasury, &fee_amount);
+            let accrued_fees: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccruedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccruedFees, &(accrued_fees + fee_amount));
         }
         let now = env.ledger().timestamp();
         trade.status = TradeStatus::Completed;
@@ -1153,6 +1339,7 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.released_at = Some(at);
         });
+        Self::record_trade_event(&env, trade_id, "released", caller.clone(), "funds released to seller");
         FundsReleasedEvent {
             trade_id,
             seller_amount,
@@ -1215,6 +1402,16 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.disputed_at = Some(at);
         });
+
+        // Increment aggregate dispute counter
+        let total_disputes: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalDisputes)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDisputes, &(total_disputes + 1));
 
         // Emit on-chain event
         DisputeInitiatedEvent {
@@ -1292,11 +1489,6 @@ impl EscrowContract {
 
         // 3. Load fee config
         let fee_bps: u32 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
-        let treasury: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Treasury)
-            .expect("Treasury not set");
 
         // 4. Payout math with loss-sharing
         let total = trade.amount;
@@ -1332,7 +1524,14 @@ impl EscrowContract {
             token_client.transfer(&env.current_contract_address(), &trade.seller, &seller_net);
         }
         if fee > 0 {
-            token_client.transfer(&env.current_contract_address(), &treasury, &fee);
+            let accrued_fees: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccruedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccruedFees, &(accrued_fees + fee));
         }
         if buyer_refund > 0 {
             token_client.transfer(&env.current_contract_address(), &trade.buyer, &buyer_refund);
@@ -1346,6 +1545,16 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.resolved_at = Some(at);
         });
+
+        // Increment aggregate resolved counter
+        let total_resolved: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalResolved)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalResolved, &(total_resolved + 1));
 
         // 7. Emit event
         DisputeResolvedEvent {
@@ -1617,6 +1826,57 @@ impl EscrowContract {
     pub fn get_trade(env: Env, trade_id: u64) -> Trade {
         let key = DataKey::Trade(trade_id);
         Self::load_trade(&env, &key)
+    }
+
+    /// Returns the chronological list of stored events for a trade.
+    /// Returns an empty Vec if the trade has no recorded events or does not exist.
+    pub fn get_trade_history(env: Env, trade_id: u64) -> soroban_sdk::Vec<TradeEvent> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TradeHistory(trade_id))
+            .unwrap_or_else(|| soroban_sdk::Vec::new(&env))
+    }
+
+    /// Appends a TradeEvent to the persistent history for trade_id.
+    fn record_trade_event(
+        env: &Env,
+        trade_id: u64,
+        event_type: &str,
+        actor: Address,
+        data: &str,
+    ) {
+        let key = DataKey::TradeHistory(trade_id);
+        let mut history: soroban_sdk::Vec<TradeEvent> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+        history.push_back(TradeEvent {
+            event_type: soroban_sdk::String::from_str(env, event_type),
+            timestamp: env.ledger().timestamp(),
+            actor,
+            data: soroban_sdk::String::from_str(env, data),
+        });
+        env.storage().persistent().set(&key, &history);
+    }
+
+    pub fn get_contract_metrics(env: Env) -> (u64, u64, u64) {
+        let total_trades: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalTrades)
+            .unwrap_or(0);
+        let total_disputes: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalDisputes)
+            .unwrap_or(0);
+        let total_resolved: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalResolved)
+            .unwrap_or(0);
+        (total_trades, total_disputes, total_resolved)
     }
 }
 
@@ -3113,7 +3373,7 @@ mod test {
         let token_mint = token::StellarAssetClient::new(env, &usdc_id);
         token_mint.mint(&buyer, &amount);
         let trade_id =
-            client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps);
+            client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps, &None);
         client.deposit(&trade_id);
         let reason = soroban_sdk::String::from_str(env, "QmInvariantTest");
         client.initiate_dispute(&trade_id, &buyer, &reason);
@@ -3689,6 +3949,52 @@ mod test {
             );
             assert_eq!(cngn_token.balance(&contract_id), 0);
         }
+}
+    #[test]
+    #[should_panic(expected = "Cannot cancel trade in current status")]
+    fn test_cancel_trade_rejects_after_completed() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _usdc_id, buyer, _seller, _treasury, trade_id) =
+            setup_disputed_trade(&env, 10_000, 100);
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let mediator = Address::generate(&env);
+        client.set_mediator(&mediator);
+        client.resolve_dispute(&trade_id, &mediator, &10_000_u32);
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Completed));
+        client.cancel_trade(&trade_id, &buyer);
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot cancel trade in current status")]
+    fn test_cancel_trade_rejects_after_cancelled() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+        client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
+        let amount = 10_000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32, &None);
+        client.deposit(&trade_id);
+        // Admin cancels the funded trade immediately
+        client.cancel_trade(&trade_id, &admin);
+        assert!(matches!(
+            client.get_trade(&trade_id).status,
+            TradeStatus::Cancelled
+        ));
+        // Buyer can no longer cancel - already Cancelled
+        client.cancel_trade(&trade_id, &buyer);
+
     }
 }
 
@@ -5869,7 +6175,7 @@ mod property_tests {
             let seller_loss_bps = 10_000 - buyer_loss_bps;
 
             let trade_id =
-                client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps);
+                client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps, &None);
             client.deposit(&trade_id);
             client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
 
@@ -6144,6 +6450,7 @@ mod property_tests {
             &case.amount,
             &case.buyer_loss_bps,
             &case.seller_loss_bps,
+            &None,
         );
 
         match case.route % 4 {
@@ -6229,6 +6536,7 @@ mod property_tests {
             &case.amount,
             &case.buyer_loss_bps,
             &case.seller_loss_bps,
+            &None,
         );
 
         let rejected = match case.route % 4 {
@@ -7034,7 +7342,7 @@ mod fee_and_evidence_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         // fee_bps = 0 so fee is also zero
-        client.initialize(&admin, &usdc_id, &treasury, &0);
+        client.initialize(&admin, &usdc_id, &treasury, &0, &usdc_id);
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);

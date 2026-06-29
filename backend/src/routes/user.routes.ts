@@ -2,9 +2,9 @@ import { Router } from "express";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { getMe, updateMe, getUserByAddress } from "../controllers/user.controller";
 import { RATE_LIMIT_CONFIG } from "../config/rateLimit";
-import { createIpRateLimiter } from "../lib/rateLimit";
+import { createWalletRateLimiter } from "../lib/rateLimit";
 
-const limiter = createIpRateLimiter(RATE_LIMIT_CONFIG.user);
+const limiter = createWalletRateLimiter(RATE_LIMIT_CONFIG.user);
 
 const router = Router();
 

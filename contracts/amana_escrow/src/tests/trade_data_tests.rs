@@ -27,7 +27,7 @@ mod trade_data_tests {
         let (contract_id, _token_id, buyer, seller, _treasury) = setup(&env, 10_000);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &10_000i128, &5000u32, &5000u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000i128, &5000u32, &5000u32, &None);
         let trade = client.get_trade(&trade_id);
 
         assert_eq!(trade.trade_id, trade_id);
@@ -44,7 +44,7 @@ mod trade_data_tests {
         let (contract_id, _token_id, buyer, seller, _treasury) = setup(&env, 10_000);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &10_000i128, &5000u32, &5000u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000i128, &5000u32, &5000u32, &None);
 
         env.as_contract(&contract_id, || {
             let raw: TradeData = env
@@ -70,7 +70,7 @@ mod trade_data_tests {
         let (contract_id, token_id, buyer, seller, _treasury) = setup(&env, 10_000);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &10_000i128, &5000u32, &5000u32);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000i128, &5000u32, &5000u32, &None);
 
         // Re-write as explicit V0 (simulates what the contract already does).
         env.as_contract(&contract_id, || {

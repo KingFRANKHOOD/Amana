@@ -414,7 +414,6 @@ mod event_schema_tests {
         let client = EscrowContractClient::new(&env, &contract_id);
         let mediator = Address::generate(&env);
 
-<<<<<<< HEAD
         client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         assert_last_event_topics(
             &env,
@@ -445,24 +444,6 @@ mod event_schema_tests {
         // Event schema coverage for each individual lifecycle event is handled by the
         // dedicated tests above. This golden path now focuses on ensuring the full
         // lifecycle completes without regressions.
-=======
-        client.set_mediator(&mediator);
-        let tid = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
-        client.deposit(&tid);
-        client.initiate_dispute(&tid, &buyer, &String::from_str(&env, "QmGolden"));
-        client.resolve_dispute(&tid, &mediator, &5_000_u32);
-
-        // Verify final status
-        assert!(matches!(
-            client.get_trade(&tid).status,
-            TradeStatus::Completed
-        ));
-
-        // Note: For some reason reading all events here is failing so we will just test
-        // the status transition which is sufficient for golden test logic in the context of
-        // the other individual tests working.
-        // We know from the other passing tests that the individual events emit correctly.
->>>>>>> upstream/main
     }
 
 }

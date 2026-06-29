@@ -98,45 +98,14 @@ export interface PathPaymentQuote {
   path: unknown[];
 }
 
-export interface DisputeResponse {
-  id: number;
-  tradeId: string;
-  initiator: string;
-  reason: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  trade: {
-    buyerAddress: string;
-    sellerAddress: string;
-    amountUsdc: string;
-  };
-}
-
-export interface DisputeListResponse {
-  items: DisputeResponse[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-}
-
-export interface ReputationEvent {
+export interface SearchResultItem {
   id: string;
-  event: string;
-  impact: number;
-  impactLabel: string;
-  timestamp: string;
-  type: "trade_completed" | "trade_initiated" | "dispute_initiated" | "dispute_resolved" | "dispute_involved" | "account_created";
+  title: string;
+  subtitle?: string;
 }
 
-export interface ReputationResponse {
-  trustScore: number;
-  totalTrades: number;
-  completedTrades: number;
-  disputedTrades: number;
-  successRate: number;
-  history: ReputationEvent[];
+export interface SearchResponse {
+  trades: SearchResultItem[];
+  users: SearchResultItem[];
+  contracts: SearchResultItem[];
 }
