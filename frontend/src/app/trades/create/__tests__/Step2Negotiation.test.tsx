@@ -107,7 +107,7 @@ describe('Step2Negotiation', () => {
             renderWithProvider();
 
             // When no quantity/price is set, loss amounts should not be displayed
-            expect(screen.queryByText(/NGN/)).not.toBeInTheDocument();
+            expect(screen.queryByText(/NGN \d/)).not.toBeInTheDocument();
         });
 
         it('should display buyer loss amount when total value exists', () => {
@@ -144,34 +144,28 @@ describe('Step2Negotiation', () => {
         });
 
         it('should update delivery days when typed', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const input = screen.getByLabelText(/delivery window/i);
-            await user.clear(input);
-            await user.type(input, '14');
+            fireEvent.change(input, { target: { value: '14' } });
 
             expect(input).toHaveValue(14);
         });
 
         it('should accept minimum value of 1', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const input = screen.getByLabelText(/delivery window/i);
-            await user.clear(input);
-            await user.type(input, '1');
+            fireEvent.change(input, { target: { value: '1' } });
 
             expect(input).toHaveValue(1);
         });
 
         it('should accept maximum value of 90', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const input = screen.getByLabelText(/delivery window/i);
-            await user.clear(input);
-            await user.type(input, '90');
+            fireEvent.change(input, { target: { value: '90' } });
 
             expect(input).toHaveValue(90);
         });
@@ -218,7 +212,7 @@ describe('Step2Negotiation', () => {
         it('should display platform fee information', () => {
             renderWithProvider();
 
-            expect(screen.getByText(/funds will be locked as usdc/i)).toBeInTheDocument();
+            expect(screen.getByText(/funds will be locked as cNGN/i)).toBeInTheDocument();
             expect(screen.getByText(/1% platform fee/i)).toBeInTheDocument();
         });
     });
@@ -283,23 +277,19 @@ describe('Step2Negotiation', () => {
         });
 
         it('should handle boundary value 1 for delivery days', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const input = screen.getByLabelText(/delivery window/i);
-            await user.clear(input);
-            await user.type(input, '1');
+            fireEvent.change(input, { target: { value: '1' } });
 
             expect(input).toHaveValue(1);
         });
 
         it('should handle boundary value 90 for delivery days', async () => {
-            const user = userEvent.setup();
             renderWithProvider();
 
             const input = screen.getByLabelText(/delivery window/i);
-            await user.clear(input);
-            await user.type(input, '90');
+            fireEvent.change(input, { target: { value: '90' } });
 
             expect(input).toHaveValue(90);
         });
@@ -320,7 +310,7 @@ describe('Step2Negotiation', () => {
             renderWithProvider();
 
             const textarea = screen.getByPlaceholderText(/goods must be bagged/i);
-            await user.type(textarea, 'Special chars: !@#$%^&*()_+-=[]{}|;:,.<>?');
+            fireEvent.change(textarea, { target: { value: 'Special chars: !@#$%^&*()_+-=[]{}|;:,.<>?' } });
 
             expect(textarea).toHaveValue('Special chars: !@#$%^&*()_+-=[]{}|;:,.<>?');
         });

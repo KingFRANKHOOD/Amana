@@ -67,8 +67,9 @@ export default function Step2Negotiation() {
 
       {/* Delivery window */}
       <div className="flex flex-col gap-1">
-        <label className="text-sm text-text-secondary">Delivery Window (days)</label>
+        <label htmlFor="deliveryDays" className="text-sm text-text-secondary">Delivery Window (days)</label>
         <input
+          id="deliveryDays"
           type="number"
           min="1"
           max="90"
