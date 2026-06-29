@@ -78,10 +78,7 @@ describe("Evidence Upload and Playback Journey", () => {
 
       render(<VideoUploadCard onUpload={onUpload} />);
 
-      const input = screen
-        .getByRole("button", { name: /browse/i })
-        .closest("div")
-        ?.querySelector('input[type="file"]');
+      const input = document.querySelector('input[type="file"]');
 
       if (input) {
         const file = new File(["video content"], "evidence.mp4", {
@@ -138,10 +135,7 @@ describe("Evidence Upload and Playback Journey", () => {
 
       render(<VideoUploadCard />);
 
-      const input = screen
-        .getByRole("button", { name: /browse/i })
-        .closest("div")
-        ?.querySelector('input[type="file"]');
+      const input = document.querySelector('input[type="file"]');
 
       if (input) {
         const file = new File(["video"], "test.mp4", { type: "video/mp4" });
@@ -171,11 +165,7 @@ describe("Evidence Upload and Playback Journey", () => {
     it("should display IPFS hash after successful upload", async () => {
       const mockXhr = {
         upload: { onprogress: jest.fn() },
-        onload: jest.fn(function () {
-          this.status = 200;
-          this.responseText = JSON.stringify({ IpfsHash: "QmSuccessHash456" });
-          this.onload?.();
-        }),
+        onload: jest.fn(),
         onerror: jest.fn(),
         open: jest.fn(),
         setRequestHeader: jest.fn(),
@@ -183,16 +173,14 @@ describe("Evidence Upload and Playback Journey", () => {
           setTimeout(() => this.onload?.(), 100);
         }),
         status: 200,
+        responseText: JSON.stringify({ IpfsHash: "QmSuccessHash456" }),
       };
 
       global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
 
       render(<VideoUploadCard />);
 
-      const input = screen
-        .getByRole("button", { name: /browse/i })
-        .closest("div")
-        ?.querySelector('input[type="file"]');
+      const input = document.querySelector('input[type="file"]');
 
       if (input) {
         const file = new File(["video"], "test.mp4", { type: "video/mp4" });
@@ -209,11 +197,7 @@ describe("Evidence Upload and Playback Journey", () => {
 
       const mockXhr = {
         upload: { onprogress: jest.fn() },
-        onload: jest.fn(function () {
-          this.status = 200;
-          this.responseText = JSON.stringify({ IpfsHash: "QmCallbackHash" });
-          this.onload?.();
-        }),
+        onload: jest.fn(),
         onerror: jest.fn(),
         open: jest.fn(),
         setRequestHeader: jest.fn(),
@@ -221,16 +205,14 @@ describe("Evidence Upload and Playback Journey", () => {
           setTimeout(() => this.onload?.(), 100);
         }),
         status: 200,
+        responseText: JSON.stringify({ IpfsHash: "QmCallbackHash" }),
       };
 
       global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
 
       render(<VideoUploadCard onUpload={onUpload} />);
 
-      const input = screen
-        .getByRole("button", { name: /browse/i })
-        .closest("div")
-        ?.querySelector('input[type="file"]');
+      const input = document.querySelector('input[type="file"]');
 
       if (input) {
         const file = new File(["video"], "test.mp4", { type: "video/mp4" });
@@ -368,10 +350,7 @@ describe("Evidence Upload and Playback Journey", () => {
 
       render(<VideoUploadCard />);
 
-      const input = screen
-        .getByRole("button", { name: /browse/i })
-        .closest("div")
-        ?.querySelector('input[type="file"]');
+      const input = document.querySelector('input[type="file"]');
 
       if (input) {
         const file = new File(["video"], "test.mp4", { type: "video/mp4" });
@@ -392,10 +371,7 @@ describe("Evidence Upload and Playback Journey", () => {
     it("should handle invalid file types", async () => {
       render(<VideoUploadCard />);
 
-      const input = screen
-        .getByRole("button", { name: /browse/i })
-        .closest("div")
-        ?.querySelector('input[type="file"]');
+      const input = document.querySelector('input[type="file"]');
 
       if (input) {
         // The input only accepts video files, so invalid types should be rejected by browser
@@ -430,11 +406,7 @@ describe("Evidence Upload and Playback Journey", () => {
 
       const mockXhr = {
         upload: { onprogress: jest.fn() },
-        onload: jest.fn(function () {
-          this.status = 200;
-          this.responseText = JSON.stringify({ IpfsHash: "QmConcurrentHash" });
-          this.onload?.();
-        }),
+        onload: jest.fn(),
         onerror: jest.fn(),
         open: jest.fn(),
         setRequestHeader: jest.fn(),
@@ -442,6 +414,7 @@ describe("Evidence Upload and Playback Journey", () => {
           setTimeout(() => this.onload?.(), 50);
         }),
         status: 200,
+        responseText: JSON.stringify({ IpfsHash: "QmConcurrentHash" }),
       };
 
       global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
@@ -468,15 +441,14 @@ describe("Evidence Upload and Playback Journey", () => {
 
       const mockXhr = {
         upload: {
-          onprogress: jest.fn((cb) => {
+          set onprogress(cb: any) {
             progressCallback = cb;
-          }),
+          },
+          get onprogress() {
+            return progressCallback;
+          }
         },
-        onload: jest.fn(function () {
-          this.status = 200;
-          this.responseText = JSON.stringify({ IpfsHash: "QmProgressHash" });
-          this.onload?.();
-        }),
+        onload: jest.fn(),
         onerror: jest.fn(),
         open: jest.fn(),
         setRequestHeader: jest.fn(),
@@ -487,33 +459,26 @@ describe("Evidence Upload and Playback Journey", () => {
               loaded: 50,
               total: 100,
               lengthComputable: true,
-            } as ProgressEvent);
-            progressCallback({
-              loaded: 100,
-              total: 100,
-              lengthComputable: true,
-            } as ProgressEvent);
+            } as unknown as ProgressEvent);
           }
           setTimeout(() => this.onload?.(), 100);
         }),
         status: 200,
+        responseText: JSON.stringify({ IpfsHash: "QmProgressHash" }),
       };
 
       global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
 
       render(<VideoUploadCard />);
 
-      const input = screen
-        .getByRole("button", { name: /browse/i })
-        .closest("div")
-        ?.querySelector('input[type="file"]');
+      const input = document.querySelector('input[type="file"]');
 
       if (input) {
         const file = new File(["video"], "test.mp4", { type: "video/mp4" });
         fireEvent.change(input, { target: { files: [file] } });
 
         await waitFor(() => {
-          expect(mockXhr.upload.onprogress).toHaveBeenCalled();
+          expect(screen.getByText(/50%/i)).toBeInTheDocument();
         });
       }
     });
@@ -624,7 +589,7 @@ describe("Evidence Upload and Playback Journey", () => {
         evidence: [
           {
             id: "ev-001",
-            cid: "QmTestHash123",
+            cid: "QmXoypizjW3WknFixtNs4T2YHJPL9J5w1j3tTRG5fC1234",
             mimeType: "video/mp4",
             uploadedBy: "seller-address",
             createdAt: "2026-04-24T10:00:00Z",
@@ -638,7 +603,7 @@ describe("Evidence Upload and Playback Journey", () => {
       const evidence = result.evidence[0];
 
       // IPFS hash should be immutable
-      expect(evidence.cid).toBe("QmTestHash123");
+      expect(evidence.cid).toBe("QmXoypizjW3WknFixtNs4T2YHJPL9J5w1j3tTRG5fC1234");
       expect(evidence.cid).toMatch(/^Qm[a-zA-Z0-9]{44}$/);
     });
 
@@ -650,7 +615,7 @@ describe("Evidence Upload and Playback Journey", () => {
             cid: "QmTestHash123",
             mimeType: "video/mp4",
             uploadedBy: "seller-address",
-            createdAt: "2026-04-24T10:00:00Z",
+            createdAt: "2026-04-24T10:00:00.000Z",
           },
         ],
       };
