@@ -4,4 +4,5 @@ export type RootStackParamList = {
   TradeDetail: { tradeId: string };
   CreateTrade: undefined;
   EvidenceCapture: { tradeId: string };
+  VaultDashboard: undefined;
 };

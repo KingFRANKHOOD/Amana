@@ -20,6 +20,7 @@ import TradeListScreen from './screens/TradeListScreen';
 import TradeDetailScreen from './screens/TradeDetailScreen';
 import CreateTradeScreen from './screens/CreateTradeScreen';
 import EvidenceCaptureScreen from './screens/EvidenceCaptureScreen';
+import VaultDashboard from './screens/VaultDashboard';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -79,6 +80,7 @@ export default function App() {
             <Stack.Screen name="TradeDetail" component={TradeDetailScreen} />
             <Stack.Screen name="CreateTrade" component={CreateTradeScreen} />
             <Stack.Screen name="EvidenceCapture" component={EvidenceCaptureScreen} />
+            <Stack.Screen name="VaultDashboard" component={VaultDashboard} />
           </Stack.Navigator>
         </NavigationContainer>
         <StatusBar style="dark" />

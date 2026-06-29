@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle, AlertTriangle, XCircle, Info, X } from "lucide-react";
 import { ToastMessage } from "@/types/toast";
 import { clsx } from "clsx";
@@ -14,7 +14,7 @@ export function Toast({
   type,
   title,
   message,
-  duration = 4000,
+  duration = 5000,
   onClose,
 }: ToastProps) {
   const [isClosing, setIsClosing] = useState(false);
