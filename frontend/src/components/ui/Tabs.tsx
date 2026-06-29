@@ -23,7 +23,7 @@ export function Tabs<T extends React.Key = string>({
   className = "",
 }: TabsProps<T>) {
   return (
-    <div className={`flex gap-2 ${variant === "underline" ? "border-b border-border-default pb-px" : ""} ${className}`}>
+    <div role="tablist" className={`flex gap-2 ${variant === "underline" ? "border-b border-border-default pb-px" : ""} ${className}`}>
       {items.map((item) => {
         const isActive = activeValue === item.value;
 
