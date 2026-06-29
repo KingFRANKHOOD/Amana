@@ -37,7 +37,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       } else {
         throw new Error('API failed');
       }
-    } catch (error) {
+    } catch {
       // Mock data fallback
       const mockNotifications: Notification[] = [
         {
@@ -74,7 +74,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     // Optionally make a patch request to API
     try {
       await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
-    } catch (e) {
+    } catch {
       // Ignore API failure for client-side state update
     }
 
@@ -93,7 +93,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   markAllRead: async () => {
     try {
       await fetch('/api/notifications/read', { method: 'PATCH' });
-    } catch (e) {
+    } catch {
       // Ignore API failure for client-side state update
     }
 

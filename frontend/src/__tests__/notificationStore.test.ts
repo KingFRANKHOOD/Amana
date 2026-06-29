@@ -44,7 +44,7 @@ describe('Notification Store', () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         json: jest.fn().mockResolvedValue({ notifications: mockApiNotifications }),
-      } as any);
+      } as unknown as Response);
 
       const store = useNotificationStore.getState();
       const fetchPromise = store.fetch();
@@ -84,7 +84,7 @@ describe('Notification Store', () => {
         unreadCount: 2,
       });
 
-      global.fetch = jest.fn().mockResolvedValue({ ok: true } as any);
+      global.fetch = jest.fn().mockResolvedValue({ ok: true } as unknown as Response);
 
       const store = useNotificationStore.getState();
       await store.markRead('1');
@@ -109,7 +109,7 @@ describe('Notification Store', () => {
         unreadCount: 2,
       });
 
-      global.fetch = jest.fn().mockResolvedValue({ ok: true } as any);
+      global.fetch = jest.fn().mockResolvedValue({ ok: true } as unknown as Response);
 
       const store = useNotificationStore.getState();
       await store.markAllRead();
