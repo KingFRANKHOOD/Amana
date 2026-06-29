@@ -1,17 +1,32 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import React from 'react';
 import Step3Review from '../steps/Step3Review';
-import { TradeProvider } from '../TradeContext';
+import { TradeProvider, useTrade } from '../TradeContext';
+import { api } from '@/lib/api';
+import { signTransaction } from '@stellar/freighter-api';
+
+// Mock @stellar/stellar-sdk to simplify address validation in tests
+jest.mock('@stellar/stellar-sdk', () => ({
+    StrKey: {
+        isValidEd25519PublicKey: jest.fn((address: string) => {
+            return (address.startsWith('G') || address.startsWith('M')) && address.length >= 40;
+        }),
+    },
+}));
+
+// Mutable mock object for useAuth
+const mockUseAuth = {
+    token: 'mock-token',
+    isAuthenticated: true,
+    connectWallet: jest.fn(),
+    authenticate: jest.fn(),
+    isWalletConnected: true,
+};
 
 // Mock the hooks and modules
 jest.mock('@/hooks/useAuth', () => ({
-    useAuth: () => ({
-        token: 'mock-token',
-        isAuthenticated: true,
-        connectWallet: jest.fn(),
-        authenticate: jest.fn(),
-        isWalletConnected: true,
-    }),
+    useAuth: () => mockUseAuth,
 }));
 
 jest.mock('@radix-ui/react-dialog', () => {
@@ -35,6 +50,10 @@ jest.mock('@/lib/api', () => ({
             create: jest.fn(),
         },
     },
+    apiConfig: {
+        getStellarNetworkPassphrase: jest.fn(() => 'Test SDF Network ; September 2015'),
+        getStellarRpcUrl: jest.fn(() => 'https://soroban-testnet.stellar.org'),
+    },
     ApiError: class ApiError extends Error { },
 }));
 
@@ -48,15 +67,47 @@ jest.mock('next/navigation', () => ({
     }),
 }));
 
-const renderWithProvider = () => {
+const TestWrapper = ({ initialData, children }: { initialData?: any; children: React.ReactNode }) => {
+    const { update } = useTrade();
+    React.useEffect(() => {
+        if (initialData) {
+            update(initialData);
+        }
+    }, [initialData]);
+    return <>{children}</>;
+};
+
+const renderWithProvider = (initialData?: any) => {
     return render(
         <TradeProvider>
-            <Step3Review />
+            <TestWrapper initialData={initialData}>
+                <Step3Review />
+            </TestWrapper>
         </TradeProvider>
     );
 };
 
 describe('Step3Review', () => {
+    beforeEach(() => {
+        mockUseAuth.token = 'mock-token';
+        mockUseAuth.isAuthenticated = true;
+        mockUseAuth.isWalletConnected = true;
+
+        (api.trades.create as jest.Mock).mockResolvedValue({
+            tradeId: 'trade-123',
+            unsignedXdr: 'mock-xdr',
+        });
+        (signTransaction as jest.Mock).mockResolvedValue({
+            signedTxXdr: 'signed-xdr',
+        });
+        global.fetch = jest.fn().mockResolvedValue({
+            json: jest.fn().mockResolvedValue({
+                result: { hash: 'tx-hash-123' },
+            }),
+        } as unknown as Response);
+        jest.clearAllMocks();
+    });
+
     describe('summary display', () => {
         it('should render review rows', () => {
             renderWithProvider();
@@ -145,7 +196,7 @@ describe('Step3Review', () => {
         it('should display cNGN amount in authorization message', () => {
             renderWithProvider();
 
-            expect(screen.getByText(/locking 0 usdc/i)).toBeInTheDocument();
+            expect(screen.getByText(/locking 0 cNGN/i)).toBeInTheDocument();
         });
     });
 
@@ -176,9 +227,20 @@ describe('Step3Review', () => {
     });
 
     describe('legal disclaimer modal', () => {
+        const validData = {
+            commodity: 'Maize',
+            quantity: '100',
+            pricePerUnit: '10',
+            sellerAddress: 'GBRP4ZDXSS6NZPMTVNE7DZ47JNV7OFPJMIVG4FDCMNZP7CHH4656YEXI',
+            buyerRatio: 50,
+            sellerRatio: 50,
+            deliveryDays: '7',
+            notes: 'Some notes',
+        };
+
         it('should open disclaimer modal when submit button is clicked', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             const submitButton = screen.getByRole('button', { name: /lock funds & create trade/i });
             await user.click(submitButton);
@@ -188,7 +250,7 @@ describe('Step3Review', () => {
 
         it('should close disclaimer modal when decline is clicked', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             expect(screen.getByTestId('legal-disclaimer-modal')).toBeInTheDocument();
@@ -199,8 +261,19 @@ describe('Step3Review', () => {
     });
 
     describe('submit button states', () => {
+        const validData = {
+            commodity: 'Maize',
+            quantity: '100',
+            pricePerUnit: '10',
+            sellerAddress: 'GBRP4ZDXSS6NZPMTVNE7DZ47JNV7OFPJMIVG4FDCMNZP7CHH4656YEXI',
+            buyerRatio: 50,
+            sellerRatio: 50,
+            deliveryDays: '7',
+            notes: 'Some notes',
+        };
+
         it('should be enabled when authenticated', () => {
-            renderWithProvider();
+            renderWithProvider(validData);
 
             const submitButton = screen.getByRole('button', { name: /lock funds & create trade/i });
             expect(submitButton).not.toBeDisabled();
@@ -208,34 +281,43 @@ describe('Step3Review', () => {
 
         it('should show loading state when submitting', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            (api.trades.create as jest.Mock).mockReturnValue(new Promise(() => {}));
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
 
-            await waitFor(() => {
-                expect(screen.getByText(/creating trade/i)).toBeInTheDocument();
-            });
+            expect(screen.getByText(/creating trade/i)).toBeInTheDocument();
         });
 
         it('should be disabled while loading', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            (api.trades.create as jest.Mock).mockReturnValue(new Promise(() => {}));
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
 
-            await waitFor(() => {
-                const loadingButton = screen.getByRole('button', { name: /creating trade/i });
-                expect(loadingButton).toBeDisabled();
-            });
+            const loadingButton = screen.getByRole('button', { name: /creating trade/i });
+            expect(loadingButton).toBeDisabled();
         });
     });
 
     describe('error states', () => {
+        const validData = {
+            commodity: 'Maize',
+            quantity: '100',
+            pricePerUnit: '10',
+            sellerAddress: 'GBRP4ZDXSS6NZPMTVNE7DZ47JNV7OFPJMIVG4FDCMNZP7CHH4656YEXI',
+            buyerRatio: 50,
+            sellerRatio: 50,
+            deliveryDays: '7',
+            notes: 'Some notes',
+        };
+
         it('should display error message when submission fails', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
@@ -245,16 +327,10 @@ describe('Step3Review', () => {
         });
 
         it('should display authentication error when not authenticated', async () => {
-            // Mock unauthenticated state
-            jest.mock('@/hooks/useAuth', () => ({
-                useAuth: () => ({
-                    token: null,
-                    isAuthenticated: false,
-                    connectWallet: jest.fn(),
-                    authenticate: jest.fn(),
-                    isWalletConnected: false,
-                }),
-            }));
+            // Mutate mutable mock object to unauthenticated state
+            mockUseAuth.token = null;
+            mockUseAuth.isAuthenticated = false;
+            mockUseAuth.isWalletConnected = false;
 
             renderWithProvider();
 
@@ -264,9 +340,20 @@ describe('Step3Review', () => {
     });
 
     describe('success states', () => {
+        const validData = {
+            commodity: 'Maize',
+            quantity: '100',
+            pricePerUnit: '10',
+            sellerAddress: 'GBRP4ZDXSS6NZPMTVNE7DZ47JNV7OFPJMIVG4FDCMNZP7CHH4656YEXI',
+            buyerRatio: 50,
+            sellerRatio: 50,
+            deliveryDays: '7',
+            notes: 'Some notes',
+        };
+
         it('should display success message after successful submission', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
@@ -274,7 +361,7 @@ describe('Step3Review', () => {
 
         it('should display trade ID after successful submission', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
@@ -282,7 +369,7 @@ describe('Step3Review', () => {
 
         it('should display transaction hash after successful submission', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
@@ -290,7 +377,7 @@ describe('Step3Review', () => {
 
         it('should display view trade details button after successful submission', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
@@ -298,7 +385,7 @@ describe('Step3Review', () => {
 
         it('should display view all trades link after successful submission', async () => {
             const user = userEvent.setup();
-            renderWithProvider();
+            renderWithProvider(validData);
 
             await user.click(screen.getByRole('button', { name: /lock funds & create trade/i }));
             await user.click(screen.getByRole('button', { name: /accept/i }));
@@ -331,21 +418,24 @@ describe('Step3Review', () => {
             renderWithProvider();
 
             const commodityRow = screen.getByText('Commodity').closest('div');
-            expect(commodityRow).toHaveTextContent('');
+            const valueSpan = commodityRow?.querySelector('.text-text-primary');
+            expect(valueSpan?.textContent).toBe('');
         });
 
         it('should handle empty quantity', () => {
             renderWithProvider();
 
             const quantityRow = screen.getByText('Quantity').closest('div');
-            expect(quantityRow).toHaveTextContent('kg');
+            const valueSpan = quantityRow?.querySelector('.text-text-primary');
+            expect(valueSpan?.textContent).toBe(' kg');
         });
 
         it('should handle empty price', () => {
             renderWithProvider();
 
             const priceRow = screen.getByText('Price per unit').closest('div');
-            expect(priceRow).toHaveTextContent('NGN');
+            const valueSpan = priceRow?.querySelector('.text-text-primary');
+            expect(valueSpan?.textContent).toBe('NGN ');
         });
 
         it('should handle empty seller address', () => {
@@ -390,8 +480,8 @@ describe('Step3Review', () => {
 
             const submitButton = screen.getByRole('button', { name: /lock funds & create trade/i });
 
-            // Button should be enabled (validation happens on backend)
-            expect(submitButton).not.toBeDisabled();
+            // Button should be disabled when empty
+            expect(submitButton).toBeDisabled();
         });
     });
 });
