@@ -5,6 +5,8 @@ import { prisma as defaultPrisma } from "../lib/db";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { AuthRequest } from "../services/auth.service";
 import { TradeAccessDeniedError, TradeService } from "../services/trade.service";
+import { EncryptionService } from "../services/encryption.service";
+import { getAdminAllowlistLowercase } from "../lib/accessControl";
 import { validateRequest } from "../middleware/validateRequest";
 import { idempotencyMiddleware } from "../middleware/idempotency";
 import { 
@@ -111,6 +113,71 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
       return next(error);
     }
   });
+
+  router.post(
+    "/:id/rotate-key",
+    authMiddleware,
+    validateRequest({ params: tradeIdParamSchema }),
+    async (req: AuthRequest, res, next: NextFunction) => {
+      const callerAddress = requireWalletFromJwt(req, res);
+      if (!callerAddress) {
+        return;
+      }
+
+      try {
+        const tradeId = req.params.id as string;
+        const trade = await prisma.trade.findUnique({ where: { tradeId } });
+        if (!trade) {
+          res.status(404).json({ error: "Trade not found" });
+          return;
+        }
+
+        const caller = callerAddress.toLowerCase();
+        const isAdmin = getAdminAllowlistLowercase().has(caller);
+        const isParty =
+          trade.buyerAddress.toLowerCase() === caller ||
+          trade.sellerAddress.toLowerCase() === caller;
+        if (!isParty && !isAdmin) {
+          res.status(403).json({ error: "Forbidden" });
+          return;
+        }
+
+        const { keyVersion = "v2" } = req.body as { keyVersion?: string };
+        const encryptionService = new EncryptionService();
+
+        const notes = await prisma.tradeNote.findMany({
+          where: { tradeId },
+          select: { id: true, content: true },
+        });
+
+        await Promise.all(
+          notes.map((note) =>
+            prisma.tradeNote.update({
+              where: { id: note.id },
+              data: { content: encryptionService.rotateCiphertext(note.content, tradeId, keyVersion) },
+            }),
+          ),
+        );
+
+        const manifest = await prisma.deliveryManifest.findUnique({ where: { tradeId } });
+        if (manifest) {
+          await prisma.deliveryManifest.update({
+            where: { tradeId },
+            data: {
+              driverName: encryptionService.rotateCiphertext(manifest.driverName, tradeId, keyVersion),
+              driverIdNumber: encryptionService.rotateCiphertext(manifest.driverIdNumber, tradeId, keyVersion),
+              vehicleRegistration: encryptionService.rotateCiphertext(manifest.vehicleRegistration, tradeId, keyVersion),
+              routeDescription: encryptionService.rotateCiphertext(manifest.routeDescription, tradeId, keyVersion),
+            },
+          });
+        }
+
+        res.status(200).json({ ok: true, keyVersion });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get(
     "/:id", 

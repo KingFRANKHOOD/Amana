@@ -1,7 +1,7 @@
-import { PrismaClient, TradeStatus } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
-import { encrypt, decrypt } from "../lib/crypto";
 import { getAdminAllowlistLowercase } from "../lib/accessControl";
+import { EncryptionService } from "./encryption.service";
 
 export class TradeNoteAccessDeniedError extends Error {
   status = 403;
@@ -22,6 +22,8 @@ export class TradeNoteNotFoundError extends Error {
 type NotesDatabase = Pick<PrismaClient, "trade" | "tradeNote">;
 
 export class TradeNotesService {
+  private readonly encryptionService = new EncryptionService();
+
   constructor(
     private readonly prisma: NotesDatabase = defaultPrisma,
   ) {}
@@ -36,7 +38,7 @@ export class TradeNotesService {
       trade.sellerAddress.toLowerCase() === caller;
     if (!isParty) throw new TradeNoteAccessDeniedError();
 
-    const encrypted = encrypt(content);
+    const encrypted = this.encryptionService.encrypt(content, tradeId);
 
     return this.prisma.tradeNote.create({
       data: {
@@ -69,7 +71,7 @@ export class TradeNotesService {
       authorAddress: note.authorAddress,
       content:
         note.authorAddress === caller || isAdmin
-          ? decrypt(note.content)
+          ? this.encryptionService.decrypt(note.content, tradeId)
           : null,
       createdAt: note.createdAt,
     }));

@@ -5,7 +5,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { tradeNotesRoutes } from "../routes/trade.notes.routes";
 import { AuthService } from "../services/auth.service";
 
-import { errorHandler } from "../errors/errorHandler";
+import { errorHandler } from "../middleware/errorHandler";
 import { encrypt, decrypt } from "../lib/crypto";
 
 jest.mock("../services/auth.service", () => ({
