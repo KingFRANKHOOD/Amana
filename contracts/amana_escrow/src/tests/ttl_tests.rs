@@ -7,11 +7,13 @@
 ///      simulated ledger jump that would otherwise expire the instance.
 ///   3. Multiple sequential ledger jumps do not break state.
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod ttl_tests {
-    use crate::{EscrowContract, EscrowContractClient, TradeStatus, INSTANCE_TTL_EXTEND_TO};
+    use crate::{EscrowContract, EscrowContractClient, INSTANCE_TTL_EXTEND_TO, TradeStatus};
     use soroban_sdk::{
+        Address, Env, String,
         testutils::{Address as _, Deployer as _, Ledger as _},
-        token, Address, Env, String,
+        token,
     };
 
     // -----------------------------------------------------------------------
@@ -48,7 +50,13 @@ mod ttl_tests {
             client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
             client.set_mediator(&mediator);
 
-            Ctx { env, contract_id, buyer, seller, mediator }
+            Ctx {
+                env,
+                contract_id,
+                buyer,
+                seller,
+                mediator,
+            }
         }
 
         fn client(&self) -> EscrowContractClient<'_> {
@@ -93,8 +101,14 @@ mod ttl_tests {
 
         assert_eq!(ctx.ttl(), 1, "TTL must be 1 just before expiry");
 
-        ctx.client()
-            .create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        ctx.client().create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
 
         assert_eq!(
             ctx.ttl(),
@@ -113,8 +127,14 @@ mod ttl_tests {
         let client = ctx.client();
 
         // Create trade
-        let trade_id =
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id = client.create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
         assert!(matches!(
             client.get_trade(&trade_id).status,
             TradeStatus::Created
@@ -127,7 +147,11 @@ mod ttl_tests {
             client.get_trade(&trade_id).status,
             TradeStatus::Funded
         ));
-        assert_eq!(ctx.ttl(), INSTANCE_TTL_EXTEND_TO, "TTL must be refreshed after deposit");
+        assert_eq!(
+            ctx.ttl(),
+            INSTANCE_TTL_EXTEND_TO,
+            "TTL must be refreshed after deposit"
+        );
 
         // Another jump, then dispute
         ctx.advance_to_near_expiry();
@@ -159,18 +183,38 @@ mod ttl_tests {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
 
-        let trade_id_1 =
-            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32, &None);
-        assert_eq!(trade_id_1 & 0xFFFF_FFFF_u64, 1, "first trade counter must be 1");
+        let trade_id_1 = client.create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &1_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
+        assert_eq!(
+            trade_id_1 & 0xFFFF_FFFF_u64,
+            1,
+            "first trade counter must be 1"
+        );
 
         // Advance to 1 ledger before expiry
         ctx.advance_to_near_expiry();
         assert_eq!(ctx.ttl(), 1, "TTL must be 1 just before expiry");
 
         // create_trade bumps TTL
-        let trade_id_2 =
-            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32, &None);
-        assert_eq!(trade_id_2 & 0xFFFF_FFFF_u64, 2, "second trade counter must be 2");
+        let trade_id_2 = client.create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &1_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
+        assert_eq!(
+            trade_id_2 & 0xFFFF_FFFF_u64,
+            2,
+            "second trade counter must be 2"
+        );
         assert_eq!(
             ctx.ttl(),
             INSTANCE_TTL_EXTEND_TO,
@@ -191,7 +235,14 @@ mod ttl_tests {
             assert_eq!(ctx.ttl(), 1, "TTL must be 1 before jump {i}");
 
             // Any hot-path call bumps TTL
-            client.create_trade(&ctx.buyer, &ctx.seller, &1_000_i128, &5000_u32, &5000_u32, &None);
+            client.create_trade(
+                &ctx.buyer,
+                &ctx.seller,
+                &1_000_i128,
+                &5000_u32,
+                &5000_u32,
+                &None,
+            );
             assert_eq!(
                 ctx.ttl(),
                 INSTANCE_TTL_EXTEND_TO,
@@ -208,8 +259,14 @@ mod ttl_tests {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
 
-        let trade_id =
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id = client.create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
         client.deposit(&trade_id);
         client.confirm_delivery(&trade_id);
         client.release_funds(&trade_id, &ctx.buyer);

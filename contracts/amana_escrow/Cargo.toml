@@ -58,3 +58,7 @@ path = "tests/schema_version_tests.rs"
 [[test]]
 name = "metrics_tests"
 path = "tests/metrics_tests.rs"
+
+[[test]]
+name = "state_machine_fuzz_tests"
+path = "tests/state_machine_fuzz_tests.rs"

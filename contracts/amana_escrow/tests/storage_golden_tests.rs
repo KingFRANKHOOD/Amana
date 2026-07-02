@@ -10,11 +10,7 @@
 extern crate std;
 
 use amana_escrow::DataKey;
-use soroban_sdk::{
-    Address, Bytes, Env,
-    testutils::Address as _,
-    xdr::ToXdr,
-};
+use soroban_sdk::{Address, Bytes, Env, testutils::Address as _, xdr::ToXdr};
 use std::string::String;
 
 // ---------------------------------------------------------------------------
@@ -96,7 +92,11 @@ fn test_golden_datakey_cngn_contract() {
     let env = Env::default();
     env.mock_all_auths();
     let hex = key_to_hex(&env, &DataKey::CngnContract);
-    assert_golden!(hex, key_to_hex(&env, &DataKey::CngnContract), "CngnContract");
+    assert_golden!(
+        hex,
+        key_to_hex(&env, &DataKey::CngnContract),
+        "CngnContract"
+    );
     assert_eq!(hex, key_to_hex(&env, &DataKey::CngnContract));
 }
 
@@ -124,7 +124,11 @@ fn test_golden_datakey_mediator_legacy() {
     let env = Env::default();
     env.mock_all_auths();
     let hex = key_to_hex(&env, &DataKey::Mediator);
-    assert_golden!(hex, key_to_hex(&env, &DataKey::Mediator), "Mediator(legacy)");
+    assert_golden!(
+        hex,
+        key_to_hex(&env, &DataKey::Mediator),
+        "Mediator(legacy)"
+    );
     assert_eq!(hex, key_to_hex(&env, &DataKey::Mediator));
     // Must differ from the registry variant
     let addr = Address::generate(&env);
@@ -161,7 +165,11 @@ fn test_golden_datakey_cancel_request() {
     let env = Env::default();
     env.mock_all_auths();
     let hex = key_to_hex(&env, &DataKey::CancelRequest(42u64));
-    assert_golden!(hex, key_to_hex(&env, &DataKey::CancelRequest(42u64)), "CancelRequest(42)");
+    assert_golden!(
+        hex,
+        key_to_hex(&env, &DataKey::CancelRequest(42u64)),
+        "CancelRequest(42)"
+    );
     assert_ne!(
         hex,
         key_to_hex(&env, &DataKey::CancelRequest(43u64)),
@@ -201,7 +209,11 @@ fn test_golden_datakey_dispute_data() {
     let env = Env::default();
     env.mock_all_auths();
     let hex = key_to_hex(&env, &DataKey::DisputeData(7u64));
-    assert_golden!(hex, key_to_hex(&env, &DataKey::DisputeData(7u64)), "DisputeData(7)");
+    assert_golden!(
+        hex,
+        key_to_hex(&env, &DataKey::DisputeData(7u64)),
+        "DisputeData(7)"
+    );
     assert_ne!(
         hex,
         key_to_hex(&env, &DataKey::DisputeData(8u64)),
@@ -214,7 +226,11 @@ fn test_golden_datakey_evidence_list() {
     let env = Env::default();
     env.mock_all_auths();
     let hex = key_to_hex(&env, &DataKey::EvidenceList(3u64));
-    assert_golden!(hex, key_to_hex(&env, &DataKey::EvidenceList(3u64)), "EvidenceList(3)");
+    assert_golden!(
+        hex,
+        key_to_hex(&env, &DataKey::EvidenceList(3u64)),
+        "EvidenceList(3)"
+    );
     assert_ne!(
         hex,
         key_to_hex(&env, &DataKey::EvidenceList(4u64)),
@@ -234,7 +250,11 @@ fn test_golden_datakey_video_proof() {
     let env = Env::default();
     env.mock_all_auths();
     let hex = key_to_hex(&env, &DataKey::VideoProof(5u64));
-    assert_golden!(hex, key_to_hex(&env, &DataKey::VideoProof(5u64)), "VideoProof(5)");
+    assert_golden!(
+        hex,
+        key_to_hex(&env, &DataKey::VideoProof(5u64)),
+        "VideoProof(5)"
+    );
     assert_ne!(
         hex,
         key_to_hex(&env, &DataKey::VideoProof(6u64)),
@@ -247,7 +267,11 @@ fn test_golden_datakey_manifest() {
     let env = Env::default();
     env.mock_all_auths();
     let hex = key_to_hex(&env, &DataKey::Manifest(9u64));
-    assert_golden!(hex, key_to_hex(&env, &DataKey::Manifest(9u64)), "Manifest(9)");
+    assert_golden!(
+        hex,
+        key_to_hex(&env, &DataKey::Manifest(9u64)),
+        "Manifest(9)"
+    );
     assert_ne!(
         hex,
         key_to_hex(&env, &DataKey::Manifest(10u64)),
@@ -266,20 +290,20 @@ fn test_all_datakey_variants_are_distinct() {
     let addr = Address::generate(&env);
 
     let keys: &[(&str, DataKey)] = &[
-        ("Initialized",          DataKey::Initialized),
-        ("Admin",                DataKey::Admin),
-        ("CngnContract",         DataKey::CngnContract),
-        ("FeeBps",               DataKey::FeeBps),
-        ("Treasury",             DataKey::Treasury),
-        ("Mediator",             DataKey::Mediator),
-        ("MediatorRegistry",     DataKey::MediatorRegistry(addr.clone())),
-        ("Trade",                DataKey::Trade(1u64)),
-        ("CancelRequest",        DataKey::CancelRequest(1u64)),
-        ("Evidence",             DataKey::Evidence(1u64, addr.clone())),
-        ("DisputeData",          DataKey::DisputeData(1u64)),
-        ("EvidenceList",         DataKey::EvidenceList(1u64)),
-        ("VideoProof",           DataKey::VideoProof(1u64)),
-        ("Manifest",             DataKey::Manifest(1u64)),
+        ("Initialized", DataKey::Initialized),
+        ("Admin", DataKey::Admin),
+        ("CngnContract", DataKey::CngnContract),
+        ("FeeBps", DataKey::FeeBps),
+        ("Treasury", DataKey::Treasury),
+        ("Mediator", DataKey::Mediator),
+        ("MediatorRegistry", DataKey::MediatorRegistry(addr.clone())),
+        ("Trade", DataKey::Trade(1u64)),
+        ("CancelRequest", DataKey::CancelRequest(1u64)),
+        ("Evidence", DataKey::Evidence(1u64, addr.clone())),
+        ("DisputeData", DataKey::DisputeData(1u64)),
+        ("EvidenceList", DataKey::EvidenceList(1u64)),
+        ("VideoProof", DataKey::VideoProof(1u64)),
+        ("Manifest", DataKey::Manifest(1u64)),
     ];
 
     let hexes: std::vec::Vec<_> = keys.iter().map(|(_, k)| key_to_hex(&env, k)).collect();

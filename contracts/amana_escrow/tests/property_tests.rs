@@ -6,9 +6,9 @@
 /// Iteration count is controlled by AMANA_PROP_TESTS (default 64).
 extern crate std;
 
-use amana_escrow::{EscrowContract, EscrowContractClient, TradeStatus};
-use rand::{Rng, SeedableRng};
+use amana_escrow::{EscrowContract, EscrowContractClient};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use soroban_sdk::{Address, Env, String as SStr, testutils::Address as _, token};
 use std::env as stdenv;
 
@@ -45,6 +45,7 @@ struct PropEnv {
     env: Env,
     contract_id: Address,
     usdc_id: Address,
+    #[allow(dead_code)]
     admin: Address,
     treasury: Address,
 }
@@ -61,7 +62,13 @@ impl PropEnv {
         let contract_id = env.register(EscrowContract, ());
         EscrowContractClient::new(&env, &contract_id)
             .initialize(&admin, &usdc_id, &treasury, &fee_bps, &usdc_id);
-        PropEnv { env, contract_id, usdc_id, admin, treasury }
+        PropEnv {
+            env,
+            contract_id,
+            usdc_id,
+            admin,
+            treasury,
+        }
     }
 
     fn client(&self) -> EscrowContractClient<'_> {
@@ -81,15 +88,25 @@ impl PropEnv {
         let client = self.client();
 
         token::StellarAssetClient::new(&self.env, &self.usdc_id).mint(&buyer, &amount);
-        let trade_id =
-            client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps, &None);
+        let trade_id = client.create_trade(
+            &buyer,
+            &seller,
+            &amount,
+            &buyer_loss_bps,
+            &seller_loss_bps,
+            &None,
+        );
         client.deposit(&trade_id);
         client.initiate_dispute(&trade_id, &buyer, &SStr::from_str(&self.env, "QmPropTest"));
         client.set_mediator(&mediator);
         client.resolve_dispute(&trade_id, &mediator, &seller_gets_bps);
 
         let tok = token::Client::new(&self.env, &self.usdc_id);
-        (tok.balance(&seller), tok.balance(&buyer), tok.balance(&self.treasury))
+        (
+            tok.balance(&seller),
+            tok.balance(&buyer),
+            tok.balance(&self.treasury),
+        )
     }
 }
 
@@ -101,7 +118,9 @@ impl PropEnv {
 fn test_prop_fund_conservation_seeded() {
     let seed = get_seed();
     let iters = get_iterations();
-    std::eprintln!("[#382] fund_conservation seed={seed} iters={iters}  replay: AMANA_PROP_SEED={seed} AMANA_PROP_TESTS={iters} cargo test test_prop_fund_conservation_seeded");
+    std::eprintln!(
+        "[#382] fund_conservation seed={seed} iters={iters}  replay: AMANA_PROP_SEED={seed} AMANA_PROP_TESTS={iters} cargo test test_prop_fund_conservation_seeded"
+    );
 
     let mut rng = StdRng::seed_from_u64(seed);
 

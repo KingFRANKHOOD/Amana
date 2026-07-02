@@ -44,7 +44,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "u32": 5292
+                  "u32": 2116
                 },
                 {
                   "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
@@ -69,7 +69,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "i128": "70959"
+                  "i128": "51413"
                 }
               ]
             }
@@ -94,13 +94,13 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "i128": "70959"
+                  "i128": "51413"
                 },
                 {
-                  "u32": 9908
+                  "u32": 1
                 },
                 {
-                  "u32": 92
+                  "u32": 9999
                 },
                 "void"
               ]
@@ -139,7 +139,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                     },
                     {
-                      "i128": "70959"
+                      "i128": "51413"
                     }
                   ]
                 }
@@ -157,10 +157,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "confirm_delivery",
+              "function_name": "cancel_trade",
               "args": [
                 {
                   "u64": "1"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 }
               ]
             }
@@ -171,18 +174,18 @@
     ],
     [
       [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
         {
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "release_funds",
+              "function_name": "cancel_trade",
               "args": [
                 {
                   "u64": "1"
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 }
               ]
             }
@@ -272,7 +275,9 @@
                     "key": {
                       "symbol": "cancelled_at"
                     },
-                    "val": "void"
+                    "val": {
+                      "u64": "0"
+                    }
                   },
                   {
                     "key": {
@@ -286,9 +291,7 @@
                     "key": {
                       "symbol": "delivered_at"
                     },
-                    "val": {
-                      "u64": "0"
-                    }
+                    "val": "void"
                   },
                   {
                     "key": {
@@ -320,9 +323,7 @@
                     "key": {
                       "symbol": "released_at"
                     },
-                    "val": {
-                      "u64": "0"
-                    }
+                    "val": "void"
                   },
                   {
                     "key": {
@@ -376,7 +377,7 @@
                           "symbol": "amount"
                         },
                         "val": {
-                          "i128": "70959"
+                          "i128": "51413"
                         }
                       },
                       {
@@ -392,7 +393,7 @@
                           "symbol": "buyer_loss_bps"
                         },
                         "val": {
-                          "u32": 9908
+                          "u32": 1
                         }
                       },
                       {
@@ -407,9 +408,7 @@
                         "key": {
                           "symbol": "delivered_at"
                         },
-                        "val": {
-                          "u64": "0"
-                        }
+                        "val": "void"
                       },
                       {
                         "key": {
@@ -438,7 +437,7 @@
                           "symbol": "seller_loss_bps"
                         },
                         "val": {
-                          "u32": 92
+                          "u32": 9999
                         }
                       },
                       {
@@ -448,7 +447,7 @@
                         "val": {
                           "vec": [
                             {
-                              "symbol": "Completed"
+                              "symbol": "Cancelled"
                             }
                           ]
                         }
@@ -586,7 +585,7 @@
                           "symbol": "actor"
                         },
                         "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                         }
                       },
                       {
@@ -594,7 +593,7 @@
                           "symbol": "data"
                         },
                         "val": {
-                          "string": "delivery confirmed"
+                          "string": "trade cancelled"
                         }
                       },
                       {
@@ -602,43 +601,7 @@
                           "symbol": "event_type"
                         },
                         "val": {
-                          "string": "delivered"
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "timestamp"
-                        },
-                        "val": {
-                          "u64": "0"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "map": [
-                      {
-                        "key": {
-                          "symbol": "actor"
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "data"
-                        },
-                        "val": {
-                          "string": "funds released to seller"
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "event_type"
-                        },
-                        "val": {
-                          "string": "released"
+                          "string": "cancelled"
                         }
                       },
                       {
@@ -686,18 +649,6 @@
                       "key": {
                         "vec": [
                           {
-                            "symbol": "AccruedFees"
-                          }
-                        ]
-                      },
-                      "val": {
-                        "i128": "37551"
-                      }
-                    },
-                    {
-                      "key": {
-                        "vec": [
-                          {
                             "symbol": "Admin"
                           }
                         ]
@@ -727,7 +678,7 @@
                         ]
                       },
                       "val": {
-                        "u32": 5292
+                        "u32": 2116
                       }
                     },
                     {
@@ -905,7 +856,7 @@
           "data": {
             "contract_data": {
               "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
               "key": {
                 "ledger_key_nonce": {
                   "nonce": "8370022561469687789"
@@ -933,58 +884,6 @@
                   },
                   {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "map": [
-                  {
-                    "key": {
-                      "symbol": "amount"
-                    },
-                    "val": {
-                      "i128": "37551"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "authorized"
-                    },
-                    "val": {
-                      "bool": true
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "clawback"
-                    },
-                    "val": {
-                      "bool": false
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 518400
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "Balance"
-                  },
-                  {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                   }
                 ]
               },
@@ -1036,7 +935,7 @@
                     "symbol": "Balance"
                   },
                   {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                   }
                 ]
               },
@@ -1048,7 +947,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "33408"
+                      "i128": "51413"
                     }
                   },
                   {

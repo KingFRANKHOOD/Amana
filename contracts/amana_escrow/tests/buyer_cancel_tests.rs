@@ -79,17 +79,16 @@ fn cancel_by_buyer_cancels_created_trade_and_emits_event() {
     match &event.body {
         ContractEventBody::V0(v0) => {
             let expected: soroban_sdk::xdr::ScVal =
-                IntoVal::<Env, Val>::into_val(&symbol_short!("TCNBYR"), &h.env).try_into_val(&h.env).unwrap();
-            assert_eq!(
-                v0.topics.get(0).unwrap(),
-                &expected
-            );
+                IntoVal::<Env, Val>::into_val(&symbol_short!("TCNBYR"), &h.env)
+                    .try_into_val(&h.env)
+                    .unwrap();
+            assert_eq!(v0.topics.first().unwrap(), &expected);
             match &v0.data {
                 soroban_sdk::xdr::ScVal::Vec(Some(payload)) => assert_eq!(payload.len(), 2),
                 soroban_sdk::xdr::ScVal::Map(Some(payload)) => assert_eq!(payload.len(), 2),
                 other => panic!("expected vec or map event payload, got {other:?}"),
             }
-        },
+        }
     }
 }
 
@@ -116,10 +115,7 @@ fn cancel_by_buyer_rejects_non_buyer_auth() {
             invoke: &soroban_sdk::testutils::MockAuthInvoke {
                 contract: &h.contract_id,
                 fn_name: "cancel_by_buyer",
-                args: soroban_sdk::vec![
-                    &h.env,
-                    IntoVal::<Env, Val>::into_val(&trade_id, &h.env),
-                ],
+                args: soroban_sdk::vec![&h.env, IntoVal::<Env, Val>::into_val(&trade_id, &h.env),],
                 sub_invokes: &[],
             },
         }])

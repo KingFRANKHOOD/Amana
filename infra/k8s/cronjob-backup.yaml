@@ -1,0 +1,115 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-backup-config
+  namespace: amana
+data:
+  S3_PREFIX: "backups"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup-daily
+  namespace: amana
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: db-backup
+              image: ghcr.io/kingfrankhood/amana/db-backup:latest
+              command: ["/scripts/db-backup.sh", "--type=daily"]
+              envFrom:
+                - secretRef:
+                    name: db-backup-secret
+                - configMapRef:
+                    name: db-backup-config
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup-weekly
+  namespace: amana
+spec:
+  schedule: "0 3 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: db-backup
+              image: ghcr.io/kingfrankhood/amana/db-backup:latest
+              command: ["/scripts/db-backup.sh", "--type=weekly"]
+              envFrom:
+                - secretRef:
+                    name: db-backup-secret
+                - configMapRef:
+                    name: db-backup-config
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup-monthly
+  namespace: amana
+spec:
+  schedule: "0 4 1 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: db-backup
+              image: ghcr.io/kingfrankhood/amana/db-backup:latest
+              command: ["/scripts/db-backup.sh", "--type=monthly"]
+              envFrom:
+                - secretRef:
+                    name: db-backup-secret
+                - configMapRef:
+                    name: db-backup-config
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+---
+# Secret template — populate with real values via Sealed Secrets / External Secrets
+# kubectl create secret generic db-backup-secret -n amana \
+#   --from-literal=DATABASE_URL=postgresql://... \
+#   --from-literal=GPG_RECIPIENT=<fingerprint> \
+#   --from-literal=S3_BUCKET=amana-backups \
+#   --from-literal=AWS_ACCESS_KEY_ID=... \
+#   --from-literal=AWS_SECRET_ACCESS_KEY=... \
+#   --from-literal=AWS_DEFAULT_REGION=us-east-1

@@ -1,8 +1,9 @@
 /// Issue #751 — update_fee_bps tests
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod fee_update_tests {
     use crate::{EscrowContract, EscrowContractClient, MAX_FEE_BPS, MIN_FEE_BPS};
-    use soroban_sdk::{testutils::Address as _, Address, Env, IntoVal};
+    use soroban_sdk::{Address, Env, IntoVal, testutils::Address as _};
 
     fn setup(env: &Env) -> (Address, Address, Address) {
         let admin = Address::generate(env);

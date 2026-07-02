@@ -100,9 +100,14 @@ impl H {
     fn funded(&self, amount: i128) -> u64 {
         self.init();
         self.tok().mint(&self.buyer, &amount);
-        let trade_id =
-            self.c()
-                .create_trade(&self.buyer, &self.seller, &amount, &5000u32, &5000u32, &None);
+        let trade_id = self.c().create_trade(
+            &self.buyer,
+            &self.seller,
+            &amount,
+            &5000u32,
+            &5000u32,
+            &None,
+        );
         self.c().deposit(&trade_id);
         trade_id
     }

@@ -8,6 +8,7 @@ struct Harness {
     contract_id: Address,
     buyer: Address,
     seller: Address,
+    #[allow(dead_code)]
     stranger: Address,
 }
 
@@ -44,14 +45,9 @@ impl Harness {
 #[test]
 fn test_env_re_registration_preserves_trade_state_for_upgrade_compatibility() {
     let h = Harness::new();
-    let trade_id = h.client().create_trade(
-        &h.buyer,
-        &h.seller,
-        &1_000i128,
-        &5000u32,
-        &5000u32,
-        &None,
-    );
+    let trade_id = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
 
     h.env.register_at(&h.contract_id, EscrowContract, ());
 

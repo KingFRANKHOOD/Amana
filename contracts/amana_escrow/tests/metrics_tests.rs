@@ -41,12 +41,7 @@ fn create_and_fund(
     trade_id
 }
 
-fn dispute_trade(
-    env: &Env,
-    client: &EscrowContractClient<'_>,
-    trade_id: u64,
-    initiator: &Address,
-) {
+fn dispute_trade(env: &Env, client: &EscrowContractClient<'_>, trade_id: u64, initiator: &Address) {
     let reason = SorobanString::from_str(env, "QmDisputeReason");
     client.initiate_dispute(&trade_id, initiator, &reason);
 }
@@ -69,8 +64,7 @@ fn resolve_dispute(
 fn test_metrics_start_at_zero() {
     let env = Env::default();
     env.mock_all_auths();
-    let (contract_id, _usdc_id, _buyer, _seller, _treasury, _mediator) =
-        setup_env(&env, 100);
+    let (contract_id, _usdc_id, _buyer, _seller, _treasury, _mediator) = setup_env(&env, 100);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     let (total_trades, total_disputes, total_resolved) = client.get_contract_metrics();
@@ -84,8 +78,7 @@ fn test_metrics_start_at_zero() {
 fn test_total_trades_increments_with_each_trade() {
     let env = Env::default();
     env.mock_all_auths();
-    let (contract_id, usdc_id, buyer, seller, _treasury, _mediator) =
-        setup_env(&env, 100);
+    let (contract_id, usdc_id, buyer, seller, _treasury, _mediator) = setup_env(&env, 100);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     assert_eq!(client.get_contract_metrics().0, 0);
@@ -107,8 +100,7 @@ fn test_total_trades_increments_with_each_trade() {
 fn test_total_disputes_increments_with_each_dispute() {
     let env = Env::default();
     env.mock_all_auths();
-    let (contract_id, usdc_id, buyer, seller, _treasury, _mediator) =
-        setup_env(&env, 100);
+    let (contract_id, usdc_id, buyer, seller, _treasury, _mediator) = setup_env(&env, 100);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     let tid1 = create_and_fund(&env, &client, &buyer, &seller, 1_000, &usdc_id);
@@ -127,8 +119,7 @@ fn test_total_disputes_increments_with_each_dispute() {
 fn test_total_resolved_increments_with_each_resolution() {
     let env = Env::default();
     env.mock_all_auths();
-    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) =
-        setup_env(&env, 100);
+    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) = setup_env(&env, 100);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     let tid1 = create_and_fund(&env, &client, &buyer, &seller, 1_000, &usdc_id);
@@ -150,8 +141,7 @@ fn test_total_resolved_increments_with_each_resolution() {
 fn test_metrics_are_independent() {
     let env = Env::default();
     env.mock_all_auths();
-    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) =
-        setup_env(&env, 100);
+    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) = setup_env(&env, 100);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     // Create 3 trades
@@ -195,8 +185,7 @@ fn test_metrics_are_independent() {
 fn test_metrics_persist_across_operations() {
     let env = Env::default();
     env.mock_all_auths();
-    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) =
-        setup_env(&env, 100);
+    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) = setup_env(&env, 100);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     // Round 1
@@ -234,8 +223,7 @@ fn test_metrics_persist_across_operations() {
 fn test_metrics_survive_ttl_refresh() {
     let env = Env::default();
     env.mock_all_auths();
-    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) =
-        setup_env(&env, 100);
+    let (contract_id, usdc_id, buyer, seller, _treasury, mediator) = setup_env(&env, 100);
     let client = EscrowContractClient::new(&env, &contract_id);
 
     // Perform operations, then advance ledger to test TTL refresh

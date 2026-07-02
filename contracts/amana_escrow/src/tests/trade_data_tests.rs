@@ -1,8 +1,9 @@
 /// Issue #754 — TradeData versioned enum tests
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod trade_data_tests {
     use crate::{DataKey, EscrowContract, EscrowContractClient, TradeData, TradeStatus, TradeV0};
-    use soroban_sdk::{testutils::Address as _, token, Address, Env};
+    use soroban_sdk::{Address, Env, testutils::Address as _, token};
 
     fn setup(env: &Env, amount: i128) -> (Address, Address, Address, Address, Address) {
         let admin = Address::generate(env);
@@ -67,7 +68,7 @@ mod trade_data_tests {
     fn v0_readable_after_future_envelope_addition() {
         let env = Env::default();
         env.mock_all_auths();
-        let (contract_id, token_id, buyer, seller, _treasury) = setup(&env, 10_000);
+        let (contract_id, _token_id, buyer, seller, _treasury) = setup(&env, 10_000);
         let client = EscrowContractClient::new(&env, &contract_id);
 
         let trade_id = client.create_trade(&buyer, &seller, &10_000i128, &5000u32, &5000u32, &None);

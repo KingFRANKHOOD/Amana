@@ -4,13 +4,15 @@
 /// Any topic/payload drift will cause these tests to fail, protecting indexers
 /// and downstream consumers from silent schema breakage.
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod event_schema_tests {
     use crate::{EscrowContract, EscrowContractClient, TradeStatus};
     use soroban_sdk::{
-        symbol_short,
+        Address, Env, IntoVal, String, Symbol, TryFromVal, Val, Vec, symbol_short,
         testutils::{Address as _, Events as _},
-        token, xdr::ContractEventBody, xdr::ScVal, Address, Env, IntoVal, String, Symbol, Vec,
-        TryFromVal, Val,
+        token,
+        xdr::ContractEventBody,
+        xdr::ScVal,
     };
 
     // -----------------------------------------------------------------------
@@ -76,12 +78,8 @@ mod event_schema_tests {
         );
         for (i, exp) in expected.iter().enumerate() {
             let expected_scval = ScVal::try_from_val(env, exp).unwrap();
-            let actual_scval = topics.iter().nth(i).unwrap();
-            assert_eq!(
-                actual_scval,
-                &expected_scval,
-                "topic[{i}] mismatch"
-            );
+            let actual_scval = topics.get(i).unwrap();
+            assert_eq!(actual_scval, &expected_scval, "topic[{i}] mismatch");
         }
     }
 
@@ -121,10 +119,7 @@ mod event_schema_tests {
 
         client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("TRDCRT").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("TRDCRT").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -136,14 +131,12 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         client.deposit(&trade_id);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("TRDFND").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("TRDFND").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -157,14 +150,12 @@ mod event_schema_tests {
             setup_path_env(&env, 5_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &5_000_i128, &4_500_i128, &path);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("PTHINT").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("PTHINT").into_val(&env)]);
     }
 
     #[test]
@@ -175,7 +166,8 @@ mod event_schema_tests {
             setup_path_env(&env, 5_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &5_000_i128, &4_500_i128, &path);
 
@@ -184,10 +176,7 @@ mod event_schema_tests {
 
         client.finalize_path_payment(&trade_id, &buyer);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("PTHPAY").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("PTHPAY").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -199,14 +188,12 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
         client.cancel_trade(&trade_id, &buyer);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("TRDCAN").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("TRDCAN").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -218,15 +205,13 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.confirm_delivery(&trade_id);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("DELCNF").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("DELCNF").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -238,16 +223,14 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.confirm_delivery(&trade_id);
 
         client.release_funds(&trade_id, &buyer);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("RELSD").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("RELSD").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -259,15 +242,13 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "QmReason"));
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("DISINI").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("DISINI").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -280,17 +261,15 @@ mod event_schema_tests {
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
         let mediator = Address::generate(&env);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "QmReason"));
         client.set_mediator(&mediator);
 
         client.resolve_dispute(&trade_id, &mediator, &5_000_u32);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("DISRES").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("DISRES").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -302,7 +281,8 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "QmReason"));
 
@@ -313,10 +293,7 @@ mod event_schema_tests {
             &String::from_str(&env, "desc"),
         );
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("EVDSUB").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("EVDSUB").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -328,15 +305,13 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.submit_video_proof(&trade_id, &buyer, &String::from_str(&env, "QmCID"));
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("VIDPRF").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("VIDPRF").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -348,7 +323,8 @@ mod event_schema_tests {
         env.mock_all_auths();
         let (contract_id, _, buyer, seller, _) = setup(&env, 10_000, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         client.submit_manifest(
@@ -358,10 +334,7 @@ mod event_schema_tests {
             &String::from_str(&env, "QmDriverId"),
         );
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("MNFST").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("MNFST").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -377,10 +350,7 @@ mod event_schema_tests {
 
         client.add_mediator(&mediator);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("MEDADD").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("MEDADD").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -397,10 +367,7 @@ mod event_schema_tests {
 
         client.remove_mediator(&mediator);
 
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("MEDREM").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("MEDREM").into_val(&env)]);
     }
 
     // -----------------------------------------------------------------------
@@ -415,10 +382,7 @@ mod event_schema_tests {
         let mediator = Address::generate(&env);
 
         client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
-        assert_last_event_topics(
-            &env,
-            &[symbol_short!("TRDCRT").into_val(&env)],
-        );
+        assert_last_event_topics(&env, &[symbol_short!("TRDCRT").into_val(&env)]);
 
         let contract_id2 = env.register(EscrowContract, ());
         let c2 = EscrowContractClient::new(&env, &contract_id2);
@@ -435,15 +399,11 @@ mod event_schema_tests {
         c2.initiate_dispute(&tid, &buyer, &String::from_str(&env, "QmGolden"));
         c2.resolve_dispute(&tid, &mediator, &5_000_u32);
 
-        assert!(matches!(
-            c2.get_trade(&tid).status,
-            TradeStatus::Completed
-        ));
+        assert!(matches!(c2.get_trade(&tid).status, TradeStatus::Completed));
 
         // Verify the full event sequence for contract_id2 ends with DISRES
         // Event schema coverage for each individual lifecycle event is handled by the
         // dedicated tests above. This golden path now focuses on ensuring the full
         // lifecycle completes without regressions.
     }
-
 }

@@ -42,7 +42,17 @@ impl Harness {
         let client = EscrowContractClient::new(&env, &contract_id);
         client.initialize(&admin, &usdc_id, &treasury, &100u32, &usdc_id);
         client.add_mediator(&mediator);
-        Harness { env, contract_id, usdc_id, admin, buyer, seller, mediator, treasury, stranger }
+        Harness {
+            env,
+            contract_id,
+            usdc_id,
+            admin,
+            buyer,
+            seller,
+            mediator,
+            treasury,
+            stranger,
+        }
     }
 
     fn client(&self) -> EscrowContractClient<'_> {
@@ -56,7 +66,12 @@ impl Harness {
     fn funded_trade(&self, amount: i128) -> u64 {
         self.mint(&self.buyer, amount);
         let tid = self.client().create_trade(
-            &self.buyer, &self.seller, &amount, &5000u32, &5000u32, &None,
+            &self.buyer,
+            &self.seller,
+            &amount,
+            &5000u32,
+            &5000u32,
+            &None,
         );
         self.client().deposit(&tid);
         tid
@@ -65,7 +80,9 @@ impl Harness {
     fn disputed_trade(&self, amount: i128) -> u64 {
         let tid = self.funded_trade(amount);
         self.client().initiate_dispute(
-            &tid, &self.buyer, &SStr::from_str(&self.env, "QmAuthMatrix"),
+            &tid,
+            &self.buyer,
+            &SStr::from_str(&self.env, "QmAuthMatrix"),
         );
         tid
     }
@@ -79,7 +96,8 @@ impl Harness {
 #[should_panic(expected = "AlreadyInitialized")]
 fn test_auth_initialize_rejects_second_call() {
     let h = Harness::new();
-    h.client().initialize(&h.admin, &h.usdc_id, &h.treasury, &100u32, &h.usdc_id);
+    h.client()
+        .initialize(&h.admin, &h.usdc_id, &h.treasury, &100u32, &h.usdc_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -90,23 +108,34 @@ fn test_auth_initialize_rejects_second_call() {
 fn test_auth_create_trade_buyer_allowed() {
     let h = Harness::new();
     // buyer creates a trade — allowed
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Created));
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Created
+    ));
 }
 
 #[test]
 fn test_auth_create_trade_stranger_allowed() {
     let h = Harness::new();
     // Anyone can call create_trade (no auth guard on the caller itself)
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Created));
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Created
+    ));
 }
 
 #[test]
 #[should_panic(expected = "buyer and seller must be different addresses")]
 fn test_auth_create_trade_rejects_self_trade() {
     let h = Harness::new();
-    h.client().create_trade(&h.buyer, &h.buyer, &1_000i128, &5000u32, &5000u32, &None);
+    h.client()
+        .create_trade(&h.buyer, &h.buyer, &1_000i128, &5000u32, &5000u32, &None);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,9 +146,14 @@ fn test_auth_create_trade_rejects_self_trade() {
 fn test_auth_deposit_buyer_allowed() {
     let h = Harness::new();
     h.mint(&h.buyer, 1_000);
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().deposit(&tid);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Funded));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Funded
+    ));
 }
 
 #[test]
@@ -127,7 +161,9 @@ fn test_auth_deposit_buyer_allowed() {
 fn test_auth_deposit_seller_denied() {
     let h = Harness::new();
     h.mint(&h.buyer, 1_000);
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     // Provide auth only for seller — must fail because buyer.require_auth() is called
     h.client()
         .mock_auths(&[soroban_sdk::testutils::MockAuth {
@@ -154,7 +190,10 @@ fn test_auth_confirm_delivery_buyer_allowed() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
     h.client().confirm_delivery(&tid);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Delivered));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Delivered
+    ));
 }
 
 #[test]
@@ -209,7 +248,10 @@ fn test_auth_release_funds_buyer_allowed() {
     let tid = h.funded_trade(1_000);
     h.client().confirm_delivery(&tid);
     h.client().release_funds(&tid, &h.buyer);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Completed));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Completed
+    ));
 }
 
 #[test]
@@ -218,7 +260,10 @@ fn test_auth_release_funds_admin_allowed() {
     let tid = h.funded_trade(1_000);
     h.client().confirm_delivery(&tid);
     h.client().release_funds(&tid, &h.admin);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Completed));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Completed
+    ));
 }
 
 #[test]
@@ -262,8 +307,8 @@ fn test_auth_release_funds_stranger_denied() {
                     soroban_sdk::IntoVal::<Env, soroban_sdk::Val>::into_val(&h.stranger, &h.env),
                 ],
                 sub_invokes: &[],
-                },
-            }])
+            },
+        }])
         .release_funds(&tid, &h.stranger);
 }
 
@@ -274,32 +319,49 @@ fn test_auth_release_funds_stranger_denied() {
 #[test]
 fn test_auth_cancel_trade_buyer_allowed_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.buyer);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Cancelled));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Cancelled
+    ));
 }
 
 #[test]
 fn test_auth_cancel_trade_seller_allowed_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.seller);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Cancelled));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Cancelled
+    ));
 }
 
 #[test]
 fn test_auth_cancel_trade_admin_allowed_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.admin);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Cancelled));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Cancelled
+    ));
 }
 
 #[test]
 #[should_panic(expected = "Unauthorized caller")]
 fn test_auth_cancel_trade_stranger_denied_created() {
     let h = Harness::new();
-    let tid = h.client().create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
+    let tid = h
+        .client()
+        .create_trade(&h.buyer, &h.seller, &1_000i128, &5000u32, &5000u32, &None);
     h.client().cancel_trade(&tid, &h.stranger);
 }
 
@@ -308,7 +370,10 @@ fn test_auth_cancel_trade_admin_allowed_funded() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
     h.client().cancel_trade(&tid, &h.admin);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Cancelled));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Cancelled
+    ));
 }
 
 #[test]
@@ -327,16 +392,24 @@ fn test_auth_cancel_trade_stranger_denied_funded() {
 fn test_auth_initiate_dispute_buyer_allowed() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().initiate_dispute(&tid, &h.buyer, &SStr::from_str(&h.env, "QmBuyer"));
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Disputed));
+    h.client()
+        .initiate_dispute(&tid, &h.buyer, &SStr::from_str(&h.env, "QmBuyer"));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Disputed
+    ));
 }
 
 #[test]
 fn test_auth_initiate_dispute_seller_allowed() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().initiate_dispute(&tid, &h.seller, &SStr::from_str(&h.env, "QmSeller"));
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Disputed));
+    h.client()
+        .initiate_dispute(&tid, &h.seller, &SStr::from_str(&h.env, "QmSeller"));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Disputed
+    ));
 }
 
 #[test]
@@ -344,7 +417,8 @@ fn test_auth_initiate_dispute_seller_allowed() {
 fn test_auth_initiate_dispute_mediator_denied() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().initiate_dispute(&tid, &h.mediator, &SStr::from_str(&h.env, "QmMediator"));
+    h.client()
+        .initiate_dispute(&tid, &h.mediator, &SStr::from_str(&h.env, "QmMediator"));
 }
 
 #[test]
@@ -352,7 +426,8 @@ fn test_auth_initiate_dispute_mediator_denied() {
 fn test_auth_initiate_dispute_admin_denied() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().initiate_dispute(&tid, &h.admin, &SStr::from_str(&h.env, "QmAdmin"));
+    h.client()
+        .initiate_dispute(&tid, &h.admin, &SStr::from_str(&h.env, "QmAdmin"));
 }
 
 #[test]
@@ -360,7 +435,8 @@ fn test_auth_initiate_dispute_admin_denied() {
 fn test_auth_initiate_dispute_stranger_denied() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().initiate_dispute(&tid, &h.stranger, &SStr::from_str(&h.env, "QmStranger"));
+    h.client()
+        .initiate_dispute(&tid, &h.stranger, &SStr::from_str(&h.env, "QmStranger"));
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +448,8 @@ fn test_auth_submit_evidence_buyer_allowed() {
     let h = Harness::new();
     let tid = h.disputed_trade(1_000);
     h.client().submit_evidence(
-        &tid, &h.buyer,
+        &tid,
+        &h.buyer,
         &SStr::from_str(&h.env, "QmBuyerEvidence"),
         &SStr::from_str(&h.env, "desc"),
     );
@@ -384,7 +461,8 @@ fn test_auth_submit_evidence_seller_allowed() {
     let h = Harness::new();
     let tid = h.disputed_trade(1_000);
     h.client().submit_evidence(
-        &tid, &h.seller,
+        &tid,
+        &h.seller,
         &SStr::from_str(&h.env, "QmSellerEvidence"),
         &SStr::from_str(&h.env, "desc"),
     );
@@ -396,7 +474,8 @@ fn test_auth_submit_evidence_mediator_allowed() {
     let h = Harness::new();
     let tid = h.disputed_trade(1_000);
     h.client().submit_evidence(
-        &tid, &h.mediator,
+        &tid,
+        &h.mediator,
         &SStr::from_str(&h.env, "QmMediatorEvidence"),
         &SStr::from_str(&h.env, "desc"),
     );
@@ -409,7 +488,8 @@ fn test_auth_submit_evidence_stranger_denied() {
     let h = Harness::new();
     let tid = h.disputed_trade(1_000);
     h.client().submit_evidence(
-        &tid, &h.stranger,
+        &tid,
+        &h.stranger,
         &SStr::from_str(&h.env, "QmBadEvidence"),
         &SStr::from_str(&h.env, "desc"),
     );
@@ -421,7 +501,8 @@ fn test_auth_submit_evidence_admin_denied() {
     let h = Harness::new();
     let tid = h.disputed_trade(1_000);
     h.client().submit_evidence(
-        &tid, &h.admin,
+        &tid,
+        &h.admin,
         &SStr::from_str(&h.env, "QmAdminEvidence"),
         &SStr::from_str(&h.env, "desc"),
     );
@@ -436,7 +517,10 @@ fn test_auth_resolve_dispute_mediator_allowed() {
     let h = Harness::new();
     let tid = h.disputed_trade(1_000);
     h.client().resolve_dispute(&tid, &h.mediator, &5_000u32);
-    assert!(matches!(h.client().get_trade(&tid).status, TradeStatus::Completed));
+    assert!(matches!(
+        h.client().get_trade(&tid).status,
+        TradeStatus::Completed
+    ));
 }
 
 #[test]
@@ -572,7 +656,8 @@ fn test_auth_set_mediator_stranger_denied() {
 fn test_auth_submit_video_proof_buyer_allowed() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().submit_video_proof(&tid, &h.buyer, &SStr::from_str(&h.env, "QmBuyerVideo"));
+    h.client()
+        .submit_video_proof(&tid, &h.buyer, &SStr::from_str(&h.env, "QmBuyerVideo"));
     assert!(h.client().get_video_proof(&tid).is_some());
 }
 
@@ -580,7 +665,8 @@ fn test_auth_submit_video_proof_buyer_allowed() {
 fn test_auth_submit_video_proof_seller_allowed() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().submit_video_proof(&tid, &h.seller, &SStr::from_str(&h.env, "QmSellerVideo"));
+    h.client()
+        .submit_video_proof(&tid, &h.seller, &SStr::from_str(&h.env, "QmSellerVideo"));
     assert!(h.client().get_video_proof(&tid).is_some());
 }
 
@@ -589,7 +675,8 @@ fn test_auth_submit_video_proof_seller_allowed() {
 fn test_auth_submit_video_proof_mediator_denied() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().submit_video_proof(&tid, &h.mediator, &SStr::from_str(&h.env, "QmMedVideo"));
+    h.client()
+        .submit_video_proof(&tid, &h.mediator, &SStr::from_str(&h.env, "QmMedVideo"));
 }
 
 #[test]
@@ -597,7 +684,8 @@ fn test_auth_submit_video_proof_mediator_denied() {
 fn test_auth_submit_video_proof_stranger_denied() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
-    h.client().submit_video_proof(&tid, &h.stranger, &SStr::from_str(&h.env, "QmBadVideo"));
+    h.client()
+        .submit_video_proof(&tid, &h.stranger, &SStr::from_str(&h.env, "QmBadVideo"));
 }
 
 // ---------------------------------------------------------------------------
@@ -609,7 +697,8 @@ fn test_auth_submit_manifest_seller_allowed() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
     h.client().submit_manifest(
-        &tid, &h.seller,
+        &tid,
+        &h.seller,
         &SStr::from_str(&h.env, "QmDriverName"),
         &SStr::from_str(&h.env, "QmDriverId"),
     );
@@ -622,7 +711,8 @@ fn test_auth_submit_manifest_buyer_denied() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
     h.client().submit_manifest(
-        &tid, &h.buyer,
+        &tid,
+        &h.buyer,
         &SStr::from_str(&h.env, "QmDriverName"),
         &SStr::from_str(&h.env, "QmDriverId"),
     );
@@ -634,7 +724,8 @@ fn test_auth_submit_manifest_stranger_denied() {
     let h = Harness::new();
     let tid = h.funded_trade(1_000);
     h.client().submit_manifest(
-        &tid, &h.stranger,
+        &tid,
+        &h.stranger,
         &SStr::from_str(&h.env, "QmDriverName"),
         &SStr::from_str(&h.env, "QmDriverId"),
     );

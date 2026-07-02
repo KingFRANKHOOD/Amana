@@ -10,19 +10,21 @@
 ///   4. A trade funded against token-A is settled against token-A even when
 ///      the contract's cNGN pointer would theoretically change.
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod migration_tests {
     use crate::{EscrowContract, EscrowContractClient, TradeStatus};
-    use soroban_sdk::{
-        testutils::{Address as _},
-        token, Address, Env, String,
-    };
+    use soroban_sdk::{Address, Env, String, testutils::Address as _, token};
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
     /// Minimal setup: returns (contract_id, token_id, buyer, seller, treasury, admin).
-    fn deploy(env: &Env, amount: i128, fee_bps: u32) -> (Address, Address, Address, Address, Address, Address) {
+    fn deploy(
+        env: &Env,
+        amount: i128,
+        fee_bps: u32,
+    ) -> (Address, Address, Address, Address, Address, Address) {
         let admin = Address::generate(env);
         let buyer = Address::generate(env);
         let seller = Address::generate(env);
@@ -71,7 +73,7 @@ mod migration_tests {
         env.mock_all_auths();
 
         // ── Old deployment (token-A) ────────────────────────────────────────
-        let (old_contract, token_a, buyer, seller, treasury_a, admin_a) =
+        let (old_contract, token_a, buyer, seller, _treasury_a, admin_a) =
             deploy(&env, 10_000, 100);
         let old_client = EscrowContractClient::new(&env, &old_contract);
 
@@ -93,8 +95,13 @@ mod migration_tests {
             .address();
         let new_contract = env.register(EscrowContract, ());
         let treasury_b = Address::generate(&env);
-        EscrowContractClient::new(&env, &new_contract)
-            .initialize(&admin_b, &token_b, &treasury_b, &100_u32, &token_b);
+        EscrowContractClient::new(&env, &new_contract).initialize(
+            &admin_b,
+            &token_b,
+            &treasury_b,
+            &100_u32,
+            &token_b,
+        );
 
         // ── Old trade is unaffected by the new deployment ───────────────────
         let trade_after = old_client.get_trade(&trade_id);
@@ -114,13 +121,21 @@ mod migration_tests {
         let tok_a = token::Client::new(&env, &token_a);
         let tok_b = token::Client::new(&env, &token_b);
 
-        // Seller received token-A (minus 1% fee)
+        // Seller received token-A (minus 1% fee); fee is accrued in contract
         assert_eq!(tok_a.balance(&seller), 9_900, "seller must receive token-A");
-        assert_eq!(tok_a.balance(&treasury_a), 100, "treasury must receive token-A fee");
+        assert_eq!(
+            old_client.get_accrued_fees(),
+            100,
+            "treasury must receive token-A fee"
+        );
 
         // token-B balances are untouched
         assert_eq!(tok_b.balance(&seller), 0, "seller must have zero token-B");
-        assert_eq!(tok_b.balance(&treasury_b), 0, "treasury-B must have zero token-B");
+        assert_eq!(
+            tok_b.balance(&treasury_b),
+            0,
+            "treasury-B must have zero token-B"
+        );
 
         assert!(matches!(
             old_client.get_trade(&trade_id).status,
@@ -138,7 +153,7 @@ mod migration_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let (old_contract, token_a, buyer, seller, treasury_a, _admin_a) =
+        let (old_contract, token_a, buyer, seller, _treasury_a, _admin_a) =
             deploy(&env, 10_000, 100);
         let old_client = EscrowContractClient::new(&env, &old_contract);
         let mediator = Address::generate(&env);
@@ -173,9 +188,12 @@ mod migration_tests {
         let tok_a = token::Client::new(&env, &token_a);
         let tok_b = token::Client::new(&env, &token_b);
 
-        // Funds distributed in token-A
+        // Funds distributed in token-A; fee accrued in contract
         assert!(tok_a.balance(&seller) > 0, "seller must receive token-A");
-        assert!(tok_a.balance(&treasury_a) > 0, "treasury must receive token-A fee");
+        assert!(
+            old_client.get_accrued_fees() > 0,
+            "treasury must receive token-A fee"
+        );
         assert_eq!(tok_b.balance(&seller), 0, "seller must have zero token-B");
 
         assert!(matches!(
@@ -192,8 +210,7 @@ mod migration_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let (old_contract, token_a, buyer, seller, _treasury, _admin) =
-            deploy(&env, 50_000, 0); // zero fee for simpler assertions
+        let (old_contract, token_a, buyer, seller, _treasury, _admin) = deploy(&env, 50_000, 0); // zero fee for simpler assertions
         let old_client = EscrowContractClient::new(&env, &old_contract);
 
         // Create 3 trades before migration

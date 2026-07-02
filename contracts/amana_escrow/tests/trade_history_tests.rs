@@ -73,7 +73,16 @@ impl H {
         let mediator = Address::generate(&env);
         let treasury = Address::generate(&env);
 
-        H { env, escrow, token, admin, buyer, seller, mediator, treasury }
+        H {
+            env,
+            escrow,
+            token,
+            admin,
+            buyer,
+            seller,
+            mediator,
+            treasury,
+        }
     }
 
     fn c(&self) -> EscrowContractClient<'_> {
@@ -113,7 +122,10 @@ impl H {
         self.c().deposit(&trade_id);
     }
 
-    fn event_types(&self, history: &soroban_sdk::Vec<TradeEvent>) -> std::vec::Vec<std::string::String> {
+    fn event_types(
+        &self,
+        history: &soroban_sdk::Vec<TradeEvent>,
+    ) -> std::vec::Vec<std::string::String> {
         let mut types = std::vec::Vec::new();
         for i in 0..history.len() {
             let ev = history.get(i).unwrap();
@@ -128,7 +140,11 @@ fn test_history_empty_for_nonexistent_trade() {
     let h = H::new();
     h.setup();
     let history = h.c().get_trade_history(&9999u64);
-    assert_eq!(history.len(), 0, "non-existent trade should have empty history");
+    assert_eq!(
+        history.len(),
+        0,
+        "non-existent trade should have empty history"
+    );
 }
 
 #[test]

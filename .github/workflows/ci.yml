@@ -12,7 +12,8 @@ on:
       - 'frontend/**'
       - 'mobile/**'
       - 'contracts/**'
-      - 'scripts/check-contract-deployment-safety.sh'
+      - 'scripts/**'
+      - 'infra/**'
       - 'package-lock.json'
       - 'pnpm-lock.yaml'
   pull_request:
@@ -24,6 +25,8 @@ on:
       - "frontend/**"
       - "backend/**"
       - "contracts/**"
+      - "scripts/**"
+      - "infra/**"
 
 jobs:
   changes:

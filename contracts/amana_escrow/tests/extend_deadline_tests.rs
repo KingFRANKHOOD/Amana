@@ -12,7 +12,7 @@ extern crate std;
 use amana_escrow::{EscrowContract, EscrowContractClient};
 use soroban_sdk::{
     Address, Env, IntoVal, contract, contractimpl, contracttype,
-    testutils::{Address as _, Ledger, Events, MockAuth, MockAuthInvoke},
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
     xdr::{ContractEventBody, ScVal},
 };
 
@@ -70,6 +70,7 @@ struct H {
     admin: Address,
     buyer: Address,
     seller: Address,
+    #[allow(dead_code)]
     stranger: Address,
 }
 
@@ -89,7 +90,15 @@ impl H {
         let seller = Address::generate(&env);
         let stranger = Address::generate(&env);
 
-        H { env, escrow, token, admin, buyer, seller, stranger }
+        H {
+            env,
+            escrow,
+            token,
+            admin,
+            buyer,
+            seller,
+            stranger,
+        }
     }
 
     fn c(&self) -> EscrowContractClient<'_> {
@@ -101,13 +110,8 @@ impl H {
     }
 
     fn init(&self) {
-        self.c().initialize(
-            &self.admin,
-            &self.token,
-            &self.admin,
-            &0u32,
-            &self.token,
-        );
+        self.c()
+            .initialize(&self.admin, &self.token, &self.admin, &0u32, &self.token);
     }
 
     fn now(&self) -> u64 {

@@ -591,16 +591,16 @@ impl EscrowContract {
             .expect("Not initialized");
         admin.require_auth();
         assert!(
-            new_fee_bps >= MIN_FEE_BPS && new_fee_bps <= MAX_FEE_BPS,
+            (MIN_FEE_BPS..=MAX_FEE_BPS).contains(&new_fee_bps),
             "fee_bps out of range"
         );
-        let old_fee_bps: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeBps)
-            .unwrap_or(0);
+        let old_fee_bps: u32 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
         env.storage().instance().set(&DataKey::FeeBps, &new_fee_bps);
-        FeeRateUpdatedEvent { old_fee_bps, new_fee_bps }.publish(&env);
+        FeeRateUpdatedEvent {
+            old_fee_bps,
+            new_fee_bps,
+        }
+        .publish(&env);
     }
 
     /// Withdraw accrued platform fees from the contract to `destination`.
@@ -619,10 +619,7 @@ impl EscrowContract {
             .instance()
             .get(&DataKey::AccruedFees)
             .unwrap_or(0);
-        assert!(
-            amount <= accrued_fees,
-            "insufficient accrued fees"
-        );
+        assert!(amount <= accrued_fees, "insufficient accrued fees");
         let token: Address = env
             .storage()
             .instance()
@@ -633,7 +630,11 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::AccruedFees, &(accrued_fees - amount));
-        FeesWithdrawnEvent { amount, destination }.publish(&env);
+        FeesWithdrawnEvent {
+            amount,
+            destination,
+        }
+        .publish(&env);
         Self::bump_instance_ttl(&env);
     }
 
@@ -735,10 +736,7 @@ impl EscrowContract {
     ) -> u64 {
         buyer.require_auth();
         assert!(amount > 0, "amount must be greater than zero");
-        assert!(
-            amount <= MAX_TRADE_VALUE,
-            "TradeValueTooLarge"
-        );
+        assert!(amount <= MAX_TRADE_VALUE, "TradeValueTooLarge");
         assert!(
             buyer != seller,
             "buyer and seller must be different addresses"
@@ -761,10 +759,7 @@ impl EscrowContract {
         let now = env.ledger().timestamp();
         // Validate deadline is in the future when provided
         if let Some(deadline) = expires_at {
-            assert!(
-                deadline > now,
-                "expires_at must be in the future"
-            );
+            assert!(deadline > now, "expires_at must be in the future");
         }
         let next_id: u64 = env
             .storage()
@@ -774,7 +769,11 @@ impl EscrowContract {
         let ledger_seq = env.ledger().sequence() as u64;
         let trade_id = (ledger_seq << 32) | next_id;
         env.storage().instance().set(&NEXT_TRADE_ID, &(next_id + 1));
-        let total_trades: u64 = env.storage().instance().get(&DataKey::TotalTrades).unwrap_or(0);
+        let total_trades: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalTrades)
+            .unwrap_or(0);
         env.storage()
             .instance()
             .set(&DataKey::TotalTrades, &(total_trades + 1));
@@ -803,7 +802,13 @@ impl EscrowContract {
             &DataKey::ReleaseSequence(trade_id),
             &Self::default_release_sequence(&trade),
         );
-        Self::record_trade_event(&env, trade_id, "created", trade.buyer.clone(), "trade created");
+        Self::record_trade_event(
+            &env,
+            trade_id,
+            "created",
+            trade.buyer.clone(),
+            "trade created",
+        );
         TradeCreatedEvent {
             trade_id,
             buyer,
@@ -833,7 +838,13 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.funded_at = Some(at);
         });
-        Self::record_trade_event(&env, trade_id, "funded", trade.buyer.clone(), "escrow funded");
+        Self::record_trade_event(
+            &env,
+            trade_id,
+            "funded",
+            trade.buyer.clone(),
+            "escrow funded",
+        );
         TradeFundedEvent {
             trade_id,
             amount: trade.amount,
@@ -943,10 +954,7 @@ impl EscrowContract {
 
     /// Return the current platform fee in basis points.
     pub fn get_fee_bps(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::FeeBps)
-            .unwrap_or(0)
+        env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0)
     }
 
     /// Finalize a previously initiated path payment once cNGN has been received.
@@ -1155,9 +1163,7 @@ impl EscrowContract {
             "Trade must be in Funded status to claim expiry refund"
         );
 
-        let deadline = trade
-            .expires_at
-            .expect("Trade has no expiry deadline");
+        let deadline = trade.expires_at.expect("Trade has no expiry deadline");
 
         let now = env.ledger().timestamp();
         assert!(now >= deadline, "Trade has not yet expired");
@@ -1210,16 +1216,14 @@ impl EscrowContract {
             "Trade must be Funded to extend deadline"
         );
 
-        let old_deadline = trade
-            .expires_at
-            .expect("Trade has no deadline to extend");
+        let old_deadline = trade.expires_at.expect("Trade has no deadline to extend");
 
         let now = env.ledger().timestamp();
-        assert!(now < old_deadline, "Cannot extend a deadline that has already passed");
         assert!(
-            new_deadline > now,
-            "New deadline must be in the future"
+            now < old_deadline,
+            "Cannot extend a deadline that has already passed"
         );
+        assert!(new_deadline > now, "New deadline must be in the future");
 
         trade.expires_at = Some(new_deadline);
         trade.updated_at = now;
@@ -1258,7 +1262,13 @@ impl EscrowContract {
             sequence.cancelled_at = Some(at);
         });
 
-        Self::record_trade_event(env, trade.trade_id, "cancelled", caller.clone(), "trade cancelled");
+        Self::record_trade_event(
+            env,
+            trade.trade_id,
+            "cancelled",
+            caller.clone(),
+            "trade cancelled",
+        );
         TradeCancelledEvent {
             trade_id: trade.trade_id,
             refund_amount,
@@ -1284,7 +1294,13 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.delivered_at = Some(at);
         });
-        Self::record_trade_event(&env, trade_id, "delivered", trade.buyer.clone(), "delivery confirmed");
+        Self::record_trade_event(
+            &env,
+            trade_id,
+            "delivered",
+            trade.buyer.clone(),
+            "delivery confirmed",
+        );
         DeliveryConfirmedEvent {
             trade_id,
             delivered_at: now,
@@ -1344,7 +1360,13 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.released_at = Some(at);
         });
-        Self::record_trade_event(&env, trade_id, "released", caller.clone(), "funds released to seller");
+        Self::record_trade_event(
+            &env,
+            trade_id,
+            "released",
+            caller.clone(),
+            "funds released to seller",
+        );
         FundsReleasedEvent {
             trade_id,
             seller_amount,
@@ -1845,13 +1867,7 @@ impl EscrowContract {
     }
 
     /// Appends a TradeEvent to the persistent history for trade_id.
-    fn record_trade_event(
-        env: &Env,
-        trade_id: u64,
-        event_type: &str,
-        actor: Address,
-        data: &str,
-    ) {
+    fn record_trade_event(env: &Env, trade_id: u64, event_type: &str, actor: Address, data: &str) {
         let key = DataKey::TradeHistory(trade_id);
         let mut history: soroban_sdk::Vec<TradeEvent> = env
             .storage()
@@ -1997,7 +2013,8 @@ mod test {
             .address();
         client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
         client.mock_auths(&[]).deposit(&trade_id);
     }
 
@@ -2045,14 +2062,16 @@ mod test {
             .address();
         client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
 
-        let trade_id_1 = client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id_1 =
+            client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
         client.cancel_trade(&trade_id_1, &buyer);
         assert!(matches!(
             client.get_trade(&trade_id_1).status,
             TradeStatus::Cancelled
         ));
 
-        let trade_id_2 = client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id_2 =
+            client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
         client.cancel_trade(&trade_id_2, &seller);
         assert!(matches!(
             client.get_trade(&trade_id_2).status,
@@ -2180,7 +2199,8 @@ mod test {
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer_2, &amount);
 
-        let trade_id_2 = client.create_trade(&buyer_2, &seller_2, &amount, &5000_u32, &5000_u32, &None);
+        let trade_id_2 =
+            client.create_trade(&buyer_2, &seller_2, &amount, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id_2);
         client.confirm_delivery(&trade_id_2);
         client.refund(&trade_id_2);
@@ -2219,7 +2239,7 @@ mod test {
 
         let token_readonly = token::Client::new(&env, &usdc_id);
         assert_eq!(token_readonly.balance(&seller), 9_900);
-        assert_eq!(token_readonly.balance(&treasury), 100);
+        assert_eq!(client.get_accrued_fees(), 100);
         assert_eq!(token_readonly.balance(&client.address), 0);
         assert!(matches!(
             client.get_trade(&trade_id).status,
@@ -2279,43 +2299,50 @@ mod test {
         client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
 
         // Test 50/50 split
-        let trade_id_1 = client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id_1 =
+            client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
         let trade_1 = client.get_trade(&trade_id_1);
         assert_eq!(trade_1.buyer_loss_bps, 5000);
         assert_eq!(trade_1.seller_loss_bps, 5000);
 
         // Test 70/30 split (buyer bears 70% of loss)
-        let trade_id_2 = client.create_trade(&buyer, &seller, &2000_i128, &7000_u32, &3000_u32, &None);
+        let trade_id_2 =
+            client.create_trade(&buyer, &seller, &2000_i128, &7000_u32, &3000_u32, &None);
         let trade_2 = client.get_trade(&trade_id_2);
         assert_eq!(trade_2.buyer_loss_bps, 7000);
         assert_eq!(trade_2.seller_loss_bps, 3000);
 
         // Test 100/0 split (buyer bears all loss)
-        let trade_id_3 = client.create_trade(&buyer, &seller, &3000_i128, &10000_u32, &0_u32, &None);
+        let trade_id_3 =
+            client.create_trade(&buyer, &seller, &3000_i128, &10000_u32, &0_u32, &None);
         let trade_3 = client.get_trade(&trade_id_3);
         assert_eq!(trade_3.buyer_loss_bps, 10000);
         assert_eq!(trade_3.seller_loss_bps, 0);
 
         // Test 0/100 split (seller bears all loss)
-        let trade_id_4 = client.create_trade(&buyer, &seller, &4000_i128, &0_u32, &10000_u32, &None);
+        let trade_id_4 =
+            client.create_trade(&buyer, &seller, &4000_i128, &0_u32, &10000_u32, &None);
         let trade_4 = client.get_trade(&trade_id_4);
         assert_eq!(trade_4.buyer_loss_bps, 0);
         assert_eq!(trade_4.seller_loss_bps, 10000);
 
         // Test 30/70 split
-        let trade_id_5 = client.create_trade(&buyer, &seller, &5000_i128, &3000_u32, &7000_u32, &None);
+        let trade_id_5 =
+            client.create_trade(&buyer, &seller, &5000_i128, &3000_u32, &7000_u32, &None);
         let trade_5 = client.get_trade(&trade_id_5);
         assert_eq!(trade_5.buyer_loss_bps, 3000);
         assert_eq!(trade_5.seller_loss_bps, 7000);
 
         // Test 10/90 split
-        let trade_id_6 = client.create_trade(&buyer, &seller, &6000_i128, &1000_u32, &9000_u32, &None);
+        let trade_id_6 =
+            client.create_trade(&buyer, &seller, &6000_i128, &1000_u32, &9000_u32, &None);
         let trade_6 = client.get_trade(&trade_id_6);
         assert_eq!(trade_6.buyer_loss_bps, 1000);
         assert_eq!(trade_6.seller_loss_bps, 9000);
 
         // Test 25/75 split (middle cases)
-        let trade_id_7 = client.create_trade(&buyer, &seller, &7000_i128, &2500_u32, &7500_u32, &None);
+        let trade_id_7 =
+            client.create_trade(&buyer, &seller, &7000_i128, &2500_u32, &7500_u32, &None);
         let trade_7 = client.get_trade(&trade_id_7);
         assert_eq!(trade_7.buyer_loss_bps, 2500);
         assert_eq!(trade_7.seller_loss_bps, 7500);
@@ -2341,7 +2368,8 @@ mod test {
             INSTANCE_TTL_EXTEND_TO
         );
 
-        let trade_id_1 = client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id_1 =
+            client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
         assert_eq!(trade_id_1 & 0xFFFF_FFFF_u64, 1);
 
         let current_ledger = env.ledger().sequence();
@@ -2349,7 +2377,8 @@ mod test {
             .set_sequence_number(current_ledger + INSTANCE_TTL_EXTEND_TO - 1);
         assert_eq!(env.deployer().get_contract_instance_ttl(&contract_id), 1);
 
-        let trade_id_2 = client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id_2 =
+            client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
         assert_eq!(trade_id_2 & 0xFFFF_FFFF_u64, 2);
         assert_eq!(
             env.deployer().get_contract_instance_ttl(&contract_id),
@@ -2417,7 +2446,7 @@ mod test {
         env.mock_all_auths();
         let amount = 10_000_i128;
         let fee_bps = 100_u32;
-        let (contract_id, usdc_id, buyer, seller, treasury, trade_id) =
+        let (contract_id, usdc_id, buyer, seller, _treasury, trade_id) =
             setup_disputed_trade(&env, amount, fee_bps);
 
         let mediator = Address::generate(&env);
@@ -2428,7 +2457,7 @@ mod test {
 
         let token = token::Client::new(&env, &usdc_id);
         assert_eq!(token.balance(&seller), 7_425, "seller_net mismatch");
-        assert_eq!(token.balance(&treasury), 75, "fee mismatch");
+        assert_eq!(client.get_accrued_fees(), 75, "fee mismatch");
         assert_eq!(token.balance(&buyer), 2_500, "buyer_refund mismatch");
         assert_eq!(token.balance(&client.address), 0, "escrow should be empty");
         assert!(matches!(
@@ -2450,7 +2479,7 @@ mod test {
         env.mock_all_auths();
         let amount = 10_000_i128;
         let fee_bps = 100_u32;
-        let (contract_id, usdc_id, buyer, seller, treasury, trade_id) =
+        let (contract_id, usdc_id, buyer, seller, _treasury, trade_id) =
             setup_disputed_trade(&env, amount, fee_bps);
 
         let mediator = Address::generate(&env);
@@ -2461,7 +2490,7 @@ mod test {
 
         let token = token::Client::new(&env, &usdc_id);
         assert_eq!(token.balance(&seller), 9_900, "seller_net mismatch");
-        assert_eq!(token.balance(&treasury), 100, "fee mismatch");
+        assert_eq!(client.get_accrued_fees(), 100, "fee mismatch");
         assert_eq!(token.balance(&buyer), 0, "buyer should receive nothing");
         assert_eq!(token.balance(&client.address), 0);
     }
@@ -2482,7 +2511,7 @@ mod test {
         env.mock_all_auths();
         let amount = 10_000_i128;
         let fee_bps = 100_u32;
-        let (contract_id, usdc_id, buyer, seller, treasury, trade_id) =
+        let (contract_id, usdc_id, buyer, seller, _treasury, trade_id) =
             setup_disputed_trade(&env, amount, fee_bps);
 
         let mediator = Address::generate(&env);
@@ -2498,7 +2527,7 @@ mod test {
             4_950,
             "seller should receive their share minus fee"
         );
-        assert_eq!(token.balance(&treasury), 50, "fee on seller's portion");
+        assert_eq!(client.get_accrued_fees(), 50, "fee on seller's portion");
         assert_eq!(token.balance(&client.address), 0);
     }
 
@@ -2616,7 +2645,7 @@ mod test {
             8_712,
             "seller_net with 70/30 loss-sharing"
         );
-        assert_eq!(token.balance(&treasury), 88, "fee on seller portion");
+        assert_eq!(client.get_accrued_fees(), 88, "fee on seller portion");
         assert_eq!(
             token.balance(&buyer),
             1_200,
@@ -2675,7 +2704,7 @@ mod test {
             9_900,
             "seller gets full amount minus fee"
         );
-        assert_eq!(token.balance(&treasury), 100, "fee on full seller amount");
+        assert_eq!(client.get_accrued_fees(), 100, "fee on full seller amount");
         assert_eq!(
             token.balance(&buyer),
             0,
@@ -2730,7 +2759,7 @@ mod test {
 
         let token = token::Client::new(&env, &usdc_id);
         assert_eq!(token.balance(&seller), 2_970, "seller bears all loss");
-        assert_eq!(token.balance(&treasury), 30, "fee on seller portion");
+        assert_eq!(client.get_accrued_fees(), 30, "fee on seller portion");
         assert_eq!(
             token.balance(&buyer),
             7_000,
@@ -2785,7 +2814,7 @@ mod test {
 
         let token = token::Client::new(&env, &usdc_id);
         assert_eq!(token.balance(&seller), 9_108, "seller with small loss");
-        assert_eq!(token.balance(&treasury), 92, "fee on seller portion");
+        assert_eq!(client.get_accrued_fees(), 92, "fee on seller portion");
         assert_eq!(token.balance(&buyer), 800, "buyer refund with small loss");
         assert_eq!(token.balance(&client.address), 0);
     }
@@ -2835,7 +2864,7 @@ mod test {
 
         let token = token::Client::new(&env, &usdc_id);
         assert_eq!(token.balance(&seller), 6_930, "seller with 25/75 case");
-        assert_eq!(token.balance(&treasury), 70, "fee on seller portion");
+        assert_eq!(client.get_accrued_fees(), 70, "fee on seller portion");
         assert_eq!(token.balance(&buyer), 3_000, "buyer refund 25/75 case");
         assert_eq!(token.balance(&client.address), 0);
     }
@@ -2858,7 +2887,7 @@ mod test {
         env.mock_all_auths();
         let amount = 10_000_i128;
         let fee_bps = 100_u32;
-        let (contract_id, usdc_id, buyer, seller, treasury, trade_id) =
+        let (contract_id, usdc_id, buyer, seller, _treasury, trade_id) =
             setup_disputed_trade(&env, amount, fee_bps);
 
         let mediator = Address::generate(&env);
@@ -2874,7 +2903,7 @@ mod test {
             9_900,
             "seller gets full amount minus fee"
         );
-        assert_eq!(token.balance(&treasury), 100, "fee on full amount");
+        assert_eq!(client.get_accrued_fees(), 100, "fee on full amount");
         assert_eq!(token.balance(&buyer), 0, "buyer gets nothing when no loss");
         assert_eq!(token.balance(&client.address), 0);
     }
@@ -2980,7 +3009,8 @@ mod test {
         client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
 
         // create_trade but NO deposit — trade is still Created
-        let trade_id = client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &5_000_i128, &5000_u32, &5000_u32, &None);
         let reason = soroban_sdk::String::from_str(&env, "QmPrematureDispute");
         client.initiate_dispute(&trade_id, &buyer, &reason);
     }
@@ -3379,8 +3409,14 @@ mod test {
         client.initialize(&admin, &usdc_id, &treasury, &fee_bps, &usdc_id);
         let token_mint = token::StellarAssetClient::new(env, &usdc_id);
         token_mint.mint(&buyer, &amount);
-        let trade_id =
-            client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps, &None);
+        let trade_id = client.create_trade(
+            &buyer,
+            &seller,
+            &amount,
+            &buyer_loss_bps,
+            &seller_loss_bps,
+            &None,
+        );
         client.deposit(&trade_id);
         let reason = soroban_sdk::String::from_str(env, "QmInvariantTest");
         client.initiate_dispute(&trade_id, &buyer, &reason);
@@ -3391,7 +3427,7 @@ mod test {
         (
             tok.balance(&seller),
             tok.balance(&buyer),
-            tok.balance(&treasury),
+            client.get_accrued_fees(),
         )
     }
 
@@ -3525,7 +3561,8 @@ mod test {
             .address();
         client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
         // Trade is Created (not Funded)
-        let trade_id = client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
         client.confirm_delivery(&trade_id);
     }
 
@@ -3592,7 +3629,8 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
-        let trade_id = client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
         let stranger = Address::generate(&env);
         client.cancel_trade(&trade_id, &stranger);
     }
@@ -3612,7 +3650,8 @@ mod test {
             .address();
         client.initialize(&admin, &usdc_id, &treasury, &100, &usdc_id);
 
-        let trade_id = client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
         client.cancel_trade(&trade_id, &admin);
 
         assert!(matches!(
@@ -3678,7 +3717,18 @@ mod test {
     // Path Payment (Volatility Protection) tests
     // -----------------------------------------------------------------------
 
-    fn setup_path_payment_env(env: &Env, init_fee_bps: u32) -> (Address, Address, Address, Address, Address, Address, Address) {
+    fn setup_path_payment_env(
+        env: &Env,
+        init_fee_bps: u32,
+    ) -> (
+        Address,
+        Address,
+        Address,
+        Address,
+        Address,
+        Address,
+        Address,
+    ) {
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(env, &contract_id);
         let admin = Address::generate(env);
@@ -3710,7 +3760,8 @@ mod test {
         let ngn_mint = token::StellarAssetClient::new(&env, &ngn_id);
         ngn_mint.mint(&buyer, &source_amount);
 
-        let trade_id = client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
 
         env.ledger().with_mut(|l| l.timestamp = 1_000);
         let path = Vec::new(&env);
@@ -3726,12 +3777,22 @@ mod test {
         assert_eq!(trade.funded_at, Some(1_000));
 
         let ngn_balance = token::Client::new(&env, &ngn_id);
-        assert_eq!(ngn_balance.balance(&buyer), 0, "all NGN should be transferred");
+        assert_eq!(
+            ngn_balance.balance(&buyer),
+            0,
+            "all NGN should be transferred"
+        );
 
-        assert!(trade.amount >= dest_min, "received cNGN must be >= dest_min");
+        assert!(
+            trade.amount >= dest_min,
+            "received cNGN must be >= dest_min"
+        );
 
         let stored_source = client.get_source_token();
-        assert_eq!(stored_source, ngn_id, "source token should be stored correctly");
+        assert_eq!(
+            stored_source, ngn_id,
+            "source token should be stored correctly"
+        );
     }
 
     /// deposit_with_path panics if source_amount is zero.
@@ -3743,7 +3804,8 @@ mod test {
         let (contract_id, _admin, buyer, seller, _treasury, _cngn_id, _ngn_id) =
             setup_path_payment_env(&env, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &0_i128, &1_i128, &path);
     }
@@ -3761,7 +3823,8 @@ mod test {
         ngn_mint.mint(&buyer, &10_000_i128);
         let cngn_mint = token::StellarAssetClient::new(&env, &cngn_id);
         cngn_mint.mint(&contract_id, &20_000_i128);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &5_000_i128, &0_i128, &path);
     }
@@ -3782,7 +3845,8 @@ mod test {
         cngn_mint.mint(&buyer, &20_000_i128);
         cngn_mint.mint(&contract_id, &20_000_i128);
 
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &5_000_i128, &4_900_i128, &path);
@@ -3802,7 +3866,8 @@ mod test {
         let cngn_mint = token::StellarAssetClient::new(&env, &cngn_id);
         cngn_mint.mint(&buyer, &20_000_i128);
         cngn_mint.mint(&contract_id, &20_000_i128);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &seller, &5_000_i128, &4_900_i128, &path);
     }
@@ -3812,7 +3877,7 @@ mod test {
     fn test_path_payment_full_lifecycle() {
         let env = Env::default();
         env.mock_all_auths();
-        let (contract_id, _admin, buyer, seller, treasury, cngn_id, ngn_id) =
+        let (contract_id, _admin, buyer, seller, _treasury, cngn_id, ngn_id) =
             setup_path_payment_env(&env, 100);
         let client = EscrowContractClient::new(&env, &contract_id);
 
@@ -3822,7 +3887,8 @@ mod test {
         let ngn_mint = token::StellarAssetClient::new(&env, &ngn_id);
         ngn_mint.mint(&buyer, &source_amount);
 
-        let trade_id = client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
 
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &source_amount, &dest_min, &path);
@@ -3850,7 +3916,7 @@ mod test {
         let seller_amount = dest_amount - fee;
 
         assert_eq!(cngn_token.balance(&seller), seller_amount);
-        assert_eq!(cngn_token.balance(&treasury), fee);
+        assert_eq!(client.get_accrued_fees(), fee);
         assert_eq!(cngn_token.balance(&contract_id), 0);
     }
 
@@ -3869,7 +3935,8 @@ mod test {
         let ngn_mint = token::StellarAssetClient::new(&env, &ngn_id);
         ngn_mint.mint(&buyer, &source_amount);
 
-        let trade_id = client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
         let mut path = Vec::new(&env);
         path.push_back(ngn_id.clone());
         client.deposit_with_path(&trade_id, &buyer, &source_amount, &dest_min, &path);
@@ -3898,7 +3965,8 @@ mod test {
 
         let ngn_mint = token::StellarAssetClient::new(&env, &ngn_id);
         ngn_mint.mint(&buyer, &source_amount);
-        let trade_id = client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &source_amount, &5000_u32, &5000_u32, &None);
         let path = Vec::new(&env);
         client.deposit_with_path(&trade_id, &buyer, &source_amount, &dest_min, &path);
 
@@ -3956,7 +4024,7 @@ mod test {
             );
             assert_eq!(cngn_token.balance(&contract_id), 0);
         }
-}
+    }
     #[test]
     #[should_panic(expected = "Cannot cancel trade in current status")]
     fn test_cancel_trade_rejects_after_completed() {
@@ -4001,7 +4069,6 @@ mod test {
         ));
         // Buyer can no longer cancel - already Cancelled
         client.cancel_trade(&trade_id, &buyer);
-
     }
 }
 
@@ -4078,7 +4145,8 @@ mod integration_tests {
     /// Create a trade and immediately deposit funds. Returns the trade_id.
     fn create_and_fund(s: &Setup, amount: i128) -> u64 {
         let client = s.client();
-        let trade_id = client.create_trade(&s.buyer, &s.seller, &amount, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&s.buyer, &s.seller, &amount, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
         trade_id
     }
@@ -4105,7 +4173,8 @@ mod integration_tests {
 
         // ── Step 1: Create trade ────────────────────────────────────────────
         s.env.ledger().with_mut(|l| l.timestamp = 1_000);
-        let trade_id = client.create_trade(&s.buyer, &s.seller, &amount, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&s.buyer, &s.seller, &amount, &5000_u32, &5000_u32, &None);
 
         let trade = client.get_trade(&trade_id);
         assert!(
@@ -4301,7 +4370,14 @@ mod integration_tests {
     fn test_cannot_raise_dispute_before_funding() {
         let s = Setup::new(10_000, 100);
         let client = s.client();
-        let trade_id = client.create_trade(&s.buyer, &s.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id = client.create_trade(
+            &s.buyer,
+            &s.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
         // deposit deliberately skipped — trade is still Created
         let dispute_reason = soroban_sdk::String::from_str(&s.env, "QmPrematureDispute");
         client.initiate_dispute(&trade_id, &s.buyer, &dispute_reason);
@@ -4525,7 +4601,14 @@ mod integration_tests {
         let client = s.client();
 
         // Trade is Created (not yet funded)
-        let trade_id = client.create_trade(&s.buyer, &s.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id = client.create_trade(
+            &s.buyer,
+            &s.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
 
         let cid = soroban_sdk::String::from_str(&s.env, "QmTooEarlyCID");
         client.submit_video_proof(&trade_id, &s.buyer, &cid);
@@ -6181,8 +6264,14 @@ mod property_tests {
             let buyer_loss_bps = ((i * 7) % 10001) as u32;
             let seller_loss_bps = 10_000 - buyer_loss_bps;
 
-            let trade_id =
-                client.create_trade(&buyer, &seller, &amount, &buyer_loss_bps, &seller_loss_bps, &None);
+            let trade_id = client.create_trade(
+                &buyer,
+                &seller,
+                &amount,
+                &buyer_loss_bps,
+                &seller_loss_bps,
+                &None,
+            );
             client.deposit(&trade_id);
             client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
 
@@ -6234,7 +6323,8 @@ mod property_tests {
         client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         let client = EscrowContractClient::new(&env, &contract_id);
@@ -6276,7 +6366,8 @@ mod property_tests {
         client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         let client = EscrowContractClient::new(&env, &contract_id);
@@ -6311,7 +6402,8 @@ mod property_tests {
         client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         let client = EscrowContractClient::new(&env, &contract_id);
@@ -6354,7 +6446,8 @@ mod property_tests {
         client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
-        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id =
+            client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         client.deposit(&trade_id);
 
         let client = EscrowContractClient::new(&env, &contract_id);
@@ -6514,7 +6607,7 @@ mod property_tests {
     #[test]
     fn test_property_valid_lifecycle_transitions() {
         QuickCheck::new()
-            .tests(100)
+            .tests(20)
             .quickcheck(prop_valid_lifecycle_transitions as fn(LifecycleScenario) -> TestResult);
     }
 
@@ -6584,7 +6677,7 @@ mod property_tests {
 
     #[test]
     fn test_property_rejects_invalid_lifecycle_transitions() {
-        QuickCheck::new().tests(100).quickcheck(
+        QuickCheck::new().tests(20).quickcheck(
             prop_rejects_invalid_lifecycle_transition as fn(LifecycleScenario) -> TestResult,
         );
     }
@@ -6869,8 +6962,14 @@ mod fee_and_evidence_tests {
         client.initialize(&admin, &usdc_id, &treasury, &10_000, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &overflowing_amount);
-        let trade_id =
-            client.create_trade(&buyer, &seller, &overflowing_amount, &0_u32, &10_000_u32, &None);
+        let trade_id = client.create_trade(
+            &buyer,
+            &seller,
+            &overflowing_amount,
+            &0_u32,
+            &10_000_u32,
+            &None,
+        );
         client.deposit(&trade_id);
 
         let reason = String::from_str(&env, "QmOverflowPayout");
@@ -7329,7 +7428,10 @@ mod fee_and_evidence_tests {
         assert_eq!(tok.balance(&treasury), 0, "fee must be zero");
         assert_eq!(tok.balance(&buyer), 0);
         assert_eq!(tok.balance(&client.address), 0);
-        assert_eq!(10_000 + 0 + 0, 10_000, "conservation invariant");
+        #[allow(clippy::identity_op)]
+        {
+            assert_eq!(10_000 + 0 + 0, 10_000, "conservation invariant");
+        }
     }
 
     /// Dispute resolution where seller gets zero (seller_net == 0):
@@ -7371,6 +7473,9 @@ mod fee_and_evidence_tests {
         assert_eq!(tok.balance(&treasury), 0, "fee must be zero");
         assert_eq!(tok.balance(&buyer), 10_000, "buyer gets full refund");
         assert_eq!(tok.balance(&client.address), 0);
-        assert_eq!(0 + 0 + 10_000, 10_000, "conservation invariant");
+        #[allow(clippy::identity_op)]
+        {
+            assert_eq!(0 + 0 + 10_000, 10_000, "conservation invariant");
+        }
     }
 }

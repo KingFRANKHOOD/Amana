@@ -23,6 +23,7 @@
 /// exercised with a hand-crafted table of boundary / edge-case inputs so that
 /// the most dangerous values are always covered regardless of the random seed.
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod bps_fuzz_tests {
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
@@ -35,9 +36,7 @@ mod bps_fuzz_tests {
 
     /// Mirror of `checked_fee_amount` in lib.rs.
     fn fee_amount(amount: i128, fee_bps: u32) -> Option<i128> {
-        amount
-            .checked_mul(fee_bps as i128)
-            .map(|v| v / BPS_DIVISOR)
+        amount.checked_mul(fee_bps as i128).map(|v| v / BPS_DIVISOR)
     }
 
     /// Mirror of `checked_loss_amount` in lib.rs.
@@ -80,7 +79,7 @@ mod bps_fuzz_tests {
     fn prop_fee_amount_non_negative(raw_amount: i64, raw_bps: u32) -> bool {
         let amount = valid_amount(raw_amount);
         let fee_bps = valid_bps(raw_bps);
-        fee_amount(amount, fee_bps).map_or(false, |f| f >= 0)
+        fee_amount(amount, fee_bps).is_some_and(|f| f >= 0)
     }
 
     /// fee_amount must never exceed the original amount.
@@ -88,7 +87,7 @@ mod bps_fuzz_tests {
     fn prop_fee_amount_le_amount(raw_amount: i64, raw_bps: u32) -> bool {
         let amount = valid_amount(raw_amount);
         let fee_bps = valid_bps(raw_bps);
-        fee_amount(amount, fee_bps).map_or(false, |f| f <= amount)
+        fee_amount(amount, fee_bps).is_some_and(|f| f <= amount)
     }
 
     /// seller_amount (amount - fee) must be non-negative.
@@ -96,7 +95,7 @@ mod bps_fuzz_tests {
     fn prop_seller_amount_non_negative(raw_amount: i64, raw_bps: u32) -> bool {
         let amount = valid_amount(raw_amount);
         let fee_bps = valid_bps(raw_bps);
-        fee_amount(amount, fee_bps).map_or(false, |f| amount - f >= 0)
+        fee_amount(amount, fee_bps).is_some_and(|f| amount - f >= 0)
     }
 
     /// Conservation: seller_amount + fee_amount == amount (release_funds path).
@@ -130,10 +129,13 @@ mod bps_fuzz_tests {
                 "fee_bps=10_000 must yield full amount"
             );
             // fee_bps = 1 (0.01%) → fee must be >= 0
-            assert!(fee_amount(amount, 1).map_or(false, |f| f >= 0));
+            assert!(fee_amount(amount, 1).is_some_and(|f| f >= 0));
             // fee_bps = 9_999 → seller keeps at least 1 unit per 10_000
             let fee = fee_amount(amount, 9_999).unwrap();
-            assert!(amount - fee >= 0, "seller_amount must be non-negative at bps=9999");
+            assert!(
+                amount - fee >= 0,
+                "seller_amount must be non-negative at bps=9999"
+            );
         }
     }
 
@@ -142,7 +144,10 @@ mod bps_fuzz_tests {
         // amount = 1 with any fee_bps must not overflow and fee must be 0 or 1
         for bps in [0_u32, 1, 100, 5_000, 9_999, 10_000] {
             let fee = fee_amount(1, bps).expect("must not overflow for amount=1");
-            assert!(fee == 0 || fee == 1, "fee for amount=1 must be 0 or 1, got {fee}");
+            assert!(
+                fee == 0 || fee == 1,
+                "fee for amount=1 must be 0 or 1, got {fee}"
+            );
         }
     }
 
@@ -178,7 +183,7 @@ mod bps_fuzz_tests {
         let total = valid_amount(raw_total);
         let loss_bps = valid_bps(raw_loss_bps) as i128;
         let seller_loss_bps = valid_bps(raw_slbps);
-        loss_amount(total, loss_bps, seller_loss_bps).map_or(false, |l| l >= 0)
+        loss_amount(total, loss_bps, seller_loss_bps).is_some_and(|l| l >= 0)
     }
 
     /// loss_amount must never exceed total.
@@ -187,7 +192,7 @@ mod bps_fuzz_tests {
         let total = valid_amount(raw_total);
         let loss_bps = valid_bps(raw_loss_bps) as i128;
         let seller_loss_bps = valid_bps(raw_slbps);
-        loss_amount(total, loss_bps, seller_loss_bps).map_or(false, |l| l <= total)
+        loss_amount(total, loss_bps, seller_loss_bps).is_some_and(|l| l <= total)
     }
 
     // -----------------------------------------------------------------------
@@ -339,7 +344,7 @@ mod bps_fuzz_tests {
     fn test_resolve_dispute_buyer_gets_all() {
         // seller_gets_bps = 0 → loss_bps = 10_000 → seller bears full loss
         let total = 10_000_i128;
-        let loss_bps = BPS_DIVISOR - 0_i128;
+        let loss_bps = BPS_DIVISOR;
         // seller_loss_bps = 10_000 → seller bears all loss
         let seller_loss = loss_amount(total, loss_bps, 10_000).unwrap();
         assert_eq!(seller_loss, total);
@@ -415,8 +420,8 @@ mod bps_fuzz_tests {
     fn test_fee_bps_exhaustive_sweep() {
         let amount = 1_000_000_i128;
         for bps in 0_u32..=10_000 {
-            let fee = fee_amount(amount, bps)
-                .unwrap_or_else(|| panic!("overflow at fee_bps={bps}"));
+            let fee =
+                fee_amount(amount, bps).unwrap_or_else(|| panic!("overflow at fee_bps={bps}"));
             let seller = amount - fee;
             assert!(fee >= 0, "fee must be >= 0 at bps={bps}");
             assert!(seller >= 0, "seller_amount must be >= 0 at bps={bps}");

@@ -4,12 +4,10 @@
 /// See `contracts/amana_escrow/docs/gas-estimation.md` for the methodology,
 /// re-baselining policy, and CI assumptions.
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod gas_footprint_tests {
     use crate::{EscrowContract, EscrowContractClient};
-    use soroban_sdk::{
-        testutils::Address as _,
-        token, Address, Env, String,
-    };
+    use soroban_sdk::{Address, Env, String, testutils::Address as _, token};
 
     const BASELINE_CREATE_TRADE_CPU: u64 = 3_000_000;
     const BASELINE_CREATE_TRADE_MEM: u64 = 2_000_000;
@@ -30,8 +28,16 @@ mod gas_footprint_tests {
         fn assert_under(self, label: &str, max_cpu: u64, max_mem: u64) {
             assert!(self.cpu > 0, "{label} CPU estimate must be non-zero");
             assert!(self.mem > 0, "{label} MEM estimate must be non-zero");
-            assert!(self.cpu <= max_cpu, "{label} CPU regression: {} > baseline {max_cpu}", self.cpu);
-            assert!(self.mem <= max_mem, "{label} MEM regression: {} > baseline {max_mem}", self.mem);
+            assert!(
+                self.cpu <= max_cpu,
+                "{label} CPU regression: {} > baseline {max_cpu}",
+                self.cpu
+            );
+            assert!(
+                self.mem <= max_mem,
+                "{label} MEM regression: {} > baseline {max_mem}",
+                self.mem
+            );
         }
     }
 
@@ -56,7 +62,9 @@ mod gas_footprint_tests {
             let mediator = Address::generate(&env);
 
             let contract_id = env.register(EscrowContract, ());
-            let usdc_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+            let usdc_id = env
+                .register_stellar_asset_contract_v2(admin.clone())
+                .address();
 
             token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(amount * 10));
 
@@ -64,7 +72,13 @@ mod gas_footprint_tests {
             client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
             client.set_mediator(&mediator);
 
-            Ctx { env, contract_id, buyer, seller, mediator }
+            Ctx {
+                env,
+                contract_id,
+                buyer,
+                seller,
+                mediator,
+            }
         }
 
         fn client(&self) -> EscrowContractClient<'_> {
@@ -88,17 +102,35 @@ mod gas_footprint_tests {
         let client = ctx.client();
 
         let cost = ctx.measure(|| {
-            client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+            client.create_trade(
+                &ctx.buyer,
+                &ctx.seller,
+                &10_000_i128,
+                &5000_u32,
+                &5000_u32,
+                &None,
+            );
         });
 
-        cost.assert_under("create_trade", BASELINE_CREATE_TRADE_CPU, BASELINE_CREATE_TRADE_MEM);
+        cost.assert_under(
+            "create_trade",
+            BASELINE_CREATE_TRADE_CPU,
+            BASELINE_CREATE_TRADE_MEM,
+        );
     }
 
     #[test]
     fn test_gas_deposit() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id = client.create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
 
         let cost = ctx.measure(|| {
             client.deposit(&trade_id);
@@ -111,7 +143,14 @@ mod gas_footprint_tests {
     fn test_gas_initiate_dispute() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id = client.create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
         client.deposit(&trade_id);
 
         let cost = ctx.measure(|| {
@@ -122,22 +161,41 @@ mod gas_footprint_tests {
             );
         });
 
-        cost.assert_under("initiate_dispute", BASELINE_DISPUTE_CPU, BASELINE_DISPUTE_MEM);
+        cost.assert_under(
+            "initiate_dispute",
+            BASELINE_DISPUTE_CPU,
+            BASELINE_DISPUTE_MEM,
+        );
     }
 
     #[test]
     fn test_gas_resolve_dispute() {
         let ctx = Ctx::new(10_000);
         let client = ctx.client();
-        let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+        let trade_id = client.create_trade(
+            &ctx.buyer,
+            &ctx.seller,
+            &10_000_i128,
+            &5000_u32,
+            &5000_u32,
+            &None,
+        );
         client.deposit(&trade_id);
-        client.initiate_dispute(&trade_id, &ctx.buyer, &String::from_str(&ctx.env, "QmGasTestReason"));
+        client.initiate_dispute(
+            &trade_id,
+            &ctx.buyer,
+            &String::from_str(&ctx.env, "QmGasTestReason"),
+        );
 
         let cost = ctx.measure(|| {
             client.resolve_dispute(&trade_id, &ctx.mediator, &5_000_u32);
         });
 
-        cost.assert_under("resolve_dispute", BASELINE_RESOLVE_CPU, BASELINE_RESOLVE_MEM);
+        cost.assert_under(
+            "resolve_dispute",
+            BASELINE_RESOLVE_CPU,
+            BASELINE_RESOLVE_MEM,
+        );
     }
 
     #[test]
@@ -146,16 +204,33 @@ mod gas_footprint_tests {
         let client = ctx.client();
 
         let cost = ctx.measure(|| {
-            let trade_id = client.create_trade(&ctx.buyer, &ctx.seller, &10_000_i128, &5000_u32, &5000_u32, &None);
+            let trade_id = client.create_trade(
+                &ctx.buyer,
+                &ctx.seller,
+                &10_000_i128,
+                &5000_u32,
+                &5000_u32,
+                &None,
+            );
             client.deposit(&trade_id);
-            client.initiate_dispute(&trade_id, &ctx.buyer, &String::from_str(&ctx.env, "QmCombinedReason"));
+            client.initiate_dispute(
+                &trade_id,
+                &ctx.buyer,
+                &String::from_str(&ctx.env, "QmCombinedReason"),
+            );
             client.resolve_dispute(&trade_id, &ctx.mediator, &5_000_u32);
         });
 
         cost.assert_under(
             "combined lifecycle",
-            BASELINE_CREATE_TRADE_CPU + BASELINE_DEPOSIT_CPU + BASELINE_DISPUTE_CPU + BASELINE_RESOLVE_CPU,
-            BASELINE_CREATE_TRADE_MEM + BASELINE_DEPOSIT_MEM + BASELINE_DISPUTE_MEM + BASELINE_RESOLVE_MEM,
+            BASELINE_CREATE_TRADE_CPU
+                + BASELINE_DEPOSIT_CPU
+                + BASELINE_DISPUTE_CPU
+                + BASELINE_RESOLVE_CPU,
+            BASELINE_CREATE_TRADE_MEM
+                + BASELINE_DEPOSIT_MEM
+                + BASELINE_DISPUTE_MEM
+                + BASELINE_RESOLVE_MEM,
         );
     }
 }
