@@ -33,6 +33,14 @@ function getStoredToken(): string | null {
   return sessionStorage.getItem(TOKEN_STORAGE_KEY);
 }
 
+export const navigationHelpers = {
+  reload(): void {
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
+  },
+};
+
 function createHeaders(
   headers?: HeadersInit,
   token?: string | null,
@@ -146,7 +154,7 @@ export async function requestWithResult<T>(
         const storedToken = getStoredToken();
         if (storedToken) {
           sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-          window.location.reload();
+          navigationHelpers.reload();
         }
       }
       return { success: false, error };

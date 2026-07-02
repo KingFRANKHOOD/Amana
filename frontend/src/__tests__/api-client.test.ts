@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import { request, requestWithResult, ApiError } from "@/lib/api/client";
+import { request, requestWithResult, ApiError, navigationHelpers } from "@/lib/api/client";
 import { z } from "zod";
 
 describe("API Client", () => {
@@ -117,7 +117,7 @@ describe("API Client", () => {
         } as Response),
       );
 
-      const reloadSpy = jest.spyOn(window.location, "reload").mockImplementation(() => {});
+      const reloadSpy = jest.spyOn(navigationHelpers, "reload").mockImplementation(() => {});
 
       const result = await requestWithResult<{ data: string }>("/test");
       expect(result.success).toBe(false);
@@ -126,8 +126,6 @@ describe("API Client", () => {
       }
       expect(sessionStorage.getItem("amana_jwt")).toBeNull();
       expect(reloadSpy).toHaveBeenCalled();
-
-      reloadSpy.mockRestore();
     });
 
     it("should handle network errors", async () => {
