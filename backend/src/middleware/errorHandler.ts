@@ -37,7 +37,7 @@ export function errorHandler(
     const payload: StructuredErrorPayload = {
       code: ErrorCode.VALIDATION_ERROR,
       message: 'Validation failed',
-      details: { errors: err.errors },
+      details: { errors: (err as { errors: unknown }).errors },
       timestamp: new Date().toISOString(),
       path,
       ...(correlationId && { correlationId }),

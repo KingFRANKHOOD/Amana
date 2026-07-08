@@ -5,6 +5,7 @@ declare module 'ioredis' {
     set(...args: any[]): Promise<any>;
     del(...args: any[]): Promise<any>;
     exists(...args: any[]): Promise<any>;
+    keys(...args: any[]): Promise<any>;
   }
 }
 
