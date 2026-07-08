@@ -161,6 +161,16 @@ See [DISTRIBUTED_TRACING_GUIDE.md](./DISTRIBUTED_TRACING_GUIDE.md) for detailed 
 
 ---
 
+## 📐 Architecture Decision Records
+
+Key architectural decisions are documented as ADRs in [`docs/adr/`](./docs/adr):
+
+- [ADR-001: Stellar Path Payment Architecture](./docs/adr/ADR-001-stellar-path-payment-architecture.md)
+- [ADR-002: Escrow Loss-Sharing Model](./docs/adr/ADR-002-escrow-loss-sharing-model.md)
+- [ADR-003: Off-chain vs. On-chain Data Partitioning](./docs/adr/ADR-003-offchain-vs-onchain-data-partitioning.md)
+- [ADR-004: Idempotency and Retry Strategy](./docs/adr/ADR-004-idempotency-and-retry-strategy.md)
+- [ADR-005: Frontend State Management](./docs/adr/ADR-005-frontend-state-management.md)
+
 ## 🤝 Contributing
 
 Amana is an open-source project aimed at improving food security and trade efficiency. We welcome developers, designers, and agricultural experts!
