@@ -115,7 +115,7 @@ export interface DisputeResponse {
   tradeId: string;
   initiator: string;
   reason: string;
-  status: "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "CLOSED";
+  status: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string | null;
@@ -136,26 +136,16 @@ export interface DisputeListResponse {
   };
 }
 
-export interface ReputationEvent {
-  id: string;
-  event: string;
-  impact: number;
-  impactLabel: string;
-  timestamp: string;
-  type:
-    | "trade_completed"
-    | "trade_initiated"
-    | "dispute_initiated"
-    | "dispute_resolved"
-    | "dispute_involved"
-    | "account_created";
+export interface ResolveDisputeRequest {
+  sellerGetsBps: number;
 }
 
-export interface ReputationResponse {
-  trustScore: number;
-  totalTrades: number;
-  completedTrades: number;
-  disputedTrades: number;
-  successRate: number;
-  history: ReputationEvent[];
+export interface ResolveDisputeResponse {
+  unsignedXdr: string;
+}
+
+export interface EvidenceUploadResponse {
+  evidenceId: string;
+  cid: string;
+  ipfsUrl: string;
 }

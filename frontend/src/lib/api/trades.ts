@@ -4,6 +4,7 @@ import type {
   CreateTradeResponse,
   DepositResponse,
   EvidenceResponse,
+  EvidenceUploadResponse,
   SubmitManifestRequest,
   SubmitManifestResponse,
   TradeHistoryResponse,
@@ -31,6 +32,18 @@ export const tradesApi = {
 
   getEvidence: (token: string, id: string) =>
     request<EvidenceResponse>(`/trades/${id}/evidence`, { token }),
+
+  uploadEvidence: (token: string, tradeId: string, file: File) => {
+    const formData = new FormData();
+    formData.append("tradeId", tradeId);
+    formData.append("file", file);
+
+    return request<EvidenceUploadResponse>("/evidence/video", {
+      method: "POST",
+      token,
+      body: formData,
+    });
+  },
 
   submitManifest: (token: string, tradeId: string, data: SubmitManifestRequest) =>
     request<SubmitManifestResponse>(`/trades/${tradeId}/manifest`, {
