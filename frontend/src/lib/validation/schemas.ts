@@ -40,7 +40,7 @@ export const DisputeSchema = z.object({
     .min(10, "Reason must be at least 10 characters")
     .max(500, "Reason cannot exceed 500 characters"),
   category: z.enum(["quality", "delivery", "payment", "fraud", "other"], {
-    error: "Invalid dispute category",
+    message: "Invalid dispute category",
   }),
   evidenceCids: z.array(z.string().min(1)).optional(),
 });

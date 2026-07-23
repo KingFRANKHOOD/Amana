@@ -76,10 +76,10 @@ describe('VaultDashboard Component', () => {
 
     it('passes correct props to VaultHero', () => {
         render(<VaultDashboard />);
-        expect(screen.getByText('8492-AX')).toBeInTheDocument();
-        expect(screen.getByText('Institutional Custody')).toBeInTheDocument();
-        expect(screen.getByText('Funds Locked')).toBeInTheDocument();
-        expect(screen.getByText('Secured')).toBeInTheDocument();
+        expect(screen.getByText('0-AX')).toBeInTheDocument();
+        expect(screen.getByText('Pending Wallet Authorization')).toBeInTheDocument();
+        expect(screen.getByText('No Active Trades')).toBeInTheDocument();
+        expect(screen.getByText('Not Secured')).toBeInTheDocument();
     });
 
     it('renders the ReleaseSequenceCard component', () => {
@@ -89,7 +89,7 @@ describe('VaultDashboard Component', () => {
 
     it('passes correct props to ReleaseSequenceCard', () => {
         render(<VaultDashboard />);
-        expect(screen.getByText('882-AF')).toBeInTheDocument();
+        expect(screen.getByText('0-AF')).toBeInTheDocument();
         expect(screen.getByText('3 steps')).toBeInTheDocument();
     });
 
@@ -101,9 +101,9 @@ describe('VaultDashboard Component', () => {
     it('passes correct props to VaultValueCard', () => {
         render(<VaultDashboard />);
         const card = screen.getByTestId('vault-value-card');
-        expect(within(card).getByText('2480000')).toBeInTheDocument();
+        expect(within(card).getByText('0')).toBeInTheDocument();
         expect(within(card).getByText('USD')).toBeInTheDocument();
-        expect(within(card).getByText('Insured')).toBeInTheDocument();
+        expect(within(card).getByText('Not Insured')).toBeInTheDocument();
     });
 
     it('renders the ContractManifestCard component', () => {
@@ -113,11 +113,11 @@ describe('VaultDashboard Component', () => {
 
     it('passes correct props to ContractManifestCard', () => {
         render(<VaultDashboard />);
-        expect(screen.getByText('AMN-772-VLT-09')).toBeInTheDocument();
-        expect(screen.getByText('September 24, 2023')).toBeInTheDocument();
-        expect(screen.getByText('Immediate / Fiat-Backed')).toBeInTheDocument();
-        expect(screen.getByText('Global Biotech Inc.')).toBeInTheDocument();
-        expect(screen.getByText('Nova Solutions Ltd.')).toBeInTheDocument();
+        expect(screen.getByText('No active trades')).toBeInTheDocument();
+        expect(screen.getByText('-')).toBeInTheDocument();
+        expect(screen.getByText('Pending')).toBeInTheDocument();
+        expect(screen.getByText('Buyer')).toBeInTheDocument();
+        expect(screen.getByText('Seller')).toBeInTheDocument();
     });
 
     it('renders the AuditLogCard component', () => {
@@ -127,8 +127,8 @@ describe('VaultDashboard Component', () => {
 
     it('passes correct props to AuditLogCard', () => {
         render(<VaultDashboard />);
-        expect(screen.getByText('3 entries')).toBeInTheDocument();
-        expect(screen.getByText('Live Sync')).toBeInTheDocument();
+        expect(screen.getByText('0 entries')).toBeInTheDocument();
+        expect(screen.getByText('Not Live')).toBeInTheDocument();
     });
 
     it('renders the PaymentOverviewCard component', () => {
@@ -139,7 +139,7 @@ describe('VaultDashboard Component', () => {
     it('passes correct props to PaymentOverviewCard', () => {
         render(<VaultDashboard />);
         const card = screen.getByTestId('payment-overview-card');
-        expect(within(card).getByText('2480000')).toBeInTheDocument();
+        expect(within(card).getByText('0')).toBeInTheDocument();
         expect(within(card).getByText('1580')).toBeInTheDocument();
     });
 

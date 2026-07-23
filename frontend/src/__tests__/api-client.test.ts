@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import { request, requestWithResult, ApiError, navigationHelpers } from "@/lib/api/client";
+import {
+  request,
+  requestWithResult,
+  ApiError,
+  navigationHelpers,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+} from "@/lib/api/client";
 import { z } from "zod";
 
 describe("API Client", () => {
@@ -19,6 +25,10 @@ describe("API Client", () => {
 
       const result = await request<{ data: string }>("/test");
       expect(result).toEqual({ data: "test" });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
     });
 
     it("should auto-inject auth token from storage", async () => {
@@ -55,6 +65,37 @@ describe("API Client", () => {
       await expect(request<{ data: string }>("/test")).rejects.toThrow(
         "Network error",
       );
+    });
+
+    it("should abort requests after the configured timeout", async () => {
+      jest.useFakeTimers();
+      global.fetch = jest.fn((_url, init) =>
+        new Promise((_resolve, reject) => {
+          const signal = (init as RequestInit).signal;
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        }),
+      );
+
+      const pending = request<{ data: string }>("/test", { timeoutMs: 10 });
+      jest.advanceTimersByTime(10);
+
+      await expect(pending).rejects.toThrow("Request timed out after 10ms");
+      jest.useRealTimers();
+    });
+
+    it("uses the 30 second default timeout", async () => {
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({ data: "test" }),
+        } as Response),
+      );
+
+      await request<{ data: string }>("/test");
+
+      expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000);
     });
   });
 

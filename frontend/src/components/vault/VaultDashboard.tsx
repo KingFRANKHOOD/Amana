@@ -11,61 +11,44 @@ import {
   PaymentOverviewCard,
 } from "@/components/vault";
 
-// Mock data - in production, this would come from an API or database
 const VAULT_DATA = {
-  escrowId: "8492-AX",
-  custodyType: "Institutional Custody",
-  status: "Funds Locked",
-  isSecured: true,
-  sequenceId: "882-AF",
+  escrowId: "0-AX",
+  custodyType: "Pending Wallet Authorization",
+  status: "No Active Trades",
+  isSecured: false,
+  sequenceId: "0-AF",
   steps: [
-    { label: "Agreement", date: "Oct 12, 2023", status: "completed" as const },
+    { label: "Agreement", date: "-", status: "completed" as const },
     {
       label: "Audit Phase",
-      date: "Processing...",
+      date: "Coming soon",
       status: "in-progress" as const,
     },
-    { label: "Final Release", date: "Est. Nov 04", status: "pending" as const },
+    { label: "Final Release", date: "-", status: "pending" as const },
   ],
-  vaultValue: 2480000,
+  vaultValue: 0,
   currency: "USD",
-  isInsured: true,
+  isInsured: false,
   contract: {
-    id: "AMN-772-VLT-09",
-    agreementDate: "September 24, 2023",
-    settlementType: "Immediate / Fiat-Backed",
+    id: "No active trades",
+    agreementDate: "-",
+    settlementType: "Pending",
     originParty: {
       initials: "GB",
-      name: "Global Biotech Inc.",
+      name: "Buyer",
       color: "teal" as const,
     },
     recipientParty: {
       initials: "NS",
-      name: "Nova Solutions Ltd.",
+      name: "Seller",
       color: "emerald" as const,
     },
   },
-  auditLog: [
-    {
-      type: "biometric" as const,
-      title: "Biometric validation passed",
-      metadata: "2m ago • 192.168.1.44",
-    },
-    {
-      type: "multi-sig" as const,
-      title: "Multi-sig request broadcast",
-      metadata: "1h ago • ID: 494022",
-    },
-    {
-      type: "ledger" as const,
-      title: "Ledger synchronization",
-      metadata: "Yesterday • Block 182,990",
-    },
-  ],
+  auditLog: [],
   networkDescription:
     "Secured and powered by the Stellar network for instantaneous cross-border settlement and verifiable transparency.",
   paymentOverview: {
-    totalCngn: 2480000,
+    totalCngn: 0,
     ngnRate: 1580,
   },
   footer: {
@@ -138,7 +121,11 @@ export function VaultDashboard() {
             />
           </div>
           <div className="lg:col-span-5">
-            <AuditLogCard entries={VAULT_DATA.auditLog} isLiveSync />
+            <AuditLogCard
+              entries={VAULT_DATA.auditLog}
+              isLiveSync={false}
+              emptyMessage="Vault audit events are not available yet. No security entries are shown until a verified audit source is connected."
+            />
           </div>
 
           {/* Row 3: Payment Overview */}
