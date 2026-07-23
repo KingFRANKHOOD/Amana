@@ -6,7 +6,7 @@ import Link from "next/link";
 import { signTransaction } from "@stellar/freighter-api";
 import { useAuth } from "@/hooks/useAuth";
 import { useTradeDetail } from "@/hooks/useTradeDetail";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletBalance } from "@/hooks/useWalletBalance";
 import { api, ApiError } from "@/lib/api";
 import { apiConfig } from "@/lib/api";
 
@@ -79,7 +79,7 @@ export default function TradeDetailPage() {
 
   const { token, address, isAuthenticated } = useAuth();
   const { trade, loading, error, refetch } = useTradeDetail(tradeId);
-  const { balance, asset } = useWallet();
+  const { balance, asset } = useWalletBalance();
 
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
