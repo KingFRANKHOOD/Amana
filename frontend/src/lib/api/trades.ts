@@ -13,12 +13,13 @@ import type {
 } from "./types";
 
 export const tradesApi = {
-  list: (token: string, params?: { status?: string; page?: number; limit?: number }) =>
+  list: (token: string, params?: { status?: string; page?: number; limit?: number; sort?: string }) =>
     request<TradeListResponse>(
       `/trades${createQueryString({
         status: params?.status,
         page: params?.page,
         limit: params?.limit,
+        sort: params?.sort,
       })}`,
       { token },
     ),
