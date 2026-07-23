@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Response, NextFunction } from "express";
 import { SavingsService } from "../services/savings.service";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { AuthRequest } from "../services/auth.service";

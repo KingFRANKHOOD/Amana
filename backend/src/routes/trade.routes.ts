@@ -1,4 +1,4 @@
-import { PrismaClient, TradeStatus } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { NextFunction, Response, Router } from "express";
 import { TradeController } from "../controllers/trade.controller";
 import { prisma as defaultPrisma } from "../lib/db";

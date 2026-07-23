@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import { trace, SpanKind, SpanStatusCode, context } from '@opentelemetry/api';
+import { trace, SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { TracingHelper } from '../config/tracing';
 import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER } from '../middleware/correlationId.middleware';
 

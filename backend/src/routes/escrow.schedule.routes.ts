@@ -107,9 +107,9 @@ export function createEscrowScheduleRouter(
           where: { tradeId: trade.tradeId },
         });
 
-        const created = [];
+        const created: any[] = [];
         for (let i = 0; i < milestones.length; i++) {
-          const m = milestones[i];
+          const m = milestones[i]!;
           const record = await prisma.escrowReleaseMilestone.create({
             data: {
               tradeId: trade.tradeId,

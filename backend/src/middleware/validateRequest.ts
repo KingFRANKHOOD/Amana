@@ -84,6 +84,7 @@ export const validateRequest = (schema: {
       const issues = getZodLikeIssues(error);
       if (issues?.length) {
         const firstError = issues[0];
+        if (!firstError) return next(error);
         const fieldName = firstError.path.join(".");
         const message = fieldName ? `${fieldName}: ${firstError.message}` : firstError.message;
         return res.status(400).json({ error: message });

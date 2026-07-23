@@ -6,7 +6,6 @@ import { findOrCreateUser } from './user.service';
 import { AppError, ErrorCode, isAppError } from '../errors/errorCodes';
 import { env } from '../config/env';
 import { redis } from '../lib/redis';
-import { prisma } from '../lib/db';
 
 const CHALLENGE_PREFIX = 'challenge:';
 const REVOKED_PREFIX = 'revoked_jti:';

@@ -13,7 +13,7 @@ export function createHealthDetailRouter(): Router {
     const router = Router();
     const healthService = new HealthService();
 
-    router.get("/detail", async (req: Request, res: Response, next: NextFunction) => {
+    router.get("/detail", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const result = await healthService.performHealthCheck();
 

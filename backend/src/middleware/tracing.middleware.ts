@@ -1,6 +1,6 @@
 import { trace, SpanKind, SpanStatusCode, context, Span } from '@opentelemetry/api';
 import { NextFunction, Request, Response } from 'express';
-import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, TracedRequest } from './correlationId.middleware';
+import { TracedRequest } from './correlationId.middleware';
 import { TracingHelper } from '../config/tracing';
 import { appLogger } from './logger';
 

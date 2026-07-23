@@ -241,7 +241,7 @@ export class TradeService {
     }
 
     const [fieldRaw, dirRaw] = sort.split(":");
-    const field = fieldRaw as keyof Prisma.TradeOrderByWithRelationInput;
+    const field = (fieldRaw ?? "") as keyof Prisma.TradeOrderByWithRelationInput;
     const direction = dirRaw?.toLowerCase() === "asc" ? "asc" : "desc";
 
     const allowedFields = new Set<string>([
@@ -255,7 +255,7 @@ export class TradeService {
       "updatedAt",
     ]);
 
-    if (!allowedFields.has(fieldRaw)) {
+    if (!allowedFields.has(fieldRaw!)) {
       return [{ createdAt: "desc" }, { id: "desc" }];
     }
 
