@@ -1,4 +1,3 @@
-import { env } from './env';
 import { appLogger } from '../middleware/logger';
 
 /**

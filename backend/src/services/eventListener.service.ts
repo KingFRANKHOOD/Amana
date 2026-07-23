@@ -129,7 +129,7 @@ export class EventListenerService {
       this.processedEvents.add(cacheKey);
     }
     if (recentEvents.length > 0) {
-      this.lastLedger = recentEvents[0].ledgerSequence;
+      this.lastLedger = recentEvents[0]!.ledgerSequence;
     }
 
     appLogger.info(
@@ -413,7 +413,7 @@ export class EventListenerService {
       if (!topic || topic.length === 0) return null;
 
       // The first topic element is the event type symbol
-      const eventSymbol = this.extractSymbolValue(topic[0]);
+      const eventSymbol = this.extractSymbolValue(topic[0]!);
       if (!eventSymbol) return null;
 
       const eventType = this.mapSymbolToEventType(eventSymbol);
@@ -424,7 +424,7 @@ export class EventListenerService {
 
       // Extract trade_id from second topic element or from value
       const tradeId =
-        topic.length > 1 ? this.extractScalarValue(topic[1]) : "unknown";
+        topic.length > 1 ? this.extractScalarValue(topic[1]!) : "unknown";
 
       const data: Record<string, unknown> = {};
       if (rawEvent.value) {
@@ -541,7 +541,8 @@ export class EventListenerService {
     });
     const toRemove = sorted.length - this.config.processedLedgersCacheSize;
     for (let i = 0; i < toRemove; i++) {
-      this.processedEvents.delete(sorted[i]);
+      const key = sorted[i];
+      if (key !== undefined) this.processedEvents.delete(key);
     }
   }
 }

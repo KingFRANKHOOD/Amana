@@ -6,7 +6,7 @@ export function createHealthRouter(): Router {
     const router = Router();
     const healthService = new HealthService();
 
-    router.get("/", async (req: Request, res: Response, next: NextFunction) => {
+    router.get("/", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const healthCheck = await healthService.performHealthCheck();
 
@@ -28,14 +28,14 @@ export function createHealthRouter(): Router {
         }
     });
 
-    router.get("/live", (req: Request, res: Response) => {
+    router.get("/live", (_req: Request, res: Response) => {
         res.status(200).json({
             status: "alive",
             timestamp: new Date().toISOString(),
         });
     });
 
-    router.get("/ready", async (req: Request, res: Response, next: NextFunction) => {
+    router.get("/ready", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const healthCheck = await healthService.performHealthCheck();
             const isReady = healthCheck.status !== "unhealthy";
@@ -56,7 +56,7 @@ export function createHealthRouter(): Router {
         }
     });
 
-    router.get("/startup", async (req: Request, res: Response, next: NextFunction) => {
+    router.get("/startup", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const startupCheck = await healthService.performStartupCheck();
 

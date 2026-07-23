@@ -437,7 +437,7 @@ export class ContractService {
       Number(TOKEN_DECIMALS),
     );
 
-    return BigInt(wholePart) * TOKEN_BASE + BigInt(paddedFraction);
+    return BigInt(wholePart!) * TOKEN_BASE + BigInt(paddedFraction);
   }
 
   private extractTradeId(

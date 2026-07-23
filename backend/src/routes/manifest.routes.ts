@@ -12,7 +12,6 @@ import {
     ManifestNotFoundError,
 } from "../services/manifest.service";
 import { ContractService } from "../services/contract.service";
-import { appLogger } from "../middleware/logger";
 
 const manifestBodySchema = z.object({
     driverName: z.string().min(1),

@@ -5,7 +5,7 @@ import { appLogger } from "../middleware/logger";
 export function createStellarFeesRouter(): Router {
   const router = Router();
 
-  router.get("/", async (req: Request, res: Response) => {
+  router.get("/", async (_req: Request, res: Response) => {
     try {
       const feeStats = await horizonServer.feeStats();
 

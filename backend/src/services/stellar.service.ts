@@ -5,7 +5,7 @@ import {
   networkPassphrase 
 } from '../config/stellar';
 import { retryAsync } from "../lib/retry";
-import { withCircuitBreaker, CircuitBreaker, getCircuitBreaker } from "../lib/circuit-breaker";
+import { withCircuitBreaker, CircuitBreaker } from "../lib/circuit-breaker";
 import { appLogger } from "../middleware/logger";
 import { TracingHelper } from "../config/tracing";
 import { TOKEN_CONFIG } from "../config/token";

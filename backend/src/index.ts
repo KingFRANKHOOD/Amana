@@ -1,5 +1,4 @@
 import "./config/loadEnv";
-import express from "express";
 import fs from "fs";
 import path from "path";
 import swaggerUi from "swagger-ui-express";
@@ -11,8 +10,6 @@ import { env } from "./config/env";
 import { appLogger } from "./middleware/logger";
 import { initializeTracing } from "./config/tracing";
 import { HealthService } from "./services/health.service";
-
-void env;
 
 // Initialize distributed tracing before any other imports
 initializeTracing();

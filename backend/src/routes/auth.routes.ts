@@ -78,7 +78,7 @@ router.post('/refresh', refreshLimiter, async (req, res) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Missing or invalid authorization header' });
     }
-    const token = authHeader.split(' ')[1];
+    const token = authHeader.split(' ')[1] as string;
     const newToken = await AuthService.refreshToken(token);
     res.json({ token: newToken });
   } catch (err: unknown) {

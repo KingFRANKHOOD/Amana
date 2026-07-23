@@ -11,7 +11,7 @@ export interface ExportResult {
   s3Key?: string;
 }
 
-async function uploadToS3(data: string, key: string): Promise<string | undefined> {
+async function uploadToS3(_data: string, key: string): Promise<string | undefined> {
   const bucket = process.env.AWS_S3_BUCKET;
   if (!bucket) return undefined;
   // S3 upload requires @aws-sdk/client-s3 and AWS credentials in env.
@@ -26,6 +26,7 @@ export function createExportWorker(): Worker<ExportJobData> {
     'exports',
     async (job: Job<ExportJobData>): Promise<ExportResult> => {
       const { requestedBy, format, tradeIds, filters } = job.data;
+      void filters;
       appLogger.info({ jobId: job.id, requestedBy, format }, 'Processing export job');
 
       const where: Record<string, unknown> = { ...filters };

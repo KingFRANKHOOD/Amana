@@ -5,14 +5,23 @@ import { ContractService } from "./contract.service";
 import { appLogger } from "../middleware/logger";
 import { TracingHelper } from "../config/tracing";
 
-function parseAdminPubkeys(): Set<string> {
-  const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
-  return new Set(
-    raw
-      .split(",")
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean),
-  );
+let _adminPubkeysCache: Set<string> | null = null;
+
+function getAdminPubkeys(): Set<string> {
+  if (_adminPubkeysCache === null) {
+    const raw = process.env.ADMIN_STELLAR_PUBKEYS ?? "";
+    _adminPubkeysCache = new Set(
+      raw
+        .split(",")
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+  return _adminPubkeysCache;
+}
+
+export function resetAdminPubkeys(): void {
+  _adminPubkeysCache = null;
 }
 
 function sha256(value: string): string {
@@ -194,7 +203,7 @@ export class TradeService {
     if (
       trade.buyerAddress.toLowerCase() !== caller &&
       trade.sellerAddress.toLowerCase() !== caller &&
-      !parseAdminPubkeys().has(caller)
+      !getAdminPubkeys().has(caller)
     ) {
       throw new TradeAccessDeniedError();
     }
@@ -241,7 +250,7 @@ export class TradeService {
     }
 
     const [fieldRaw, dirRaw] = sort.split(":");
-    const field = fieldRaw as keyof Prisma.TradeOrderByWithRelationInput;
+    const field = (fieldRaw ?? "") as keyof Prisma.TradeOrderByWithRelationInput;
     const direction = dirRaw?.toLowerCase() === "asc" ? "asc" : "desc";
 
     const allowedFields = new Set<string>([
@@ -255,7 +264,7 @@ export class TradeService {
       "updatedAt",
     ]);
 
-    if (!allowedFields.has(fieldRaw)) {
+    if (!allowedFields.has(fieldRaw!)) {
       return [{ createdAt: "desc" }, { id: "desc" }];
     }
 
