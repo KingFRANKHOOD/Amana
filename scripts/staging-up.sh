@@ -29,6 +29,11 @@ else
   echo "   Copy .env.staging.example to .env.staging and fill in values before deploying."
 fi
 
+if [[ "${STAGING_POSTGRES_PASSWORD:-staging-password}" == "staging-password" ]] || [[ "${STAGING_REDIS_PASSWORD:-staging-redis-pass}" == "staging-redis-pass" ]]; then
+  echo "⚠  WARNING: Default passwords detected in staging configuration."
+  echo "   Ensure STAGING_POSTGRES_PASSWORD and STAGING_REDIS_PASSWORD are updated for non-dev deployments."
+fi
+
 cd "$ROOT_DIR"
 
 if [[ "$RESET" == "true" ]]; then
