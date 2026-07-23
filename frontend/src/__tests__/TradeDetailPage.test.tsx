@@ -9,7 +9,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import TradeDetailPage from "@/app/trades/[id]/page";
 import { useTradeDetail } from "@/hooks/useTradeDetail";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletBalance } from "@/hooks/useWalletBalance";
 import { useAuth } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
 import { signTransaction } from "@stellar/freighter-api";
@@ -22,7 +22,7 @@ jest.mock("next/navigation", () => ({
 }));
 
 jest.mock("@/hooks/useTradeDetail");
-jest.mock("@/hooks/useWallet");
+jest.mock("@/hooks/useWalletBalance");
 jest.mock("@/hooks/useAuth");
 jest.mock("@/lib/api", () => ({
   api: {
@@ -53,7 +53,7 @@ jest.mock("@stellar/freighter-api", () => ({
 }));
 
 const mockUseTradeDetail = useTradeDetail as jest.MockedFunction<typeof useTradeDetail>;
-const mockUseWallet = useWallet as jest.MockedFunction<typeof useWallet>;
+const mockUseWalletBalance = useWalletBalance as jest.MockedFunction<typeof useWalletBalance>;
 const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mockSignTransaction = signTransaction as jest.MockedFunction<typeof signTransaction>;
 const mockDeposit = api.trades.deposit as jest.MockedFunction<typeof api.trades.deposit>;
@@ -96,7 +96,7 @@ function mockAuth(address: string) {
 }
 
 function mockWallet() {
-  mockUseWallet.mockReturnValue({
+  mockUseWalletBalance.mockReturnValue({
     balance: "1000",
     asset: "cNGN",
     loading: false,

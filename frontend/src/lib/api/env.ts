@@ -18,3 +18,13 @@ export function getStellarNetworkPassphrase(): string {
     "Test SDF Network ; September 2015"
   );
 }
+
+export function getStellarHorizonUrl(network?: string | null): string {
+  if (process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL) {
+    return process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL;
+  }
+
+  return network?.toUpperCase() === "PUBLIC"
+    ? "https://horizon.stellar.org"
+    : "https://horizon-testnet.stellar.org";
+}
