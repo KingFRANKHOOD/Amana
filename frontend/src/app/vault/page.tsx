@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { signTransaction } from "@stellar/freighter-api";
 import {
@@ -67,6 +67,9 @@ export default function VaultPage() {
 
   const [isManifestOpen, setIsManifestOpen] = useState(false);
   const [manifestData, setManifestData] = useState<DriverManifestData | null>(null);
+  const [manifestSubmitting, setManifestSubmitting] = useState(false);
+  const [manifestStatus, setManifestStatus] = useState<string | null>(null);
+  const manifestSubmittingRef = useRef(false);
 
   const fetchVaultData = useCallback(async () => {
     if (!token) return;
@@ -108,24 +111,6 @@ export default function VaultPage() {
   const vaultValue = stats?.totalVolume ?? 0;
   const escrowId = stats ? `${stats.totalTrades}-AX` : "0-AX";
   const sequenceId = stats ? `${stats.openTrades}-AF` : "0-AF";
-
-  const auditEntries =
-    recentTrades?.items.slice(0, 3).map((trade, index) => ({
-      type:
-        index === 0
-          ? ("biometric" as const)
-          : index === 1
-            ? ("multi-sig" as const)
-            : ("ledger" as const),
-      title: `Trade ${trade.status.toLowerCase().replace(/_/g, " ")}`,
-      metadata: `${new Date(trade.updatedAt).toLocaleString()} - ${trade.tradeId}`,
-    })) ?? [
-      {
-        type: "ledger" as const,
-        title: "No recent activity",
-        metadata: "Connect wallet to view",
-      },
-    ];
 
   const isEmpty =
     !loading && isAuthenticated && stats?.totalTrades === 0 && recentTrades?.items.length === 0;
@@ -305,11 +290,17 @@ export default function VaultPage() {
                 <p className="text-sm font-medium text-text-secondary">Driver/Vehicle Manifest</p>
                 <button
                   onClick={() => setIsManifestOpen(true)}
+                  disabled={manifestSubmitting}
                   className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-gold-hover"
                 >
-                  Log Driver Details
+                  {manifestSubmitting ? "Submitting..." : "Log Driver Details"}
                 </button>
               </div>
+              {manifestStatus && (
+                <p className="mt-3 text-xs text-text-secondary" role="status">
+                  {manifestStatus}
+                </p>
+              )}
               {manifestData && (
                 <div className="mt-4 rounded-lg border border-border-default bg-bg-elevated p-3 text-sm text-text-primary">
                   <p><strong>Driver:</strong> {manifestData.driverName}</p>
@@ -396,7 +387,11 @@ export default function VaultPage() {
               </div>
 
               <div>
-                <AuditLogCard entries={auditEntries} isLiveSync={isAuthenticated} />
+                <AuditLogCard
+                  entries={[]}
+                  isLiveSync={false}
+                  emptyMessage="Vault audit events are not available yet. No security entries are shown until a verified audit source is connected."
+                />
               </div>
 
               <div className="md:col-span-2 lg:col-span-3 rounded-2xl border border-border-default bg-card p-5">

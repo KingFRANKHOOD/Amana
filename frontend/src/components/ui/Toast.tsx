@@ -77,8 +77,12 @@ export function Toast({
         typeClasses[type]
       )}
       role="alert"
+      aria-live={type === "error" ? "assertive" : "polite"}
     >
-      <Icon className={clsx("h-6 w-6 shrink-0", iconColors[type])} />
+      <Icon
+        className={clsx("h-6 w-6 shrink-0", iconColors[type])}
+        aria-hidden="true"
+      />
       <div className="flex-1 pt-0.5">
         {title && <h3 className="text-sm font-semibold mb-1">{title}</h3>}
         <p className="text-sm text-text-secondary">{message}</p>
@@ -89,7 +93,7 @@ export function Toast({
         aria-label="Close"
       >
         <span className="sr-only">Close</span>
-        <X className="h-4 w-4" />
+        <X className="h-4 w-4" aria-hidden="true" />
       </button>
       
       {/* Optional: subtle progress bar for auto-dismiss */}
@@ -98,6 +102,7 @@ export function Toast({
           className={clsx(
             "absolute bottom-0 left-0 h-1 bg-current opacity-20",
           )}
+          aria-hidden="true"
           style={{
             width: "100%",
             animation: `shrink ${duration}ms linear forwards`,

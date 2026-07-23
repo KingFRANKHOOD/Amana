@@ -21,6 +21,7 @@ export type {
   EvidenceRecord,
   EvidenceResponse,
   PathPaymentQuote,
+  ReputationResponse,
   SearchResponse,
   SearchResultItem,
   TradeHistoryEvent,
@@ -33,6 +34,8 @@ export type {
 
 export const api = {
   auth: authApi,
+  disputes: disputesApi,
+  reputation: reputationApi,
   search: searchApi,
   trades: tradesApi,
   wallet: walletApi,
