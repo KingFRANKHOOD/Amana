@@ -23,3 +23,12 @@ gitleaks-report.sarif
 .kiro/specs/avatar-component/tasks.md
 
 .kiro/
+
+# TypeScript & frontend build outputs
+*.tsbuildinfo
+.next/
+
+# Keys and environment tracing configs
+*.pem
+.env.tracing
+.env.tracing.example
