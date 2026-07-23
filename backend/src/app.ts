@@ -175,40 +175,8 @@ export function createApp(): express.Application {
   // Webhooks: CRUD /webhooks
   app.use("/webhooks", webhooksRoutes);
 
-  // Error handler is registered last so it catches errors from all routes,
-  // including any routes added to the app after createApp() returns.
-  // We achieve this by re-registering it whenever a new route/middleware is added.
-  const _originalUse = app.use.bind(app);
-  const _originalGet = (app as any).get.bind(app);
-
-  function reRegisterErrorHandler() {
-    // Remove the existing error handler layer and re-add it at the end.
-    // Express 5 exposes the router via app.router (lazy getter).
-    const router = (app as any).router;
-    if (!router) return;
-    const stack: any[] = router.stack;
-    // Find last occurrence of the error handler layer (scan from end)
-    let errIdx = -1;
-    for (let i = stack.length - 1; i >= 0; i--) {
-      if (stack[i].handle === errorHandler) { errIdx = i; break; }
-    }
-    if (errIdx !== -1) stack.splice(errIdx, 1);
-    _originalUse(errorHandler);
-  }
-
-  (app as any).use = function (...args: any[]) {
-    const result = _originalUse(...args);
-    reRegisterErrorHandler();
-    return result;
-  };
-
-  (app as any).get = function (...args: any[]) {
-    const result = _originalGet(...args);
-    reRegisterErrorHandler();
-    return result;
-  };
-
-  // Initial registration
+  // Error handler registered last — Express 5 natively preserves middleware
+  // order so it catches errors from all routes and middleware registered above.
   app.use(errorHandler);
 
   return app;
