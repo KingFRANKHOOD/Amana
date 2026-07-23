@@ -109,3 +109,43 @@ export interface SearchResponse {
   users: SearchResultItem[];
   contracts: SearchResultItem[];
 }
+
+export interface DisputeResponse {
+  id: number;
+  tradeId: string;
+  initiator: string;
+  reason: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string | null;
+  trade: {
+    buyerAddress: string;
+    sellerAddress: string;
+    amountUsdc: string;
+  };
+}
+
+export interface DisputeListResponse {
+  items: DisputeResponse[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface ResolveDisputeRequest {
+  sellerGetsBps: number;
+}
+
+export interface ResolveDisputeResponse {
+  unsignedXdr: string;
+}
+
+export interface EvidenceUploadResponse {
+  evidenceId: string;
+  cid: string;
+  ipfsUrl: string;
+}

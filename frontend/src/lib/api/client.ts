@@ -44,10 +44,11 @@ export const navigationHelpers = {
 function createHeaders(
   headers?: HeadersInit,
   token?: string | null,
+  isFormData = false,
 ): Record<string, string> {
-  const resolvedHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const resolvedHeaders: Record<string, string> = isFormData
+    ? {}
+    : { "Content-Type": "application/json" };
 
   if (headers instanceof Headers) {
     headers.forEach((value, key) => {
@@ -91,11 +92,13 @@ export async function request<T>(
   const { token, skipAuth, headers, ...fetchOptions } = options;
 
   const authToken = token ?? (!skipAuth ? getStoredToken() : null);
+  const isFormData =
+    typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
 
   try {
     const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       ...fetchOptions,
-      headers: createHeaders(headers, authToken),
+      headers: createHeaders(headers, authToken, isFormData),
     });
 
     const data = await response.json().catch(() => null);

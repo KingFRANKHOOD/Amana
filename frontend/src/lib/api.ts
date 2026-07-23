@@ -15,7 +15,10 @@ export type {
   DisputeResponse,
   EvidenceRecord,
   EvidenceResponse,
+  EvidenceUploadResponse,
   PathPaymentQuote,
+  ResolveDisputeRequest,
+  ResolveDisputeResponse,
   SearchResponse,
   SearchResultItem,
   TradeHistoryEvent,
@@ -28,6 +31,7 @@ export type {
 
 export const api = {
   auth: authApi,
+  disputes: disputesApi,
   search: searchApi,
   trades: tradesApi,
   wallet: walletApi,
