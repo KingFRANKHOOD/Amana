@@ -7,7 +7,7 @@ import { signTransaction } from "@stellar/freighter-api";
 import { useAuth } from "@/hooks/useAuth";
 import { useTradeDetail } from "@/hooks/useTradeDetail";
 import { useWallet } from "@/hooks/useWallet";
-import { api, ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { apiConfig } from "@/lib/api";
 
 function formatDate(dateString: string) {
@@ -78,7 +78,8 @@ export default function TradeDetailPage() {
   const tradeId = params?.id ?? "UNKNOWN";
 
   const { token, address, isAuthenticated } = useAuth();
-  const { trade, loading, error, refetch } = useTradeDetail(tradeId);
+  const { trade, isLoading, error, refetch, deposit, confirmDelivery, releaseFunds, raiseDispute } =
+    useTradeDetail(tradeId);
   const { balance, asset } = useWallet();
 
   const [actionLoading, setActionLoading] = useState(false);
@@ -130,15 +131,15 @@ export default function TradeDetailPage() {
   }
 
   function handleDeposit() {
-    void runAction("Deposit", () => api.trades.deposit(token!, tradeId));
+    void runAction("Deposit", () => deposit());
   }
 
   function handleConfirmDelivery() {
-    void runAction("Confirm Delivery", () => api.trades.confirmDelivery(token!, tradeId));
+    void runAction("Confirm Delivery", () => confirmDelivery());
   }
 
   function handleReleaseFunds() {
-    void runAction("Release Funds", () => api.trades.releaseFunds(token!, tradeId));
+    void runAction("Release Funds", () => releaseFunds());
   }
 
   function handleInitiateDispute() {
@@ -147,9 +148,7 @@ export default function TradeDetailPage() {
       setActionError("Dispute reason must be at least 10 characters.");
       return;
     }
-    void runAction("Initiate Dispute", () =>
-      api.trades.initiateDispute(token!, tradeId, reason, "other"),
-    );
+    void runAction("Initiate Dispute", () => raiseDispute(reason, "other"));
   }
 
   return (
@@ -165,7 +164,7 @@ export default function TradeDetailPage() {
       </div>
 
       {/* Loading state */}
-      {loading && (
+      {isLoading && (
         <div className="flex items-center justify-center py-12">
           <svg className="animate-spin w-8 h-8 text-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
@@ -174,7 +173,7 @@ export default function TradeDetailPage() {
         </div>
       )}
 
-      {error && !loading && (
+      {error && !isLoading && (
         <div className="rounded-lg border border-status-danger/20 bg-red-500/10 px-4 py-3 text-center">
           <p className="text-status-danger text-sm">{error}</p>
           <button
@@ -187,7 +186,7 @@ export default function TradeDetailPage() {
       )}
 
       {/* Trade data */}
-      {!loading && !error && trade && (
+      {!isLoading && !error && trade && (
         <div className="space-y-6">
           {/* Identity row */}
           <div className="rounded-lg border border-border-default bg-bg-card p-5">
@@ -337,7 +336,7 @@ export default function TradeDetailPage() {
       )}
 
       {/* Not found */}
-      {!loading && !error && !trade && (
+      {!isLoading && !error && !trade && (
         <div className="rounded-lg border border-border-default bg-bg-card dark:bg-surface-1 p-8 text-center">
           <p className="text-text-muted">Trade not found</p>
         </div>
