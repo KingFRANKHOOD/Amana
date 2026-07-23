@@ -395,12 +395,6 @@ export default function VaultManagePage() {
     .filter((t) => ["active", "locked"].includes(t.status.toLowerCase()))
     .reduce((sum, t) => sum + parseFloat(t.amountCngn), 0);
 
-  const auditEntries = trades.slice(0, 3).map((trade, i) => ({
-    type: (["biometric", "multi-sig", "ledger"] as const)[i % 3],
-    title: `Trade ${trade.status.toLowerCase().replace(/_/g, " ")}`,
-    metadata: `${fmt(trade.updatedAt)} · ${trade.tradeId.slice(0, 8)}`,
-  }));
-
   // Actions
   async function handleConfirm() {
     if (submittingRef.current || !modal || !token) return;
@@ -783,18 +777,9 @@ export default function VaultManagePage() {
 
                 {/* Audit log */}
                 <AuditLogCard
-                  entries={
-                    auditEntries.length > 0
-                      ? auditEntries
-                      : [
-                          {
-                            type: "ledger",
-                            title: "No recent activity",
-                            metadata: "Connect wallet to view",
-                          },
-                        ]
-                  }
-                  isLiveSync={isAuthenticated}
+                  entries={[]}
+                  isLiveSync={false}
+                  emptyMessage="Vault audit events are not available yet. No security entries are shown until a verified audit source is connected."
                 />
               </div>
             </div>

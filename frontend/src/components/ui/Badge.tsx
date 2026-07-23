@@ -68,7 +68,12 @@ export function Badge({
       className={`inline-flex items-center gap-2 rounded-full font-semibold tracking-wide ${variantStyle.bg} ${variantStyle.text} ${sizeStyle} ${className}`}
       role="status"
     >
-      {dot && <span className={`w-1.5 h-1.5 rounded-full ${variantStyle.dot}`} />}
+      {dot && (
+        <span
+          className={`w-1.5 h-1.5 rounded-full ${variantStyle.dot}`}
+          aria-hidden="true"
+        />
+      )}
       {children}
     </span>
   );

@@ -2,6 +2,7 @@ import { authApi } from "./api/auth";
 import { ApiError } from "./api/client";
 import { disputesApi } from "./api/disputes";
 import { getApiBaseUrl, getStellarNetworkPassphrase, getStellarRpcUrl } from "./api/env";
+import { reputationApi } from "./api/reputation";
 import { searchApi } from "./api/search";
 import { tradesApi } from "./api/trades";
 import { walletApi } from "./api/wallet";
@@ -16,6 +17,7 @@ export type {
   EvidenceRecord,
   EvidenceResponse,
   PathPaymentQuote,
+  ReputationResponse,
   SearchResponse,
   SearchResultItem,
   TradeHistoryEvent,
@@ -28,6 +30,8 @@ export type {
 
 export const api = {
   auth: authApi,
+  disputes: disputesApi,
+  reputation: reputationApi,
   search: searchApi,
   trades: tradesApi,
   wallet: walletApi,
