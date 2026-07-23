@@ -264,13 +264,16 @@ export class EventListenerService {
   }
 
   private supportsOutboxPersistence(): boolean {
-    // If the Prisma client was generated with a `chainEventOutbox` model,
-    // it will be available on the client. Use feature-detection rather than
-    // unsafe casts.
     const outbox = (this.prisma as unknown as Record<string, unknown>)[
       "chainEventOutbox"
     ];
-    return Boolean(outbox && typeof (outbox as any).findUnique === "function");
+    const isSupported = Boolean(outbox && typeof (outbox as any).findUnique === "function");
+    if (!isSupported) {
+      appLogger.warn(
+        "[EventListener] chainEventOutbox Prisma model is unavailable. Falling back to non-outbox atomic event processing."
+      );
+    }
+    return isSupported;
   }
 
   private async ensureOutboxRecord(event: ParsedEvent): Promise<OutboxRecord> {
