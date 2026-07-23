@@ -14,7 +14,6 @@ on:
       - 'contracts/**'
       - 'scripts/**'
       - 'infra/**'
-      - 'package-lock.json'
       - 'pnpm-lock.yaml'
   pull_request:
     branches:
@@ -49,13 +48,13 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
-              - 'frontend/package-lock.json'
+              - 'frontend/pnpm-lock.yaml'
             backend:
               - 'backend/**'
-              - 'backend/package-lock.json'
+              - 'backend/pnpm-lock.yaml'
             mobile:
               - 'mobile/**'
-              - 'mobile/package-lock.json'
+              - 'mobile/pnpm-lock.yaml'
             contracts:
               - 'contracts/**'
               - 'scripts/check-contract-deployment-safety.sh'
