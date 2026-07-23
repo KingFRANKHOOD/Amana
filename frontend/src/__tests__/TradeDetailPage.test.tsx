@@ -11,7 +11,6 @@ import TradeDetailPage from "@/app/trades/[id]/page";
 import { useTradeDetail } from "@/hooks/useTradeDetail";
 import { useWallet } from "@/hooks/useWallet";
 import { useAuth } from "@/hooks/useAuth";
-import { api } from "@/lib/api";
 import { signTransaction } from "@stellar/freighter-api";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -25,14 +24,6 @@ jest.mock("@/hooks/useTradeDetail");
 jest.mock("@/hooks/useWallet");
 jest.mock("@/hooks/useAuth");
 jest.mock("@/lib/api", () => ({
-  api: {
-    trades: {
-      deposit: jest.fn(),
-      confirmDelivery: jest.fn(),
-      releaseFunds: jest.fn(),
-      initiateDispute: jest.fn(),
-    },
-  },
   ApiError: class ApiError extends Error {
     status: number;
     data: unknown;
@@ -56,9 +47,6 @@ const mockUseTradeDetail = useTradeDetail as jest.MockedFunction<typeof useTrade
 const mockUseWallet = useWallet as jest.MockedFunction<typeof useWallet>;
 const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mockSignTransaction = signTransaction as jest.MockedFunction<typeof signTransaction>;
-const mockDeposit = api.trades.deposit as jest.MockedFunction<typeof api.trades.deposit>;
-const mockConfirmDelivery = api.trades.confirmDelivery as jest.MockedFunction<typeof api.trades.confirmDelivery>;
-const mockReleaseFunds = api.trades.releaseFunds as jest.MockedFunction<typeof api.trades.releaseFunds>;
 
 const BUYER_ADDRESS = "GBUYER123456789012345678901234567890123456789012345678";
 const SELLER_ADDRESS = "GSELLER12345678901234567890123456789012345678901234567";
@@ -105,6 +93,22 @@ function mockWallet() {
   });
 }
 
+function mockTradeDetail(
+  overrides: Partial<ReturnType<typeof useTradeDetail>> = {},
+) {
+  mockUseTradeDetail.mockReturnValue({
+    trade: null,
+    isLoading: false,
+    error: null,
+    refetch: jest.fn(),
+    deposit: jest.fn(),
+    confirmDelivery: jest.fn(),
+    releaseFunds: jest.fn(),
+    raiseDispute: jest.fn(),
+    ...overrides,
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockWallet();
@@ -116,12 +120,7 @@ beforeEach(() => {
 describe("Trade Detail — loading state", () => {
   it("shows a spinner while loading", () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: null,
-      loading: true,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: null, isLoading: true });
     render(<TradeDetailPage />);
     expect(document.querySelector("svg.animate-spin")).toBeInTheDocument();
   });
@@ -132,13 +131,7 @@ describe("Trade Detail — loading state", () => {
 describe("Trade Detail — error state", () => {
   it("shows the error message and a retry button", () => {
     mockAuth(BUYER_ADDRESS);
-    const refetch = jest.fn();
-    mockUseTradeDetail.mockReturnValue({
-      trade: null,
-      loading: false,
-      error: "Trade not found",
-      refetch,
-    });
+    mockTradeDetail({ trade: null, error: "Trade not found" });
     render(<TradeDetailPage />);
     expect(screen.getByText("Trade not found")).toBeInTheDocument();
     expect(screen.getByText(/retry/i)).toBeInTheDocument();
@@ -147,12 +140,7 @@ describe("Trade Detail — error state", () => {
   it("calls refetch when retry is clicked", async () => {
     mockAuth(BUYER_ADDRESS);
     const refetch = jest.fn();
-    mockUseTradeDetail.mockReturnValue({
-      trade: null,
-      loading: false,
-      error: "Fetch failed",
-      refetch,
-    });
+    mockTradeDetail({ trade: null, error: "Fetch failed", refetch });
     render(<TradeDetailPage />);
     await userEvent.click(screen.getByText(/retry/i));
     expect(refetch).toHaveBeenCalledTimes(1);
@@ -166,12 +154,7 @@ describe("Trade Detail — trade status display", () => {
     "shows %s status badge",
     (status) => {
       mockAuth(BUYER_ADDRESS);
-      mockUseTradeDetail.mockReturnValue({
-        trade: makeTrade(status),
-        loading: false,
-        error: null,
-        refetch: jest.fn(),
-      });
+      mockTradeDetail({ trade: makeTrade(status) });
       render(<TradeDetailPage />);
       expect(screen.getByText(status)).toBeInTheDocument();
     }
@@ -183,84 +166,49 @@ describe("Trade Detail — trade status display", () => {
 describe("Trade Detail — role-based action buttons", () => {
   it("shows Deposit button for buyer in PENDING status", () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("PENDING"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("PENDING") });
     render(<TradeDetailPage />);
     expect(screen.getByTestId("action-deposit")).toBeInTheDocument();
   });
 
   it("does NOT show Deposit button for seller in PENDING status", () => {
     mockAuth(SELLER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("PENDING"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("PENDING") });
     render(<TradeDetailPage />);
     expect(screen.queryByTestId("action-deposit")).not.toBeInTheDocument();
   });
 
   it("shows Confirm Delivery for buyer in FUNDED status", () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("FUNDED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("FUNDED") });
     render(<TradeDetailPage />);
     expect(screen.getByTestId("action-confirm-delivery")).toBeInTheDocument();
   });
 
   it("shows Release Funds for seller in FUNDED status", () => {
     mockAuth(SELLER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("FUNDED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("FUNDED") });
     render(<TradeDetailPage />);
     expect(screen.getByTestId("action-release-funds")).toBeInTheDocument();
   });
 
   it("shows Initiate Dispute for buyer in FUNDED status", () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("FUNDED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("FUNDED") });
     render(<TradeDetailPage />);
     expect(screen.getByTestId("action-dispute")).toBeInTheDocument();
   });
 
   it("shows Initiate Dispute for seller in FUNDED status", () => {
     mockAuth(SELLER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("FUNDED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("FUNDED") });
     render(<TradeDetailPage />);
     expect(screen.getByTestId("action-dispute")).toBeInTheDocument();
   });
 
   it("shows no actions for observer", () => {
     mockAuth("GOBSERVER000000000000000000000000000000000000000000000000");
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("FUNDED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("FUNDED") });
     render(<TradeDetailPage />);
     expect(screen.queryByTestId("action-deposit")).not.toBeInTheDocument();
     expect(screen.queryByTestId("action-confirm-delivery")).not.toBeInTheDocument();
@@ -270,12 +218,7 @@ describe("Trade Detail — role-based action buttons", () => {
 
   it("shows settled message for SETTLED status", () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("SETTLED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
+    mockTradeDetail({ trade: makeTrade("SETTLED") });
     render(<TradeDetailPage />);
     expect(screen.getByText(/no further actions are available/i)).toBeInTheDocument();
   });
@@ -284,20 +227,15 @@ describe("Trade Detail — role-based action buttons", () => {
 // ── Signing flow ───────────────────────────────────────────────────────────────
 
 describe("Trade Detail — Freighter signing flow", () => {
-  it("calls deposit API and signTransaction when Deposit is clicked", async () => {
+  it("calls the hook's deposit mutation and signTransaction when Deposit is clicked", async () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("PENDING"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
-    mockDeposit.mockResolvedValue({ unsignedXdr: "unsigned-xdr-payload" });
+    const deposit = jest.fn().mockResolvedValue({ unsignedXdr: "unsigned-xdr-payload" });
+    mockTradeDetail({ trade: makeTrade("PENDING"), deposit });
 
     render(<TradeDetailPage />);
     await userEvent.click(screen.getByTestId("action-deposit"));
 
-    await waitFor(() => expect(mockDeposit).toHaveBeenCalledWith("jwt-token", "trade-123"));
+    await waitFor(() => expect(deposit).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockSignTransaction).toHaveBeenCalledWith(
       "unsigned-xdr-payload",
       expect.objectContaining({ networkPassphrase: "Test SDF Network ; September 2015" })
@@ -306,13 +244,8 @@ describe("Trade Detail — Freighter signing flow", () => {
 
   it("shows success message after successful signing", async () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("PENDING"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
-    mockDeposit.mockResolvedValue({ unsignedXdr: "xdr-payload" });
+    const deposit = jest.fn().mockResolvedValue({ unsignedXdr: "xdr-payload" });
+    mockTradeDetail({ trade: makeTrade("PENDING"), deposit });
 
     render(<TradeDetailPage />);
     await userEvent.click(screen.getByTestId("action-deposit"));
@@ -324,13 +257,8 @@ describe("Trade Detail — Freighter signing flow", () => {
 
   it("shows error message when signTransaction fails", async () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("PENDING"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
-    mockDeposit.mockResolvedValue({ unsignedXdr: "xdr-payload" });
+    const deposit = jest.fn().mockResolvedValue({ unsignedXdr: "xdr-payload" });
+    mockTradeDetail({ trade: makeTrade("PENDING"), deposit });
     mockSignTransaction.mockResolvedValue({
       error: { message: "User cancelled signing" },
     } as unknown as Awaited<ReturnType<typeof signTransaction>>);
@@ -343,35 +271,53 @@ describe("Trade Detail — Freighter signing flow", () => {
     );
   });
 
-  it("calls confirmDelivery API when Confirm Delivery is clicked", async () => {
+  it("shows error message when the deposit mutation itself fails", async () => {
     mockAuth(BUYER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("FUNDED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
-    mockConfirmDelivery.mockResolvedValue({ unsignedXdr: "confirm-xdr" });
+    const deposit = jest.fn().mockRejectedValue(new Error("Trade already funded"));
+    mockTradeDetail({ trade: makeTrade("PENDING"), deposit });
+
+    render(<TradeDetailPage />);
+    await userEvent.click(screen.getByTestId("action-deposit"));
+
+    await waitFor(() =>
+      expect(screen.getByText(/trade already funded/i)).toBeInTheDocument()
+    );
+    expect(mockSignTransaction).not.toHaveBeenCalled();
+  });
+
+  it("calls the hook's confirmDelivery mutation when Confirm Delivery is clicked", async () => {
+    mockAuth(BUYER_ADDRESS);
+    const confirmDelivery = jest.fn().mockResolvedValue({ unsignedXdr: "confirm-xdr" });
+    mockTradeDetail({ trade: makeTrade("FUNDED"), confirmDelivery });
 
     render(<TradeDetailPage />);
     await userEvent.click(screen.getByTestId("action-confirm-delivery"));
 
-    await waitFor(() => expect(mockConfirmDelivery).toHaveBeenCalledWith("jwt-token", "trade-123"));
+    await waitFor(() => expect(confirmDelivery).toHaveBeenCalledTimes(1));
   });
 
-  it("calls releaseFunds API when Release Funds is clicked", async () => {
+  it("calls the hook's releaseFunds mutation when Release Funds is clicked", async () => {
     mockAuth(SELLER_ADDRESS);
-    mockUseTradeDetail.mockReturnValue({
-      trade: makeTrade("FUNDED"),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
-    mockReleaseFunds.mockResolvedValue({ unsignedXdr: "release-xdr" });
+    const releaseFunds = jest.fn().mockResolvedValue({ unsignedXdr: "release-xdr" });
+    mockTradeDetail({ trade: makeTrade("FUNDED"), releaseFunds });
 
     render(<TradeDetailPage />);
     await userEvent.click(screen.getByTestId("action-release-funds"));
 
-    await waitFor(() => expect(mockReleaseFunds).toHaveBeenCalledWith("jwt-token", "trade-123"));
+    await waitFor(() => expect(releaseFunds).toHaveBeenCalledTimes(1));
+  });
+
+  it("calls the hook's raiseDispute mutation with the entered reason", async () => {
+    mockAuth(BUYER_ADDRESS);
+    const raiseDispute = jest.fn().mockResolvedValue({ unsignedXdr: "dispute-xdr" });
+    mockTradeDetail({ trade: makeTrade("FUNDED"), raiseDispute });
+    jest.spyOn(window, "prompt").mockReturnValue("Item never arrived");
+
+    render(<TradeDetailPage />);
+    await userEvent.click(screen.getByTestId("action-dispute"));
+
+    await waitFor(() =>
+      expect(raiseDispute).toHaveBeenCalledWith("Item never arrived", "other"),
+    );
   });
 });
