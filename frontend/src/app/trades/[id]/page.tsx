@@ -25,6 +25,18 @@ function formatAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+export function formatDetails(details: unknown): string {
+  if (details === null || details === undefined) return "";
+  if (typeof details === "object") {
+    try {
+      return JSON.stringify(details, null, 2);
+    } catch {
+      return String(details);
+    }
+  }
+  return String(details);
+}
+
 function InfoCard({
   title,
   value,

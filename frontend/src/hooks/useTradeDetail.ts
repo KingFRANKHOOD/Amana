@@ -30,7 +30,9 @@ export function useTradeDetail(tradeId: string): UseTradeDetailResult {
     } catch (err) {
       const message =
         err instanceof ApiError
-          ? err.message
+          ? err.status === 404
+            ? "Trade not found"
+            : err.message
           : err instanceof Error
             ? err.message
             : "Failed to load trade";
