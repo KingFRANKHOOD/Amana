@@ -2,6 +2,7 @@ import { authApi } from "./api/auth";
 import { ApiError } from "./api/client";
 import { disputesApi } from "./api/disputes";
 import { getApiBaseUrl, getStellarNetworkPassphrase, getStellarRpcUrl } from "./api/env";
+import { reputationApi } from "./api/reputation";
 import { searchApi } from "./api/search";
 import { tradesApi } from "./api/trades";
 import { walletApi } from "./api/wallet";

@@ -126,6 +126,7 @@ export function StatusBadge({
         /* Dot when icon is hidden */
         <span
           className={`rounded-full shrink-0 ${sizeConfig.dot} ${config.dot}`}
+          aria-hidden="true"
         />
       )}
       {config.label}

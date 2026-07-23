@@ -125,6 +125,8 @@ describe('AuditLogCard Component', () => {
     it('handles empty entries array', () => {
         render(<AuditLogCard {...defaultProps} entries={[]} />);
         expect(screen.getByText('Audit Log')).toBeInTheDocument();
+        expect(screen.getByText('Audit trail unavailable')).toBeInTheDocument();
+        expect(screen.getByText('Audit log source is coming soon.')).toBeInTheDocument();
     });
 
     it('handles single entry', () => {

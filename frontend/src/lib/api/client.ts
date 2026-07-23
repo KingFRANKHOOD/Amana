@@ -6,6 +6,7 @@ import { z } from "zod";
 export type FetchOptions = RequestInit & {
   token?: string | null;
   skipAuth?: boolean;
+  timeoutMs?: number;
 };
 
 export type ApiResult<T> =
@@ -27,6 +28,7 @@ export class ApiError extends Error {
 }
 
 const TOKEN_STORAGE_KEY = "amana_jwt";
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -89,7 +91,14 @@ export async function request<T>(
   endpoint: string,
   options: FetchOptions = {},
 ): Promise<T> {
-  const { token, skipAuth, headers, ...fetchOptions } = options;
+  const {
+    token,
+    skipAuth,
+    headers,
+    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    signal,
+    ...fetchOptions
+  } = options;
 
   const authToken = token ?? (!skipAuth ? getStoredToken() : null);
   const isFormData =
@@ -119,14 +128,22 @@ export async function request<T>(
     if (error instanceof ApiError) {
       throw error;
     }
+    const message =
+      timedOut && error instanceof DOMException && error.name === "AbortError"
+        ? `Request timed out after ${timeoutMs}ms`
+        : error instanceof Error
+          ? error.message
+          : "Network error";
     trackApiFailure(endpoint, 0, {
       method: fetchOptions.method ?? "GET",
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: message,
     });
-    throw new ApiError(
-      0,
-      error instanceof Error ? error.message : "Network error",
-    );
+    throw new ApiError(0, message);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    signal?.removeEventListener("abort", abortRequest);
   }
 }
 
