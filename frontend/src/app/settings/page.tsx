@@ -2,6 +2,9 @@
 
 import React, { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTranslation } from "@/hooks/useTranslation";
+import { useLocaleStore } from "@/stores/localeStore";
+import type { Locale } from "@/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,7 +17,8 @@ interface NotificationPrefs {
 
 interface AppPrefs {
   network: "mainnet" | "testnet";
-  currency: "USD" | "EUR" | "GBP";
+  currency: "USD" | "EUR" | "GBP" | "NGN";
+  language: Locale;
   autoSignOut: "15" | "30" | "60" | "never";
 }
 
@@ -150,6 +154,9 @@ export default function SettingsPage() {
     logout,
   } = useAuth();
 
+  const { t } = useTranslation();
+  const { locale, setLocale } = useLocaleStore();
+
   const [notifications, setNotifications] = useState<NotificationPrefs>({
     tradeUpdates: true,
     disputeAlerts: true,
@@ -160,6 +167,7 @@ export default function SettingsPage() {
   const [prefs, setPrefs] = useState<AppPrefs>({
     network: "testnet",
     currency: "USD",
+    language: locale,
     autoSignOut: "30",
   });
 
@@ -218,13 +226,13 @@ export default function SettingsPage() {
   }
 
   const walletStatus = isLoading
-    ? "Checking…"
+    ? t("settings.wallet.connecting")
     : isAuthenticated
-      ? "Authenticated"
+      ? t("settings.wallet.authenticated")
       : isWalletConnected
-        ? "Wallet linked — sign in to authenticate"
+        ? t("nav.connectWallet") + " \u2014 " + t("settings.wallet.signIn").toLowerCase()
         : isWalletDetected
-          ? "Freighter detected — permission required"
+          ? "Freighter \u2014 permission required"
           : "Freighter not detected";
 
   return (
@@ -232,21 +240,21 @@ export default function SettingsPage() {
       <div className="max-w-3xl mx-auto space-y-8">
         {/* Page header */}
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
+          <h1 className="text-2xl font-bold text-text-primary">{t("settings.title")}</h1>
           <p className="mt-1 text-sm text-text-secondary">
-            Manage your wallet, notifications, and application preferences.
+            {t("settings.subtitle")}
           </p>
         </div>
 
         {/* ── Wallet & Identity ── */}
         <SectionCard
-          title="Wallet & Identity"
-          description="Your Stellar wallet is your identity on Amana."
+          title={t("settings.wallet.title")}
+          description={t("settings.wallet.description")}
         >
           <div className="rounded-xl border border-border-default bg-bg-elevated px-4 py-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs uppercase tracking-widest text-text-muted">
-                Wallet address
+                {t("settings.wallet.address")}
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -258,10 +266,10 @@ export default function SettingsPage() {
                 }`}
               >
                 {isAuthenticated
-                  ? "Authenticated"
+                  ? t("settings.wallet.authenticated")
                   : isWalletConnected
-                    ? "Connected"
-                    : "Disconnected"}
+                    ? t("settings.wallet.connected")
+                    : t("settings.wallet.disconnected")}
               </span>
             </div>
 
@@ -313,7 +321,7 @@ export default function SettingsPage() {
                 disabled={isLoading}
                 className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-text-inverse hover:bg-gold-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isLoading ? "Connecting…" : "Connect Freighter"}
+                {isLoading ? t("settings.wallet.connecting") : t("settings.wallet.connectFreighter")}
               </button>
             )}
             {isWalletConnected && !isAuthenticated && (
@@ -323,7 +331,7 @@ export default function SettingsPage() {
                 disabled={isLoading}
                 className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-text-inverse hover:bg-gold-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isLoading ? "Signing…" : "Sign In"}
+                {isLoading ? t("settings.wallet.signing") : t("settings.wallet.signIn")}
               </button>
             )}
             {isAuthenticated && (
@@ -332,7 +340,7 @@ export default function SettingsPage() {
                 onClick={logout}
                 className="rounded-lg border border-status-danger/40 text-status-danger px-4 py-2 text-sm font-semibold hover:bg-status-danger/10 transition-colors"
               >
-                Sign Out
+                {t("settings.wallet.signOut")}
               </button>
             )}
           </div>
@@ -340,34 +348,34 @@ export default function SettingsPage() {
 
         {/* ── Notifications ── */}
         <SectionCard
-          title="Notifications"
-          description="Choose which events trigger in-app alerts."
+          title={t("settings.notifications.title")}
+          description={t("settings.notifications.description")}
         >
           <div className="space-y-4">
             <Toggle
-              label="Trade updates"
-              description="Status changes on your active trades."
+              label={t("settings.notifications.tradeUpdates")}
+              description={t("settings.notifications.tradeUpdatesDesc")}
               checked={notifications.tradeUpdates}
               onChange={(v) => setNotif("tradeUpdates", v)}
             />
             <Divider />
             <Toggle
-              label="Dispute alerts"
-              description="New disputes or mediator decisions."
+              label={t("settings.notifications.disputeAlerts")}
+              description={t("settings.notifications.disputeAlertsDesc")}
               checked={notifications.disputeAlerts}
               onChange={(v) => setNotif("disputeAlerts", v)}
             />
             <Divider />
             <Toggle
-              label="Vault activity"
-              description="Deposits, releases, and lock events."
+              label={t("settings.notifications.vaultActivity")}
+              description={t("settings.notifications.vaultActivityDesc")}
               checked={notifications.vaultActivity}
               onChange={(v) => setNotif("vaultActivity", v)}
             />
             <Divider />
             <Toggle
-              label="System announcements"
-              description="Platform updates and maintenance notices."
+              label={t("settings.notifications.systemAnnouncements")}
+              description={t("settings.notifications.systemAnnouncementsDesc")}
               checked={notifications.systemAnnouncements}
               onChange={(v) => setNotif("systemAnnouncements", v)}
             />
@@ -376,46 +384,62 @@ export default function SettingsPage() {
 
         {/* ── Application Preferences ── */}
         <SectionCard
-          title="Application Preferences"
-          description="Network, display currency, and session settings."
+          title={t("settings.preferences.title")}
+          description={t("settings.preferences.description")}
         >
           <div className="space-y-5">
             <SelectField
-              label="Network"
-              description="The Stellar network your wallet interacts with."
+              label={t("settings.preferences.language")}
+              description={t("settings.preferences.languageDesc")}
+              value={prefs.language}
+              onChange={(v) => {
+                const newLocale = v as Locale;
+                setPref("language", newLocale);
+                setLocale(newLocale);
+              }}
+              options={[
+                { value: "en", label: t("settings.preferences.languageEn") },
+                { value: "fr", label: t("settings.preferences.languageFr") },
+              ]}
+            />
+            <Divider />
+            <SelectField
+              label={t("settings.preferences.network")}
+              description={t("settings.preferences.networkDesc")}
               value={prefs.network}
               onChange={(v) => setPref("network", v as AppPrefs["network"])}
               error={validationErrors.network}
               options={[
-                { value: "mainnet", label: "Mainnet" },
-                { value: "testnet", label: "Testnet" },
+                { value: "mainnet", label: t("settings.preferences.networkMainnet") },
+                { value: "testnet", label: t("settings.preferences.networkTestnet") },
               ]}
             />
             <Divider />
             <SelectField
-              label="Preferred currency"
-              description="Fiat currency used for value estimates."
+              label={t("settings.preferences.currency")}
+              description={t("settings.preferences.currencyDesc")}
               value={prefs.currency}
               onChange={(v) => setPref("currency", v as AppPrefs["currency"])}
               options={[
-                { value: "USD", label: "USD — US Dollar" },
-                { value: "EUR", label: "EUR — Euro" },
-                { value: "GBP", label: "GBP — British Pound" },
+                { value: "USD", label: t("settings.preferences.currencyUSD") },
+                { value: "EUR", label: t("settings.preferences.currencyEUR") },
+                { value: "GBP", label: t("settings.preferences.currencyGBP") },
+                { value: "NGN", label: t("settings.preferences.currencyNGN") },
               ]}
             />
             <Divider />
             <SelectField
-              label="Auto sign-out"
-              description="Automatically end your session after inactivity."
+              label={t("settings.preferences.autoSignOut")}
+              description={t("settings.preferences.autoSignOutDesc")}
               value={prefs.autoSignOut}
               onChange={(v) =>
                 setPref("autoSignOut", v as AppPrefs["autoSignOut"])
               }
               options={[
-                { value: "15", label: "15 minutes" },
-                { value: "30", label: "30 minutes" },
-                { value: "60", label: "1 hour" },
-                { value: "never", label: "Never" },
+                { value: "15", label: t("settings.preferences.autoSignOut15") },
+                { value: "30", label: t("settings.preferences.autoSignOut30") },
+                { value: "60", label: t("settings.preferences.autoSignOut60") },
+                { value: "never", label: t("settings.preferences.autoSignOutNever") },
               ]}
             />
           </div>
@@ -426,7 +450,7 @@ export default function SettingsPage() {
               onClick={handleSavePreferences}
               className="rounded-lg bg-gold px-5 py-2 text-sm font-semibold text-text-inverse hover:bg-gold-hover transition-colors"
             >
-              Save preferences
+              {t("settings.preferences.save")}
             </button>
             {saveSuccess && (
               <span className="text-sm text-emerald flex items-center gap-1.5">
@@ -439,7 +463,7 @@ export default function SettingsPage() {
                 >
                   <path d="M2 8l4 4 8-8" />
                 </svg>
-                Saved
+                {t("settings.preferences.saved")}
               </span>
             )}
           </div>
@@ -447,8 +471,8 @@ export default function SettingsPage() {
 
         {/* ── Security ── */}
         <SectionCard
-          title="Security"
-          description="Information about how your session and keys are protected."
+          title={t("settings.security.title")}
+          description={t("settings.security.description")}
         >
           <ul className="space-y-3">
             {[
@@ -464,9 +488,8 @@ export default function SettingsPage() {
                     <path d="M8 1l5 2.2V7c0 3.3-2.3 5.8-5 6.8C3.3 12.8 1 10.3 1 7V3.2L8 1z" />
                   </svg>
                 ),
-                label: "Non-custodial",
-                detail:
-                  "Amana never holds your private keys. All signing happens in Freighter.",
+                label: t("settings.security.nonCustodial"),
+                detail: t("settings.security.nonCustodialDesc"),
               },
               {
                 icon: (
@@ -481,10 +504,10 @@ export default function SettingsPage() {
                     <path d="M5 7V5a3 3 0 016 0v2" />
                   </svg>
                 ),
-                label: "Session token",
+                label: t("settings.security.sessionToken"),
                 detail: isAuthenticated
-                  ? "Active — stored in sessionStorage, cleared on tab close."
-                  : "No active session.",
+                  ? t("settings.security.sessionTokenActive")
+                  : t("settings.security.sessionTokenInactive"),
               },
               {
                 icon: (
@@ -499,9 +522,8 @@ export default function SettingsPage() {
                     <path d="M8 5v3l2 2" />
                   </svg>
                 ),
-                label: "Challenge-response auth",
-                detail:
-                  "Sign-in uses a one-time challenge signed by your wallet — no passwords.",
+                label: t("settings.security.challengeResponse"),
+                detail: t("settings.security.challengeResponseDesc"),
               },
             ].map((item) => (
               <li
@@ -523,21 +545,21 @@ export default function SettingsPage() {
         </SectionCard>
 
         {/* ── About ── */}
-        <SectionCard title="About">
+        <SectionCard title={t("settings.about.title")}>
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
             {[
-              { label: "Platform", value: "Amana" },
-              { label: "Version", value: "V4.8.2" },
+              { label: t("settings.about.platform"), value: "Amana" },
+              { label: t("settings.about.version"), value: "V4.8.2" },
               {
-                label: "Network",
+                label: t("settings.about.network"),
                 value:
                   prefs.network === "mainnet"
-                    ? "Stellar Mainnet"
-                    : "Stellar Testnet",
+                    ? t("settings.about.networkMainnet")
+                    : t("settings.about.networkTestnet"),
               },
-              { label: "Smart contracts", value: "Soroban" },
-              { label: "Storage", value: "IPFS" },
-              { label: "Wallet", value: "Freighter" },
+              { label: t("settings.about.smartContracts"), value: "Soroban" },
+              { label: t("settings.about.storage"), value: "IPFS" },
+              { label: t("settings.about.wallet"), value: "Freighter" },
             ].map((row) => (
               <div key={row.label}>
                 <dt className="text-text-muted">{row.label}</dt>

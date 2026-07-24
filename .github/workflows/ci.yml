@@ -59,164 +59,42 @@ jobs:
               - 'contracts/**'
               - 'scripts/check-contract-deployment-safety.sh'
 
-  frontend:
-    name: Frontend Required Gate
+  stack:
+    name: ${{ matrix.stack }} CI
     runs-on: ubuntu-latest
     needs: changes
-    defaults:
-      run:
-        working-directory: frontend
+    if: >
+      (matrix.stack == 'frontend' && needs.changes.outputs.frontend == 'true') ||
+      (matrix.stack == 'backend' && needs.changes.outputs.backend == 'true') ||
+      (matrix.stack == 'mobile' && needs.changes.outputs.mobile == 'true') ||
+      (matrix.stack == 'contracts' && needs.changes.outputs.contracts == 'true')
+    strategy:
+      matrix:
+        stack: [frontend, backend, mobile, contracts]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        if: matrix.stack != 'contracts'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node
+        if: matrix.stack != 'contracts'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
-
-      - name: Security audit (npm)
-        if: needs.changes.outputs.frontend == 'true'
-        run: npm audit --audit-level=high
-
-      - name: Lint
-        if: needs.changes.outputs.frontend == 'true'
-        run: pnpm lint
-
-      - name: Build
-        if: needs.changes.outputs.frontend == 'true'
-        run: pnpm build
-
-      - name: Test
-        if: needs.changes.outputs.frontend == 'true'
-        run: pnpm test
-
-      - name: Upload coverage report
-        if: needs.changes.outputs.frontend == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-coverage
-          path: frontend/coverage/
-          retention-days: 7
-
-      - name: Skip note (no frontend changes)
-        if: needs.changes.outputs.frontend != 'true'
-        run: echo "No frontend file changes detected, required gate passed."
-
-  backend:
-    name: Backend Required Gate
-    runs-on: ubuntu-latest
-    needs: changes
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: backend/pnpm-lock.yaml
-
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
-
-      - name: Security audit (npm)
-        if: needs.changes.outputs.backend == 'true'
-        run: npm audit --audit-level=high
-
-      - name: Build
-        if: needs.changes.outputs.backend == 'true'
-        run: pnpm build
-
-      - name: Test
-        if: needs.changes.outputs.backend == 'true'
-        env:
-          NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-value-with-minimum-length-32
-        run: pnpm test
-
-      - name: Upload coverage report
-        if: needs.changes.outputs.backend == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-coverage
-          path: backend/coverage/
-          retention-days: 7
-
-      - name: Skip note (no backend changes)
-        if: needs.changes.outputs.backend != 'true'
-        run: echo "No backend file changes detected, required gate passed."
-
-  mobile:
-    name: Mobile Required Gate
-    runs-on: ubuntu-latest
-    needs: changes
-    defaults:
-      run:
-        working-directory: mobile
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: mobile/pnpm-lock.yaml
-
-      - name: Install deps
-        if: needs.changes.outputs.mobile == 'true'
-        run: pnpm install --frozen-lockfile
-
-      - name: Type check
-        if: needs.changes.outputs.mobile == 'true'
-        run: pnpm type-check
-
-      - name: Lint
-        if: needs.changes.outputs.mobile == 'true'
-        run: pnpm lint
-
-      - name: Skip note (no mobile changes)
-        if: needs.changes.outputs.mobile != 'true'
-        run: echo "No mobile file changes detected, required gate passed."
-
-  contracts:
-    name: Contracts Required Gate
-    runs-on: ubuntu-latest
-    needs: changes
-    defaults:
-      run:
-        working-directory: contracts/amana_escrow
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          cache-dependency-path: ${{ matrix.stack == 'frontend' && 'frontend/pnpm-lock.yaml' || matrix.stack == 'backend' && 'backend/pnpm-lock.yaml' || matrix.stack == 'mobile' && 'mobile/pnpm-lock.yaml' }}
 
       - name: Setup Rust
-        # Pinned from dtolnay/rust-toolchain@stable
+        if: matrix.stack == 'contracts'
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo-audit binary
+        if: matrix.stack == 'contracts'
         id: cache-cargo-audit
         uses: actions/cache@v4
         with:
@@ -224,29 +102,71 @@ jobs:
           key: cargo-audit-${{ runner.os }}-v0.21
 
       - name: Install cargo-audit
-        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+        if: matrix.stack == 'contracts' && steps.cache-cargo-audit.outputs.cache-hit != 'true'
         run: cargo install cargo-audit --locked
 
-      - name: Security audit (cargo)
+      - name: Install deps
+        if: matrix.stack != 'contracts'
+        run: pnpm install --frozen-lockfile
+        working-directory: ${{ matrix.stack }}
+
+      - name: Security audit (npm)
+        if: matrix.stack == 'frontend' || matrix.stack == 'backend'
+        run: npm audit --audit-level=high
+        working-directory: ${{ matrix.stack }}
+
+      - name: Build
+        if: matrix.stack == 'frontend' || matrix.stack == 'backend'
+        run: pnpm build
+        working-directory: ${{ matrix.stack }}
+
+      - name: Frontend test
+        if: matrix.stack == 'frontend'
+        run: pnpm test
+        working-directory: frontend
+
+      - name: Backend test
+        if: matrix.stack == 'backend'
+        run: |
+          export NODE_ENV=test
+          export JWT_SECRET=test-jwt-secret-value-with-minimum-length-32
+          pnpm test
+        working-directory: backend
+
+      - name: Mobile type check
+        if: matrix.stack == 'mobile'
+        run: pnpm type-check
+        working-directory: mobile
+
+      - name: Mobile lint
+        if: matrix.stack == 'mobile'
+        run: pnpm lint
+        working-directory: mobile
+
+      - name: Deployment safety checks
+        if: matrix.stack == 'contracts'
+        run: ../../scripts/check-contract-deployment-safety.sh
+        working-directory: contracts/amana_escrow
+
+      - name: Cargo security audit
+        if: matrix.stack == 'contracts'
         working-directory: contracts
         run: cargo audit
 
-      - name: Deployment safety checks
-        if: needs.changes.outputs.contracts == 'true'
-        run: ../../scripts/check-contract-deployment-safety.sh
-
-      - name: Test
-        if: needs.changes.outputs.contracts == 'true'
+      - name: Contracts test
+        if: matrix.stack == 'contracts'
+        working-directory: contracts/amana_escrow
         run: cargo test --locked
 
       - name: Build WASM artifact
-        if: needs.changes.outputs.contracts == 'true'
+        if: matrix.stack == 'contracts'
+        working-directory: contracts/amana_escrow
         run: cargo build --target wasm32-unknown-unknown --features wasm --release
 
       - name: Verify WASM ABI hash
-        if: needs.changes.outputs.contracts == 'true'
+        if: matrix.stack == 'contracts'
         run: |
-          WASM_FILE="target/wasm32-unknown-unknown/release/amana_escrow.wasm"
+          WASM_FILE="contracts/amana_escrow/target/wasm32-unknown-unknown/release/amana_escrow.wasm"
           if [ -f "$WASM_FILE" ]; then
             WASM_HASH=$(sha256sum "$WASM_FILE" | cut -d' ' -f1)
             echo "WASM ABI hash: $WASM_HASH"
@@ -256,6 +176,15 @@ jobs:
             exit 1
           fi
 
-      - name: Skip note (no contract changes)
-        if: needs.changes.outputs.contracts != 'true'
-        run: echo "No contract file changes detected, required gate passed."
+      - name: Create mobile summary artifact
+        if: matrix.stack == 'mobile'
+        run: |
+          mkdir -p mobile/ci-artifacts
+          echo "Mobile checks completed at $(date --utc)" > mobile/ci-artifacts/mobile-ci-summary.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.stack }}-artifact
+          path: ${{ matrix.stack == 'frontend' && 'frontend/coverage/' || matrix.stack == 'backend' && 'backend/coverage/' || matrix.stack == 'mobile' && 'mobile/ci-artifacts/' || matrix.stack == 'contracts' && 'contracts/amana_escrow/target/wasm32-unknown-unknown/release/amana_escrow.wasm' }}
+          retention-days: 7

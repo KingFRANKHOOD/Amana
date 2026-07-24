@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 use soroban_sdk::{
-    Address, Bytes, BytesN, Env, String, Symbol, Vec, contract, contractevent, contractimpl,
+    Address, BytesN, Env, String, Symbol, Vec, contract, contractevent, contractimpl,
     contracttype, symbol_short, token,
 };
 
@@ -139,7 +139,9 @@ pub struct DisputeResolvedEvent {
 pub struct EvidenceSubmittedEvent {
     pub trade_id: u64,
     pub submitter: Address,
-    pub evidence_hash: Bytes,
+    /// IPFS CID of the submitted evidence (was always emitted as empty `Bytes`; now
+    /// carries the actual CID supplied by the caller so off-chain indexers can use it).
+    pub evidence_hash: String,
 }
 
 /// Emitted when a buyer or seller formally initiates a dispute.
@@ -1700,11 +1702,17 @@ impl EscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Evidence(trade_id, caller.clone()), &evidence_hash_bytes);
+        // Store a legacy sentinel for the old get_evidence() API so existing callers
+        // are not broken. Clients should use get_evidence_list() for the full record.
+        env.storage()
+            .persistent()
+            .set(&DataKey::Evidence(trade_id, caller.clone()), &ipfs_hash);
 
         EvidenceSubmittedEvent {
             trade_id,
             submitter: caller,
             evidence_hash: evidence_hash_bytes,
+            evidence_hash: ipfs_hash,
         }
         .publish(&env);
 
@@ -1722,7 +1730,7 @@ impl EscrowContract {
 
     /// Return the evidence hash most recently submitted by `submitter` (legacy).
     /// Returns `None` if no evidence has been submitted yet.
-    pub fn get_evidence(env: Env, trade_id: u64, submitter: Address) -> Option<Bytes> {
+    pub fn get_evidence(env: Env, trade_id: u64, submitter: Address) -> Option<String> {
         env.storage()
             .persistent()
             .get(&DataKey::Evidence(trade_id, submitter))
