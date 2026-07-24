@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { NavLink } from "@/components/ui/Navigation";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export interface SideNavBarProps {
   activePath: string;
@@ -16,14 +17,14 @@ export interface SideNavBarProps {
 
 interface NavItem {
   href: string;
-  label: string;
+  labelKey: string;
   icon: ReactNode;
 }
 
 const NAV_ITEMS: NavItem[] = [
   {
     href: "/dashboard",
-    label: "Dashboard",
+    labelKey: "nav.dashboard",
     icon: (
       <svg
         className="w-4 h-4"
@@ -41,7 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/trades",
-    label: "Trades",
+    labelKey: "nav.trades",
     icon: (
       <svg
         className="w-4 h-4"
@@ -57,7 +58,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/vault",
-    label: "Vault",
+    labelKey: "nav.vault",
     icon: (
       <svg
         className="w-4 h-4"
@@ -74,7 +75,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/reputation",
-    label: "Reputation",
+    labelKey: "nav.reputation",
     icon: (
       <svg
         className="w-4 h-4"
@@ -89,7 +90,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/settings",
-    label: "Settings",
+    labelKey: "nav.settings",
     icon: (
       <svg
         className="w-4 h-4"
@@ -117,6 +118,7 @@ export function SideNavBar({
   walletAddress,
   onClose,
 }: SideNavBarProps) {
+  const { t } = useTranslation();
   return (
     <aside
       className={`${
@@ -174,13 +176,13 @@ export function SideNavBar({
                 <NavLink
                   href={item.href}
                   isActive={isActive}
-                  title={collapsed ? item.label : undefined}
+                  title={collapsed ? t(item.labelKey) : undefined}
                   className={`${collapsed ? "justify-center px-2 py-3" : "flex items-center px-4 py-3"}`}
                 >
                   <span className="w-5 h-5 flex items-center justify-center">
                     {item.icon}
                   </span>
-                  {!collapsed && <span className="ml-3 text-sm">{item.label}</span>}
+                  {!collapsed && <span className="ml-3 text-sm">{t(item.labelKey)}</span>}
                 </NavLink>
               </li>
             );
@@ -196,7 +198,7 @@ export function SideNavBar({
             }`}
           >
             <p className="text-[11px] uppercase tracking-widest text-text-muted">
-              Wallet
+              {t("nav.wallet")}
             </p>
             <p className="text-sm text-text-primary mt-1">
               {walletAddress ? truncateAddress(walletAddress) : "Connected"}
@@ -209,7 +211,7 @@ export function SideNavBar({
             variant="primary"
             className={collapsed ? "px-2 py-2.5" : "px-3 py-2.5"}
           >
-            {collapsed ? "Link" : "Connect Wallet"}
+            {collapsed ? t("nav.link") : t("nav.connectWallet")}
           </Button>
         )}
       </div>
