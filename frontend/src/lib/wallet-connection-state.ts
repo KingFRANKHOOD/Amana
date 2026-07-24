@@ -1,33 +1,31 @@
-export interface BreadcrumbItem {
-  label: string;
-  path?: string;
+export type WalletStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export interface WalletConnectionState {
+  status: WalletStatus;
+  publicKey: string | null;
+  error: string | null;
 }
 
-function formatLabel(segment: string): string {
-  return segment
-    .split('-')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+const DEFAULT_STATE: WalletConnectionState = {
+  status: 'disconnected',
+  publicKey: null,
+  error: null,
+};
+
+export function walletConnectionState(
+  current: Partial<WalletConnectionState> = {}
+): WalletConnectionState {
+  return { ...DEFAULT_STATE, ...current };
 }
 
-export function generateBreadcrumbs(pathname: string): BreadcrumbItem[] {
-  const segments = pathname.split('/').filter(Boolean);
-  const breadcrumbs: BreadcrumbItem[] = [
-    {
-      label: 'Home',
-      path: '/'
-    }
-  ];
+export function isConnected(state: WalletConnectionState): boolean {
+  return state.status === 'connected' && state.publicKey !== null;
+}
 
-  let currentPath = '';
-  for (let i = 0; i < segments.length; i++) {
-    currentPath += `/${segments[i]}`;
-    const segment = segments[i];
-    breadcrumbs.push({
-      label: formatLabel(segment),
-      path: currentPath
-    });
-  }
+export function isConnecting(state: WalletConnectionState): boolean {
+  return state.status === 'connecting';
+}
 
-  return breadcrumbs;
+export function hasError(state: WalletConnectionState): boolean {
+  return state.status === 'error';
 }

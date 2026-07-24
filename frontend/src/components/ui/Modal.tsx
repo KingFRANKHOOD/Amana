@@ -58,28 +58,16 @@ export function ModalContent({
   overlayOpacity = "medium",
   mobileFullScreen = true,
   showCloseButton = true,
+  onEscapeKeyDown,
+  onInteractOutside,
   ...props
 }: ModalContentProps) {
-  const contentRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const content = contentRef.current;
-    if (!content) return;
-
-    const previouslyFocused = document.activeElement as HTMLElement;
-
-    const focusableElements = content.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-
-    if (focusableElements.length > 0) {
-      focusableElements[0]?.focus();
-    }
-
-    return () => {
-      previouslyFocused?.focus();
-    };
-  }, []);
+  // Radix Dialog handles all focus management automatically:
+  //   - Traps focus within the dialog while open (full tab cycle)
+  //   - Returns focus to the trigger element on close
+  //   - Closes on Escape key by default
+  //   - Sets aria-modal and manages aria-hidden on the rest of the DOM
+  // No manual focus trap or key handler is needed here.
 
   return (
     <ModalPortal>
@@ -91,12 +79,17 @@ export function ModalContent({
         )}
       />
       <Dialog.Content
-        ref={contentRef}
+        // Allow callers to override Escape / outside-click behaviour while
+        // keeping sensible defaults (both dismiss the dialog).
+        onEscapeKeyDown={onEscapeKeyDown}
+        onInteractOutside={onInteractOutside}
         className={clsx(
           "fixed z-50 bg-card dark:bg-surface-1 border border-border-default dark:border-border-default shadow-modal",
           "transition-all duration-200 ease-out",
           "data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
           "data-[state=open]:scale-100 data-[state=closed]:scale-95",
+          // focus-visible ring so the dialog itself is reachable via keyboard
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold",
           mobileFullScreen
             ? "inset-0 rounded-none sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-[min(92vw,640px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
             : "left-1/2 top-1/2 w-[min(92vw,640px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl",
