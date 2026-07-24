@@ -2,7 +2,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: backend-hpa
-  namespace: default
+  namespace: amana
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -28,7 +28,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: frontend-hpa
-  namespace: default
+  namespace: amana
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
