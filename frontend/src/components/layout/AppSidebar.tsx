@@ -3,18 +3,15 @@
 import { usePathname } from "next/navigation";
 import { useFreighterIdentity } from "@/hooks/useFreighterIdentity";
 import { SideNavBar } from "@/components/layout/SideNavBar";
+import { useSidebarState } from "@/components/layout/SidebarStateProvider";
 import { clsx } from "clsx";
 
 const ROUTES_WITH_OWN_SIDEBAR = ["/assets"];
 
-interface AppSidebarProps {
-  isOpen?: boolean;
-  onClose?: () => void;
-}
-
-export function AppSidebar({ isOpen, onClose }: AppSidebarProps) {
+export function AppSidebar() {
   const pathname = usePathname();
   const { address, isAuthorized, connectWallet } = useFreighterIdentity();
+  const { isOpen, close } = useSidebarState();
 
   const hasOwnSidebar = ROUTES_WITH_OWN_SIDEBAR.some(
     (route) => pathname === route || pathname?.startsWith(`${route}/`),
@@ -28,11 +25,11 @@ export function AppSidebar({ isOpen, onClose }: AppSidebarProps) {
       {isOpen && (
         <div
           className="fixed inset-0 bg-bg-overlay z-40 lg:hidden"
-          onClick={onClose}
+          onClick={close}
           aria-hidden="true"
         />
       )}
-      
+
       {/* Sidebar - visible on desktop, drawer on mobile */}
       <div
         className={clsx(
@@ -45,11 +42,11 @@ export function AppSidebar({ isOpen, onClose }: AppSidebarProps) {
           isConnected={isAuthorized}
           onConnectWallet={() => {
             void connectWallet();
-            onClose?.();
+            close();
           }}
           collapsed={false}
           walletAddress={address}
-          onClose={onClose}
+          onClose={close}
         />
       </div>
     </>

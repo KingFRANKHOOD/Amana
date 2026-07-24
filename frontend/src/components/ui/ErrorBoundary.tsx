@@ -38,25 +38,23 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         return this.props.fallback;
       }
 
+      // error.message is rendered as a text node — not via dangerouslySetInnerHTML —
+      // so there is no XSS risk. Inline styles replaced with Tailwind classes.
       return (
-        <div style={{ padding: "2rem", textAlign: "center" }}>
-          <h2 style={{ color: "#dc2626", marginBottom: "1rem" }}>Something went wrong</h2>
-          <p style={{ color: "#6b7280", marginBottom: "1rem" }}>
-            {this.state.error?.message || "An unexpected error occurred"}
+        <div className="flex flex-col items-center justify-center gap-4 p-8 text-center">
+          <h2 className="text-lg font-semibold text-red-600">
+            Something went wrong
+          </h2>
+          <p className="max-w-sm text-sm text-text-secondary">
+            {this.state.error?.message ?? "An unexpected error occurred"}
           </p>
           <button
+            type="button"
             onClick={() => {
               this.setState({ hasError: false, error: null });
               this.props.onReset?.();
             }}
-            style={{
-              padding: "0.5rem 1rem",
-              backgroundColor: "#2563eb",
-              color: "white",
-              border: "none",
-              borderRadius: "0.25rem",
-              cursor: "pointer",
-            }}
+            className="rounded px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 transition-colors"
           >
             Try again
           </button>
