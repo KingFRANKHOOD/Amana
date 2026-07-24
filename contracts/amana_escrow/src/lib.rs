@@ -36,6 +36,12 @@ pub const MIN_FEE_BPS: u32 = 1;
 /// Maximum allowed platform fee in basis points (5%).
 pub const MAX_FEE_BPS: u32 = 500;
 
+/// Minimum trade amount in stroops (100 cNGN = 100 * 10^7 stroops).
+pub const MIN_TRADE_AMOUNT: i128 = 1_000_000_000;
+
+/// Maximum byte length for trade event data strings.
+pub const MAX_EVENT_DATA_LEN: u32 = 256;
+
 fn checked_fee_amount(amount: i128, fee_bps: u32) -> i128 {
     amount
         .checked_mul(fee_bps as i128)
@@ -87,13 +93,6 @@ pub struct TradeCancelledEvent {
     pub refund_amount: i128,
     pub caller: Address,
     pub timestamp: u64,
-}
-
-#[contractevent(topics = ["TCNBYR"])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TradeCancelledByBuyerEvent {
-    pub trade_id: u64,
-    pub buyer: Address,
 }
 
 #[contractevent(topics = ["UPGRAD"])]
@@ -164,35 +163,6 @@ pub struct VideoProofSubmittedEvent {
     pub timestamp: u64,
 }
 
-/// Emitted when a trade's expiry deadline is reached and a refund is claimed.
-#[contractevent(topics = ["TRDEXP"])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TradeExpiredEvent {
-    pub trade_id: u64,
-    pub refund_amount: i128,
-    pub caller: Address,
-}
-
-/// Emitted when both parties agree to extend the delivery deadline.
-#[contractevent(topics = ["DEDEXT"])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DeadlineExtendedEvent {
-    pub trade_id: u64,
-    pub old_deadline: u64,
-    pub new_deadline: u64,
-}
-
-/// Emitted when seller submits hashed delivery manifest fields.
-#[contractevent(topics = ["MNFST"])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ManifestSubmittedEvent {
-    pub trade_id: u64,
-    pub seller: Address,
-    pub driver_name_hash: String,
-    pub driver_id_hash: String,
-    pub timestamp: u64,
-}
-
 /// Emitted when a mediator address is added to the registry by the admin.
 #[contractevent(topics = ["MEDADD"])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -245,6 +215,35 @@ pub struct PathPaymentExecutedEvent {
     pub source_amount: i128,
     pub dest_token: Address,
     pub dest_amount: i128,
+}
+
+/// Emitted when a trade's expiry deadline is reached and a refund is claimed.
+#[contractevent(topics = ["TRDEXP"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TradeExpiredEvent {
+    pub trade_id: u64,
+    pub refund_amount: i128,
+    pub caller: Address,
+}
+
+/// Emitted when both parties agree to extend the delivery deadline.
+#[contractevent(topics = ["DEDEXT"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeadlineExtendedEvent {
+    pub trade_id: u64,
+    pub old_deadline: u64,
+    pub new_deadline: u64,
+}
+
+/// Emitted when seller submits hashed delivery manifest fields.
+#[contractevent(topics = ["MNFST"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManifestSubmittedEvent {
+    pub trade_id: u64,
+    pub seller: Address,
+    pub driver_name_hash: String,
+    pub driver_id_hash: String,
+    pub timestamp: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -460,10 +459,14 @@ impl EscrowContract {
         fee_bps: u32,
         source_token: Address,
     ) {
-        if env.storage().instance().has(&DataKey::Initialized) {
-            panic!("AlreadyInitialized");
-        }
-        assert!(fee_bps <= 10_000, "fee_bps must not exceed 10000");
+        assert!(
+            !env.storage().instance().has(&DataKey::Initialized),
+            "AlreadyInitialized"
+        );
+        assert!(
+            (MIN_FEE_BPS..=MAX_FEE_BPS).contains(&fee_bps),
+            "fee_bps out of range"
+        );
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
@@ -501,6 +504,8 @@ impl EscrowContract {
             mediator: mediator.clone(),
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     // -----------------------------------------------------------------------
@@ -523,6 +528,8 @@ impl EscrowContract {
             mediator: mediator_address,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     /// Remove `mediator_address` from the approved mediator registry.
@@ -557,11 +564,13 @@ impl EscrowContract {
             mediator: mediator_address,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     /// Returns `true` if `address` is currently in the approved mediator registry.
     /// Read-only; callable by anyone.
-    pub fn is_mediator(env: Env, address: Address) -> bool {
+    pub fn is_mediator(env: &Env, address: Address) -> bool {
         env.storage()
             .persistent()
             .get::<_, bool>(&DataKey::MediatorRegistry(address))
@@ -601,6 +610,8 @@ impl EscrowContract {
             new_fee_bps,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     /// Withdraw accrued platform fees from the contract to `destination`.
@@ -673,7 +684,7 @@ impl EscrowContract {
             }
         }
 
-        panic!("Unauthorized mediator");
+        panic!("UnauthorizedMediator");
     }
 
     fn default_release_sequence(trade: &Trade) -> ReleaseSequence {
@@ -736,6 +747,10 @@ impl EscrowContract {
     ) -> u64 {
         buyer.require_auth();
         assert!(amount > 0, "amount must be greater than zero");
+        assert!(
+            amount >= MIN_TRADE_AMOUNT,
+            "amount must be at least MIN_TRADE_AMOUNT"
+        );
         assert!(amount <= MAX_TRADE_VALUE, "TradeValueTooLarge");
         assert!(
             buyer != seller,
@@ -1073,7 +1088,7 @@ impl EscrowContract {
                 }
             }
         } else {
-            panic!("Cannot cancel trade in current status");
+            panic!("CannotCancelTradeInCurrentStatus");
         }
     }
 
@@ -1081,13 +1096,12 @@ impl EscrowContract {
     ///
     /// This is intentionally narrower than `cancel_trade`: only the buyer may
     /// call it and only while the trade is still `Created`.
+    ///
+    /// Emits `TradeCancelledEvent` (the same event as `execute_cancellation`)
+    /// so indexers see a consistent cancellation event regardless of the path.
     pub fn cancel_by_buyer(env: Env, trade_id: u64) {
         let key = DataKey::Trade(trade_id);
-        let mut trade: Trade = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .expect("Trade not found");
+        let mut trade: Trade = Self::load_trade(&env, &key);
 
         trade.buyer.require_auth();
         assert!(
@@ -1095,19 +1109,8 @@ impl EscrowContract {
             "Trade must be in Created status"
         );
 
-        trade.status = TradeStatus::Cancelled;
-        trade.updated_at = env.ledger().timestamp();
-        env.storage().persistent().set(&key, &trade);
-        Self::update_release_sequence(&env, &trade, |sequence, at| {
-            sequence.cancelled_at = Some(at);
-        });
-
-        TradeCancelledByBuyerEvent {
-            trade_id,
-            buyer: trade.buyer,
-        }
-        .publish(&env);
-        Self::bump_instance_ttl(&env);
+        // Use the shared cancellation path so event emission is uniform.
+        Self::execute_cancellation(&env, &mut trade, 0, trade.buyer.clone());
     }
 
     /// Unilaterally refund a funded or delivered trade.
@@ -1148,11 +1151,7 @@ impl EscrowContract {
         caller.require_auth();
 
         let key = DataKey::Trade(trade_id);
-        let mut trade: Trade = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .expect("Trade not found");
+        let mut trade: Trade = Self::load_trade(&env, &key);
 
         assert!(
             caller == trade.buyer || caller == trade.seller,
@@ -1180,7 +1179,8 @@ impl EscrowContract {
 
         trade.status = TradeStatus::Cancelled;
         trade.updated_at = now;
-        env.storage().persistent().set(&key, &trade);
+        Self::save_trade(&env, &key, &trade);
+        Self::bump_instance_ttl(&env);
 
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.expired_at = Some(at);
@@ -1276,6 +1276,8 @@ impl EscrowContract {
             timestamp: env.ledger().timestamp(),
         }
         .publish(env);
+
+        Self::bump_instance_ttl(env);
     }
 
     pub fn confirm_delivery(env: Env, trade_id: u64) {
@@ -1306,6 +1308,8 @@ impl EscrowContract {
             delivered_at: now,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     pub fn release_funds(env: Env, trade_id: u64, caller: Address) {
@@ -1373,6 +1377,8 @@ impl EscrowContract {
             fee_amount,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     // -----------------------------------------------------------------------
@@ -1447,6 +1453,8 @@ impl EscrowContract {
             reason_hash,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     /// Retrieve the `DisputeRecord` stored by `initiate_dispute()`, if any.
@@ -1523,9 +1531,25 @@ impl EscrowContract {
         // Calculate the loss amount in basis points
         let loss_bps = BPS_DIVISOR - (seller_gets_bps as i128);
 
+        // total_loss_amount = total * loss_bps / 10_000
+        let total_loss_amount = total
+            .checked_mul(loss_bps)
+            .expect("total loss calculation overflow")
+            / BPS_DIVISOR;
+
         // Distribute loss according to agreed ratios
-        // seller_loss = total * loss_bps * seller_loss_bps / (10_000 * 10_000)
+        // seller_loss = total_loss_amount * seller_loss_bps / 10_000
+        // buyer_loss  = total_loss_amount * buyer_loss_bps  / 10_000
         let seller_loss_amount = checked_loss_amount(total, loss_bps, trade.seller_loss_bps);
+        let buyer_loss_amount = checked_loss_amount(total, loss_bps, trade.buyer_loss_bps);
+
+        assert!(
+            (seller_loss_amount + buyer_loss_amount).abs_diff(total_loss_amount) <= 1,
+            "resolve_dispute: loss-sharing invariant violated (seller_loss={} + buyer_loss={} != total_loss={})",
+            seller_loss_amount,
+            buyer_loss_amount,
+            total_loss_amount
+        );
 
         // Calculate raw payouts
         let seller_raw = total - seller_loss_amount;
@@ -1591,6 +1615,8 @@ impl EscrowContract {
             mediator,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     // -----------------------------------------------------------------------
@@ -1636,7 +1662,7 @@ impl EscrowContract {
 
         // Allow buyer, seller, or any mediator to submit evidence
         let is_party = caller == trade.buyer || caller == trade.seller;
-        let is_mediator = Self::is_mediator(env.clone(), caller.clone());
+        let is_mediator = Self::is_mediator(&env, caller.clone());
 
         assert!(
             is_party || is_mediator,
@@ -1668,21 +1694,21 @@ impl EscrowContract {
             .persistent()
             .set(&evidence_key, &evidence_list);
 
-        // For backward compatibility with legacy get_evidence API, we'll create
-        // a simple Bytes representation. Since Soroban String doesn't easily convert
-        // to Bytes, we'll use a placeholder approach or store the string length.
-        // In practice, clients should use get_evidence_list() for the new API.
-        let legacy_bytes = Bytes::new(&env);
+        // For backward compatibility with legacy get_evidence API, store
+        // a Bytes representation of the IPFS hash.
+        let evidence_hash_bytes = Bytes::from_slice(&env, ipfs_hash.as_bytes());
         env.storage()
             .persistent()
-            .set(&DataKey::Evidence(trade_id, caller.clone()), &legacy_bytes);
+            .set(&DataKey::Evidence(trade_id, caller.clone()), &evidence_hash_bytes);
 
         EvidenceSubmittedEvent {
             trade_id,
             submitter: caller,
-            evidence_hash: legacy_bytes,
+            evidence_hash: evidence_hash_bytes,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     /// Return all evidence records submitted for a trade, in chronological order.
@@ -1708,7 +1734,8 @@ impl EscrowContract {
 
     /// Anchor a delivery video's IPFS CID on-chain for a specific trade.
     ///
-    /// Either the buyer or the seller may submit video proof.
+    /// Only the seller may submit video proof (prevents buyer from
+    /// squatting the immutable proof slot with fraudulent content).
     /// The trade must be in `Funded` or `Disputed` status.
     /// Only one video proof is allowed per trade — attempting to overwrite panics.
     ///
@@ -1731,8 +1758,8 @@ impl EscrowContract {
         );
 
         assert!(
-            submitter == trade.buyer || submitter == trade.seller,
-            "Only the buyer or seller can submit video proof"
+            submitter == trade.seller,
+            "Only the seller can submit video proof"
         );
 
         let proof_key = DataKey::VideoProof(trade_id);
@@ -1757,6 +1784,8 @@ impl EscrowContract {
             timestamp: now,
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     /// Submit hashed delivery manifest fields for a funded trade.
@@ -1820,6 +1849,8 @@ impl EscrowContract {
             timestamp: env.ledger().timestamp(),
         }
         .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     /// Fetch manifest record for a trade, if present.
@@ -1868,6 +1899,10 @@ impl EscrowContract {
 
     /// Appends a TradeEvent to the persistent history for trade_id.
     fn record_trade_event(env: &Env, trade_id: u64, event_type: &str, actor: Address, data: &str) {
+        assert!(
+            (data.len() as u32) <= MAX_EVENT_DATA_LEN,
+            "event data exceeds max length"
+        );
         let key = DataKey::TradeHistory(trade_id);
         let mut history: soroban_sdk::Vec<TradeEvent> = env
             .storage()
@@ -1881,6 +1916,27 @@ impl EscrowContract {
             data: soroban_sdk::String::from_str(env, data),
         });
         env.storage().persistent().set(&key, &history);
+    }
+
+    /// Upgrade the contract WASM. Admin only.
+    /// Emits `ContractUpgradedEvent`.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        admin.require_auth();
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgradedEvent {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     pub fn get_contract_metrics(env: Env) -> (u64, u64, u64) {
