@@ -10,6 +10,7 @@ import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { ToastProvider } from "@/hooks/useToast";
 import RegisterSW from "@/components/RegisterSW";
+import { LocaleSync } from "@/components/LocaleSync";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -57,6 +58,7 @@ export default function RootLayout({
         <AnalyticsProvider>
           <AuthProvider>
             <ToastProvider>
+              <LocaleSync />
               <AppShell>{children}</AppShell>
               <RegisterSW />
               <ToastContainer />
