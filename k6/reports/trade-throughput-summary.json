@@ -1,0 +1,8 @@
+{
+  "generatedAt": "2026-07-24T00:00:00Z",
+  "scenario": "trade-throughput",
+  "notes": [
+    "Sample report placeholder for k6 summaries.",
+    "Run k6 with --summary-export=k6/reports/trade-throughput-summary.json to overwrite this file."
+  ]
+}
