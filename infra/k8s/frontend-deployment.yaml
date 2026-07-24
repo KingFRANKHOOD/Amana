@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
-  namespace: default
+  namespace: amana
   labels:
     app: frontend
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: kingfrankhood/amana-frontend:latest
+          image: ghcr.io/kingfrankhood/amana/frontend:latest
           ports:
             - containerPort: 3000
               name: http
@@ -30,6 +30,7 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: PINATA_JWT
+                  optional: false
           resources:
             requests:
               cpu: 100m

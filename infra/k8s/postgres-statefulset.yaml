@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-service
-  namespace: default
+  namespace: amana
   labels:
     app: postgres
 spec:
@@ -17,7 +17,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: default
+  namespace: amana
 spec:
   serviceName: postgres-service
   replicas: 1
@@ -41,11 +41,13 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: POSTGRES_USER
+                  optional: false
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: amana-secrets
                   key: POSTGRES_PASSWORD
+                  optional: false
             - name: POSTGRES_DB
               value: amana
           resources:
