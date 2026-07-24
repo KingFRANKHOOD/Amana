@@ -41,3 +41,15 @@ export const notificationQueue = new Queue<NotificationJobData>('notifications',
 export const exportQueue = new Queue<ExportJobData>('exports', {
   connection: createQueueConnection(),
 });
+
+export interface EvidenceVerificationJobData {
+  triggeredBy: string;
+  repairMissing?: boolean;
+}
+
+export const evidenceVerificationQueue = new Queue<EvidenceVerificationJobData>(
+  'evidence-verification',
+  {
+    connection: createQueueConnection(),
+  },
+);

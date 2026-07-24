@@ -37,6 +37,7 @@ import { stellarAccountBalanceRoutes } from "./routes/stellar.account.balance";
 import { stellarAccountCreateRoutes } from "./routes/stellar.account.create";
 import { createContractStateRouter } from "./routes/contract.state.routes";
 import { createAdminFeaturesRouter } from "./routes/admin.features.routes";
+import { createAdminEvidenceVerificationRouter } from "./routes/admin.evidence-verification.routes";
 import { webhooksRoutes } from "./routes/webhooks.routes";
 import { env } from "./config/env";
 
@@ -171,6 +172,9 @@ export function createApp(): express.Application {
 
   // Feature flags (admin-managed)
   app.use(createAdminFeaturesRouter());
+
+  // Evidence pin verification (admin-managed)
+  app.use(createAdminEvidenceVerificationRouter());
 
   // Webhooks: CRUD /webhooks
   app.use("/webhooks", webhooksRoutes);

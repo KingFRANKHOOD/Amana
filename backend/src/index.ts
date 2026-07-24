@@ -10,6 +10,9 @@ import { env } from "./config/env";
 import { appLogger } from "./middleware/logger";
 import { initializeTracing } from "./config/tracing";
 import { HealthService } from "./services/health.service";
+import { createEvidenceVerificationWorker } from "./jobs/workers/evidence-verification.worker";
+import { evidenceVerificationQueue } from "./jobs/queue";
+
 
 // Initialize distributed tracing before any other imports
 initializeTracing();
@@ -98,6 +101,44 @@ async function bootstrap() {
       appLogger.info("EventListenerService started successfully");
     } catch (error) {
       appLogger.error({ error }, "Failed to start EventListenerService");
+    }
+
+    // Start evidence verification worker for async jobs
+    try {
+      createEvidenceVerificationWorker();
+      appLogger.info("EvidenceVerificationWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start EvidenceVerificationWorker");
+    }
+
+    // Schedule periodic evidence pin verification
+    const isTest = (process.env.NODE_ENV ?? env.NODE_ENV) === "test";
+    if (!isTest) {
+      const intervalMs = env.EVIDENCE_PIN_VERIFICATION_INTERVAL_MS;
+      appLogger.info({ intervalMs }, "Scheduling periodic evidence pin verification");
+
+      const runVerification = async () => {
+        try {
+          appLogger.info("Running scheduled evidence pin verification");
+          const job = await evidenceVerificationQueue.add("verify", {
+            triggeredBy: "scheduled",
+            repairMissing: false,
+          });
+          appLogger.info({ jobId: job.id }, "Scheduled verification job queued");
+        } catch (error) {
+          appLogger.error({ error }, "Failed to schedule evidence verification");
+        }
+      };
+
+      // Run initial verification after a short delay to avoid startup contention
+      setTimeout(() => {
+        runVerification().catch(() => {});
+      }, 60_000);
+
+      // Then run on the configured interval
+      setInterval(() => {
+        runVerification().catch(() => {});
+      }, intervalMs);
     }
   });
 }
