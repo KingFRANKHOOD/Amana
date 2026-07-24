@@ -66,6 +66,10 @@ export const envSchema = z.object({
   IPFS_URL_SIGNING_SECRET: z.string().min(32).optional(),
   IPFS_URL_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
 
+  // Evidence pin verification
+  EVIDENCE_PIN_VERIFICATION_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  EVIDENCE_PIN_VERIFICATION_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+
   // Evidence / manifest retention
   EVIDENCE_MAX_BYTES: z.coerce.number().default(52428800),
   EVIDENCE_METADATA_RETENTION_DAYS: z.coerce.number().default(90),

@@ -1,5 +1,6 @@
 import { Readable } from "stream";
 import crypto from "crypto";
+import axios from "axios";
 import { getPinataClient } from "../config/ipfs";
 import { retryAsync } from "../lib/retry";
 import { appLogger } from "../middleware/logger";
@@ -9,6 +10,15 @@ import {
   CircuitBreaker,
   CircuitBreakerOpenError,
 } from "../lib/circuitBreaker";
+
+export interface PinVerificationResult {
+  pinned: boolean;
+  cid: string;
+  name?: string;
+  size?: number;
+  timestamp?: string;
+  error?: string;
+}
 
 export class ServiceUnavailableError extends Error {
     status = 503;
@@ -131,6 +141,66 @@ export class IPFSService {
             throw new ServiceUnavailableError("IPFS upload circuit is temporarily open");
           }
           throw err;
+        }
+    }
+
+    /**
+     * Verify that a CID is pinned on Pinata by querying the Pinata data endpoints.
+     * Returns detailed pin status including name, size, and timestamp.
+     */
+    async verifyPin(cid: string): Promise<PinVerificationResult> {
+        try {
+            return await this.pinataCircuit.call(async () => {
+                const jwt = process.env.PINATA_JWT ?? env.PINATA_JWT;
+                if (!jwt) {
+                    return {
+                        pinned: false,
+                        cid,
+                        error: "PINATA_JWT not configured",
+                    };
+                }
+
+                const response = await axios.get(
+                    `https://api.pinata.cloud/data/pinList?hashContains=${cid}&status=pinned&pageLimit=1`,
+                    {
+                        headers: { Authorization: `Bearer ${jwt}` },
+                        timeout: 10_000,
+                    },
+                );
+
+                const rows: Array<{
+                    id: string;
+                    ipfs_pin_hash: string;
+                    name: string;
+                    size: number;
+                    date_pinned: string;
+                }> = response.data?.rows ?? [];
+
+                const match = rows.find((r) => r.ipfs_pin_hash === cid);
+
+                if (!match) {
+                    appLogger.warn({ cid }, "[IPFSService] CID not found in Pinata pins");
+                    return { pinned: false, cid };
+                }
+
+                return {
+                    pinned: true,
+                    cid,
+                    name: match.name,
+                    size: match.size,
+                    timestamp: match.date_pinned,
+                };
+            });
+        } catch (err) {
+            if (err instanceof CircuitBreakerOpenError) {
+                return { pinned: false, cid, error: "Circuit breaker open" };
+            }
+            appLogger.error({ err, cid }, "[IPFSService] Pin verification failed");
+            return {
+                pinned: false,
+                cid,
+                error: err instanceof Error ? err.message : "Unknown error",
+            };
         }
     }
 
