@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amana
+  labels:
+    name: amana
+    environment: production
+    app.kubernetes.io/name: amana
+    app.kubernetes.io/part-of: amana

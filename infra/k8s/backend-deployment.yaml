@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: default
+  namespace: amana
   labels:
     app: backend
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: kingfrankhood/amana-backend:latest
+          image: ghcr.io/kingfrankhood/amana/backend:latest
           ports:
             - containerPort: 4000
               name: http
@@ -30,11 +30,13 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: POSTGRES_USER
+                  optional: false
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: amana-secrets
                   key: POSTGRES_PASSWORD
+                  optional: false
             - name: DATABASE_URL
               value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/amana"
             - name: REDIS_PASSWORD
@@ -42,6 +44,7 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: REDIS_PASSWORD
+                  optional: false
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/0"
             - name: JWT_SECRET
@@ -49,26 +52,31 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: JWT_SECRET
+                  optional: false
             - name: PINATA_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: amana-secrets
                   key: PINATA_API_KEY
+                  optional: false
             - name: PINATA_SECRET
               valueFrom:
                 secretKeyRef:
                   name: amana-secrets
                   key: PINATA_SECRET
+                  optional: false
             - name: PINATA_JWT
               valueFrom:
                 secretKeyRef:
                   name: amana-secrets
                   key: PINATA_JWT
+                  optional: false
             - name: IPFS_URL_SIGNING_SECRET
               valueFrom:
                 secretKeyRef:
                   name: amana-secrets
                   key: IPFS_URL_SIGNING_SECRET
+                  optional: false
           resources:
             requests:
               cpu: 100m

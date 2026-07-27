@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: default
+  namespace: amana
   labels:
     app: redis
 spec:
@@ -31,6 +31,7 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: REDIS_PASSWORD
+                  optional: false
           resources:
             requests:
               cpu: 50m

@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: amana
+
+# Labels to add to all resources
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: amana
+    includeSelectors: false
+
+# All resource manifests
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - redis-deployment.yaml
+  - redis-service.yaml
+  - postgres-statefulset.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - pod-disruption-budget.yaml
+  - network-policy.yaml
+  - cronjob-backup.yaml
+
+# Generate the TLS secret for ingress from local files
+# Uncomment and configure when TLS certificates are available:
+# secretGenerator:
+#   - name: amanavault-tls
+#     files:
+#       - tls.crt=secrets/amanavault-tls.crt
+#       - tls.key=secrets/amanavault-tls.key
+#     type: kubernetes.io/tls
