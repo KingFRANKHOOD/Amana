@@ -361,7 +361,7 @@ Created → Funded → Delivered → Completed
 
 ## 7. References
 
-- [Soroban Security Best Practices](https://developers.stellar.org/docs/smart-contracts)
+- [Soroban Security Best Practices](http://web.archive.org/web/20240623060346/https://developers.stellar.org/docs/smart-contracts)
 - [Amana Backend Reliability Layer](./backend.md)
 - [Amana Escrow Contract README](../contracts/amana_escrow/README.md)
 - OWASP Smart Contract Top 10
