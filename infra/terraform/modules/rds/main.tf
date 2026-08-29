@@ -55,14 +55,21 @@ resource "aws_rds_cluster" "this" {
   backup_retention_period = var.backup_retention_period
   preferred_backup_window = var.preferred_backup_window
   db_subnet_group_name    = aws_db_subnet_group.this.name
-  vpc_security_group_ids = [aws_security_group.this.id]
+  vpc_security_group_ids  = [aws_security_group.this.id]
   skip_final_snapshot     = var.skip_final_snapshot
   deletion_protection     = var.deletion_protection
+  storage_encrypted       = var.storage_encrypted
+  kms_key_id             = var.storage_encrypted ? var.kms_key_id : null
+  backtrack_window        = var.backtrack_window
+  copy_tags_to_snapshot   = true
+  enable_http_endpoint    = false
 
   tags = {
     Name        = "${var.project_name}-rds-cluster"
     Environment = var.environment
   }
+
+  depends_on = [var.kms_key_dependency]
 }
 
 resource "aws_rds_cluster_instance" "this" {
@@ -173,6 +180,30 @@ variable "deletion_protection" {
   description = "Enable deletion protection"
   type        = bool
   default     = true
+}
+
+variable "storage_encrypted" {
+  description = "Enable RDS storage encryption at rest"
+  type        = bool
+  default     = true
+}
+
+variable "kms_key_id" {
+  description = "KMS key ID for RDS encryption"
+  type        = string
+  default     = null
+}
+
+variable "kms_key_dependency" {
+  description = "Dependency on KMS key to ensure proper ordering"
+  type        = any
+  default     = null
+}
+
+variable "backtrack_window" {
+  description = "Aurora backtrack window in days (0-35, Aurora PostgreSQL only)"
+  type        = number
+  default     = 7
 }
 
 output "cluster_endpoint" {
