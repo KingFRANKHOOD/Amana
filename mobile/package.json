@@ -12,7 +12,10 @@
     "preview": "eas build --platform ios --profile preview",
     "prebuild": "expo prebuild --clean",
     "type-check": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "jest --config jest.config.cjs",
+    "test:coverage": "jest --config jest.config.cjs --coverage",
+    "test:watch": "jest --config jest.config.cjs --watch"
   },
   "dependencies": {
     "@react-navigation/native": "^6.1.17",
