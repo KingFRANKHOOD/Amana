@@ -31,6 +31,13 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: REDIS_PASSWORD
+            # REDISCLI_AUTH lets redis-cli authenticate without -a flag,
+            # keeping the password out of process listings and pod describe output.
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: REDIS_PASSWORD
           resources:
             requests:
               cpu: 50m
@@ -42,8 +49,6 @@ spec:
             exec:
               command:
                 - redis-cli
-                - -a
-                - $(REDIS_PASSWORD)
                 - ping
             initialDelaySeconds: 15
             periodSeconds: 10
@@ -51,8 +56,6 @@ spec:
             exec:
               command:
                 - redis-cli
-                - -a
-                - $(REDIS_PASSWORD)
                 - ping
             initialDelaySeconds: 10
             periodSeconds: 10
