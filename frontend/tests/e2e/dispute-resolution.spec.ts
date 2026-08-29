@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { apiUrl } from '../support/api';
 
 const MEDIATOR_ADDRESS = 'GEXAMPLEMEDIATORPUBLICKEY1';
 const BUYER_ADDRESS = 'GDNM7WSJ7VIUVK2TSZ2OQES5XR2663TZEIBFXRDT56B5IRLHERVWSXMU';
@@ -38,7 +39,7 @@ test.describe('Dispute Resolution Flow', () => {
   test('displays open disputes on the mediator dashboard', async ({ page }) => {
     await seedMediatorWallet(page);
 
-    await page.route('http://localhost:4000/disputes?**', async (route) => {
+    await page.route(apiUrl('/disputes?**'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -63,7 +64,7 @@ test.describe('Dispute Resolution Flow', () => {
       });
     });
 
-    await page.route('http://localhost:4000/trades/4294967297/evidence', async (route) => {
+    await page.route(apiUrl('/trades/4294967297/evidence'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -82,7 +83,7 @@ test.describe('Dispute Resolution Flow', () => {
   test('resolves a dispute with equal split', async ({ page }) => {
     await seedMediatorWallet(page);
 
-    await page.route('http://localhost:4000/disputes?**', async (route) => {
+    await page.route(apiUrl('/disputes?**'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -107,7 +108,7 @@ test.describe('Dispute Resolution Flow', () => {
       });
     });
 
-    await page.route('http://localhost:4000/trades/4294967297/evidence', async (route) => {
+    await page.route(apiUrl('/trades/4294967297/evidence'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -144,7 +145,7 @@ test.describe('Dispute Resolution Flow', () => {
   test('submits evidence for a dispute', async ({ page }) => {
     await seedMediatorWallet(page);
 
-    await page.route('http://localhost:4000/trades/4294967297/evidence', async (route) => {
+    await page.route(apiUrl('/trades/4294967297/evidence'), async (route) => {
       if (route.request().method() === 'POST') {
         await route.fulfill({
           status: 200,
@@ -173,7 +174,7 @@ test.describe('Dispute Resolution Flow', () => {
       }
     });
 
-    await page.route('http://localhost:4000/disputes?**', async (route) => {
+    await page.route(apiUrl('/disputes?**'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

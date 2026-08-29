@@ -53,6 +53,37 @@ Visual snapshot tests live under `tests/visual` and are executed with Playwright
 
 Snapshot tests are structured for both mobile and desktop viewports.
 
+### End-to-End Tests
+E2E and coverage specs live under `tests/e2e` and `tests/visual` and run with the
+same Playwright command (`npm run test:visual`). They intercept backend calls
+with `page.route(...)`, which requires an absolute URL, so the backend origin is
+**not** the relative `baseURL`.
+
+Both URLs are environment-configurable:
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `PLAYWRIGHT_BASE_URL` | Front-end origin under test. When set, the bundled `pnpm dev` server is not started. | `http://localhost:3000` |
+| `PLAYWRIGHT_API_URL` | Backend API origin that specs mock. Falls back to `NEXT_PUBLIC_API_URL`, then the default. | `http://localhost:4000` |
+
+Specs must never hardcode the backend origin. Import the shared helper from
+`tests/support/api.ts` instead:
+
+```typescript
+import { apiUrl } from '../support/api';
+
+await page.route(apiUrl('/trades?**'), handler);
+await page.route(apiUrl(`/trades/${tradeId}/evidence`), handler);
+```
+
+Run against a different environment:
+
+```bash
+PLAYWRIGHT_BASE_URL=https://staging.example.com \
+PLAYWRIGHT_API_URL=https://api.staging.example.com \
+  npm run test:visual
+```
+
 ### Unit Tests
 Place unit tests in `__tests__` directories next to the components:
 ```

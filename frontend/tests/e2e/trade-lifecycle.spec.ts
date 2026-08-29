@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { apiUrl } from '../support/api';
 
 const BUYER_ADDRESS = 'GDNM7WSJ7VIUVK2TSZ2OQES5XR2663TZEIBFXRDT56B5IRLHERVWSXMU';
 const SELLER_ADDRESS = 'GA4T33YK6H6D5E7ZQY5W3J2L7F8K9B0N1M2P3Q4R5S6T7U8V9W0X1Y2Z3';
@@ -48,7 +49,7 @@ test.describe('Trade Lifecycle E2E', () => {
     await seedAuthenticatedWallet(page);
     await mockStellarRpc(page);
 
-    await page.route('http://localhost:4000/trades', async (route) => {
+    await page.route(apiUrl('/trades'), async (route) => {
       if (route.request().method() !== 'POST') {
         await route.fallback();
         return;
@@ -84,7 +85,7 @@ test.describe('Trade Lifecycle E2E', () => {
     await seedAuthenticatedWallet(page);
     await mockStellarRpc(page);
 
-    await page.route('http://localhost:4000/trades/4294967297', async (route) => {
+    await page.route(apiUrl('/trades/4294967297'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -101,7 +102,7 @@ test.describe('Trade Lifecycle E2E', () => {
       });
     });
 
-    await page.route('http://localhost:4000/trades/4294967297/deposit', async (route) => {
+    await page.route(apiUrl('/trades/4294967297/deposit'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -123,7 +124,7 @@ test.describe('Trade Lifecycle E2E', () => {
     await seedAuthenticatedWallet(page);
     await mockStellarRpc(page);
 
-    await page.route('http://localhost:4000/trades/4294967297', async (route) => {
+    await page.route(apiUrl('/trades/4294967297'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -141,7 +142,7 @@ test.describe('Trade Lifecycle E2E', () => {
       });
     });
 
-    await page.route('http://localhost:4000/trades/4294967297/confirm', async (route) => {
+    await page.route(apiUrl('/trades/4294967297/confirm'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -165,7 +166,7 @@ test.describe('Trade Lifecycle E2E', () => {
 
     let disputeRequestBody: unknown;
 
-    await page.route('http://localhost:4000/trades/stats', async (route) => {
+    await page.route(apiUrl('/trades/stats'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -173,7 +174,7 @@ test.describe('Trade Lifecycle E2E', () => {
       });
     });
 
-    await page.route('http://localhost:4000/wallet/balance', async (route) => {
+    await page.route(apiUrl('/wallet/balance'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -181,7 +182,7 @@ test.describe('Trade Lifecycle E2E', () => {
       });
     });
 
-    await page.route('http://localhost:4000/trades?**', async (route) => {
+    await page.route(apiUrl('/trades?**'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -203,7 +204,7 @@ test.describe('Trade Lifecycle E2E', () => {
       });
     });
 
-    await page.route('http://localhost:4000/trades/T-DISPUTE-1/dispute', async (route) => {
+    await page.route(apiUrl('/trades/T-DISPUTE-1/dispute'), async (route) => {
       disputeRequestBody = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
@@ -234,7 +235,7 @@ test.describe('Trade Lifecycle E2E', () => {
     const tradeId = '4294967300';
 
     let createdTrade = false;
-    await page.route('http://localhost:4000/trades', async (route) => {
+    await page.route(apiUrl('/trades'), async (route) => {
       if (route.request().method() === 'POST') {
         createdTrade = true;
         await route.fulfill({
@@ -268,7 +269,7 @@ test.describe('Trade Lifecycle E2E', () => {
 
     const tradeId = '4294967301';
 
-    await page.route(`http://localhost:4000/trades/${tradeId}`, async (route) => {
+    await page.route(apiUrl(`/trades/${tradeId}`), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -286,7 +287,7 @@ test.describe('Trade Lifecycle E2E', () => {
       });
     });
 
-    await page.route(`http://localhost:4000/trades/${tradeId}/evidence`, async (route) => {
+    await page.route(apiUrl(`/trades/${tradeId}/evidence`), async (route) => {
       if (route.request().method() === 'POST') {
         await route.fulfill({
           status: 200,
@@ -302,7 +303,7 @@ test.describe('Trade Lifecycle E2E', () => {
       }
     });
 
-    await page.route(`http://localhost:4000/trades/${tradeId}/release`, async (route) => {
+    await page.route(apiUrl(`/trades/${tradeId}/release`), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

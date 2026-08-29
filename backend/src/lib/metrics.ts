@@ -46,6 +46,9 @@ let pgPoolIdleConnections: Gauge | undefined;
 let pgPoolWaitingQueries: Gauge | undefined;
 let pgPoolTimeoutTotal: Counter | undefined;
 let duplicateEventAttempts: Counter | undefined;
+let evidenceBatchDuration: Histogram | undefined;
+let evidenceBatchRetries: Counter | undefined;
+let evidenceRecordsChecked: Counter | undefined;
 let customRecorder: StellarMetricsRecorder | null = null;
 
 function getMeter() {
@@ -152,6 +155,64 @@ function getDuplicateEventAttempts(): Counter {
   return duplicateEventAttempts;
 }
 
+function getEvidenceBatchDuration(): Histogram {
+  if (!evidenceBatchDuration) {
+    evidenceBatchDuration = getMeter().createHistogram(
+      "evidence_verification_batch_duration_ms",
+      {
+        description: "Time to verify one page of evidence pins",
+        unit: "ms",
+      },
+    );
+  }
+  return evidenceBatchDuration;
+}
+
+function getEvidenceBatchRetries(): Counter {
+  if (!evidenceBatchRetries) {
+    evidenceBatchRetries = getMeter().createCounter(
+      "evidence_verification_batch_retries_total",
+      {
+        description: "Total retry rounds spent on transient pin-check failures",
+        unit: "1",
+      },
+    );
+  }
+  return evidenceBatchRetries;
+}
+
+function getEvidenceRecordsChecked(): Counter {
+  if (!evidenceRecordsChecked) {
+    evidenceRecordsChecked = getMeter().createCounter(
+      "evidence_verification_records_checked_total",
+      {
+        description: "Total evidence records checked during verification passes",
+        unit: "1",
+      },
+    );
+  }
+  return evidenceRecordsChecked;
+}
+
+export interface EvidenceBatchMetric {
+  recordCount: number;
+  durationMs: number;
+  retries: number;
+  failedCidCount: number;
+}
+
+/** Record timing/retry metrics for a single evidence-verification batch. */
+export function recordEvidenceVerificationBatch(
+  metric: EvidenceBatchMetric,
+): void {
+  const failed = metric.failedCidCount > 0 ? "true" : "false";
+  getEvidenceBatchDuration().record(metric.durationMs, { failed });
+  getEvidenceRecordsChecked().add(metric.recordCount);
+  if (metric.retries > 0) {
+    getEvidenceBatchRetries().add(metric.retries);
+  }
+}
+
 export function recordTransactionSubmission(
   operation: string,
   outcome: StellarTransactionOutcome,
@@ -249,4 +310,7 @@ export function __resetMetricsForTests(): void {
   pgPoolWaitingQueries = undefined;
   pgPoolTimeoutTotal = undefined;
   duplicateEventAttempts = undefined;
+  evidenceBatchDuration = undefined;
+  evidenceBatchRetries = undefined;
+  evidenceRecordsChecked = undefined;
 }

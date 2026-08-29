@@ -15,7 +15,17 @@ export function createEvidenceVerificationWorker(): Worker<EvidenceVerificationJ
       logger.info("Processing evidence verification job");
 
       const verificationService = new EvidenceVerificationService();
-      const report = await verificationService.verifyAll();
+      const report = await verificationService.verifyAll({
+        onProgress: (progress) => {
+          logger.info(progress, "Evidence verification progress");
+          if (progress.totalRecords && progress.totalRecords > 0) {
+            const pct = Math.round(
+              (progress.processedRecords / progress.totalRecords) * 100,
+            );
+            void job.updateProgress(pct).catch(() => {});
+          }
+        },
+      });
 
       let repairResults: Awaited<
         ReturnType<EvidenceVerificationService["repairMissingPins"]>
