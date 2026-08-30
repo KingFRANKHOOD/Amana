@@ -3,6 +3,12 @@ import { env } from "../config/env";
 import { appLogger } from "../middleware/logger";
 import { prisma } from "../lib/db";
 import { TradeStatus } from "@prisma/client";
+import { alertService } from "./alert.service";
+import {
+  recordWebhookDelivery,
+  recordWebhookDeadLetter,
+  recordWebhookConsecutiveFailures,
+} from "../lib/metrics";
 
 interface WebhookPayload {
   event: string;
@@ -18,12 +24,20 @@ interface DeliveryTarget {
   subscriptionId?: number | null;
 }
 
+interface DeliveryState {
+  target: DeliveryTarget;
+  consecutiveFailures: number;
+}
+
+const consecutiveFailureState = new Map<string, DeliveryState>();
+
 export class WebhookService {
   private readonly webhookUrl: string | undefined;
   private readonly webhookSecret: string | undefined;
   private readonly maxAttempts: number;
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
+  private readonly consecutiveFailureThreshold: number;
 
   constructor() {
     this.webhookUrl = env.WEBHOOK_URL;
@@ -31,6 +45,7 @@ export class WebhookService {
     this.maxAttempts = env.WEBHOOK_MAX_ATTEMPTS;
     this.retryBaseMs = env.WEBHOOK_RETRY_BASE_MS;
     this.retryMaxMs = env.WEBHOOK_RETRY_MAX_MS;
+    this.consecutiveFailureThreshold = env.WEBHOOK_CONSECUTIVE_FAILURE_THRESHOLD;
   }
 
   async dispatch(tradeId: string, status: TradeStatus, metadata: Record<string, unknown> = {}): Promise<void> {
@@ -86,7 +101,9 @@ export class WebhookService {
     tradeId: string,
     status: TradeStatus,
   ): Promise<void> {
+    const start = performance.now();
     let lastError: unknown = null;
+    const stateKey = target.url;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       try {
@@ -114,6 +131,15 @@ export class WebhookService {
             },
             "Webhook dispatched successfully",
           );
+
+          const durationMs = performance.now() - start;
+          recordWebhookDelivery("success", durationMs, {
+            webhook_url: target.url,
+            subscription_id: target.subscriptionId ?? "system",
+            event: `trade.${status.toLowerCase()}`,
+          });
+
+          consecutiveFailureState.delete(stateKey);
           return;
         }
 
@@ -132,6 +158,14 @@ export class WebhookService {
         );
 
         if (!shouldRetry || attempt === this.maxAttempts) {
+          const durationMs = performance.now() - start;
+          recordWebhookDelivery("failure", durationMs, {
+            webhook_url: target.url,
+            subscription_id: target.subscriptionId ?? "system",
+            event: `trade.${status.toLowerCase()}`,
+            status_code: response.status,
+          });
+          this.incrementConsecutiveFailures(stateKey, target, tradeId, status, body);
           return;
         }
       } catch (error) {
@@ -155,6 +189,13 @@ export class WebhookService {
       }
     }
 
+    const durationMs = performance.now() - start;
+    recordWebhookDelivery("failure", durationMs, {
+      webhook_url: target.url,
+      subscription_id: target.subscriptionId ?? "system",
+      event: `trade.${status.toLowerCase()}`,
+    });
+
     appLogger.error(
       {
         tradeId,
@@ -165,6 +206,102 @@ export class WebhookService {
       },
       "Webhook delivery failed after retries",
     );
+
+    this.incrementConsecutiveFailures(stateKey, target, tradeId, status, body, lastError);
+    await this.moveToDeadLetter(target, body, tradeId, status, lastError);
+  }
+
+  private incrementConsecutiveFailures(
+    stateKey: string,
+    target: DeliveryTarget,
+    tradeId: string,
+    status: TradeStatus,
+    body: string,
+    error?: unknown,
+  ): void {
+    const current = consecutiveFailureState.get(stateKey);
+    const nextCount = (current?.consecutiveFailures ?? 0) + 1;
+    consecutiveFailureState.set(stateKey, {
+      target,
+      consecutiveFailures: nextCount,
+    });
+
+    recordWebhookConsecutiveFailures({
+      webhook_url: target.url,
+      subscription_id: target.subscriptionId ?? "system",
+      event: `trade.${status.toLowerCase()}`,
+    });
+
+    if (nextCount >= this.consecutiveFailureThreshold) {
+      appLogger.error(
+        {
+          tradeId,
+          status,
+          webhookUrl: target.url,
+          subscriptionId: target.subscriptionId,
+          consecutiveFailures: nextCount,
+          error,
+        },
+        "Webhook target has exceeded consecutive failure threshold",
+      );
+
+      alertService
+        .dispatch(
+          "webhook_delivery_failure",
+          `Webhook delivery to ${target.url} has failed ${nextCount} consecutive times for trade ${tradeId}`,
+          {
+            tradeId,
+            status,
+            webhookUrl: target.url,
+            subscriptionId: target.subscriptionId,
+            consecutiveFailures: nextCount,
+            event: `trade.${status.toLowerCase()}`,
+            lastError: error instanceof Error ? error.message : String(error),
+          },
+          "critical",
+        )
+        .catch((dispatchError) => {
+          appLogger.error(
+            { dispatchError, webhookUrl: target.url },
+            "Failed to dispatch webhook failure alert",
+          );
+        });
+    }
+  }
+
+  private async moveToDeadLetter(
+    target: DeliveryTarget,
+    body: string,
+    tradeId: string,
+    status: TradeStatus,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await prisma.webhookDeadLetter.create({
+        data: {
+          webhookUrl: target.url,
+          subscriptionId: target.subscriptionId ?? undefined,
+          secretHash: target.secret ?? undefined,
+          event: `trade.${status.toLowerCase()}`,
+          tradeId,
+          status: error instanceof Error ? error.message : String(error),
+          payload: JSON.parse(body),
+          lastError: error instanceof Error ? error.message : String(error),
+          attempts: this.maxAttempts,
+        },
+      });
+
+      recordWebhookDeadLetter({
+        webhook_url: target.url,
+        subscription_id: target.subscriptionId ?? "system",
+        event: `trade.${status.toLowerCase()}`,
+      });
+    } catch (deadLetterError) {
+      appLogger.error(
+        { deadLetterError, webhookUrl: target.url, tradeId },
+        "Failed to persist webhook dead-letter record",
+      );
+    }
   }
 
   isConfigured(): boolean {
@@ -173,3 +310,8 @@ export class WebhookService {
 }
 
 export const webhookService = new WebhookService();
+
+/** Vitest/Jest-only hook to clear consecutive failure state between tests. */
+export function __resetConsecutiveFailureStateForTests(): void {
+  consecutiveFailureState.clear();
+}

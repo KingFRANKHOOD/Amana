@@ -21,6 +21,9 @@ jest.mock("../lib/db", () => ({
       findUnique: jest.fn(),
       delete: jest.fn(),
     },
+    webhookDeadLetter: {
+      create: jest.fn(),
+    },
   },
 }));
 jest.mock("../services/auth.service");

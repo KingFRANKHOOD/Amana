@@ -46,6 +46,11 @@ let pgPoolIdleConnections: Gauge | undefined;
 let pgPoolWaitingQueries: Gauge | undefined;
 let pgPoolTimeoutTotal: Counter | undefined;
 let duplicateEventAttempts: Counter | undefined;
+let webhookDeliveryTotal: Counter | undefined;
+let webhookDeliveryFailuresTotal: Counter | undefined;
+let webhookDeliveryConsecutiveFailures: Counter | undefined;
+let webhookDeliveryDuration: Histogram | undefined;
+let webhookDeadLetterTotal: Counter | undefined;
 let customRecorder: StellarMetricsRecorder | null = null;
 
 function getMeter() {
@@ -152,6 +157,71 @@ function getDuplicateEventAttempts(): Counter {
   return duplicateEventAttempts;
 }
 
+function getWebhookDeliveryTotal(): Counter {
+  if (!webhookDeliveryTotal) {
+    webhookDeliveryTotal = getMeter().createCounter(
+      "webhook_delivery_attempts_total",
+      {
+        description: "Total webhook delivery attempts",
+        unit: "1",
+      },
+    );
+  }
+  return webhookDeliveryTotal;
+}
+
+function getWebhookDeliveryFailuresTotal(): Counter {
+  if (!webhookDeliveryFailuresTotal) {
+    webhookDeliveryFailuresTotal = getMeter().createCounter(
+      "webhook_delivery_failures_total",
+      {
+        description: "Total webhook delivery failures",
+        unit: "1",
+      },
+    );
+  }
+  return webhookDeliveryFailuresTotal;
+}
+
+function getWebhookDeliveryConsecutiveFailures(): Counter {
+  if (!webhookDeliveryConsecutiveFailures) {
+    webhookDeliveryConsecutiveFailures = getMeter().createCounter(
+      "webhook_delivery_consecutive_failures_total",
+      {
+        description: "Total webhook delivery consecutive failure streaks",
+        unit: "1",
+      },
+    );
+  }
+  return webhookDeliveryConsecutiveFailures;
+}
+
+function getWebhookDeliveryDuration(): Histogram {
+  if (!webhookDeliveryDuration) {
+    webhookDeliveryDuration = getMeter().createHistogram(
+      "webhook_delivery_duration_ms",
+      {
+        description: "Webhook delivery attempt latency in milliseconds",
+        unit: "ms",
+      },
+    );
+  }
+  return webhookDeliveryDuration;
+}
+
+function getWebhookDeadLetterTotal(): Counter {
+  if (!webhookDeadLetterTotal) {
+    webhookDeadLetterTotal = getMeter().createCounter(
+      "webhook_dead_letter_total",
+      {
+        description: "Total webhook deliveries moved to dead-letter queue",
+        unit: "1",
+      },
+    );
+  }
+  return webhookDeadLetterTotal;
+}
+
 export function recordTransactionSubmission(
   operation: string,
   outcome: StellarTransactionOutcome,
@@ -217,6 +287,30 @@ export function classifySubmissionError(error: unknown): StellarTransactionOutco
   return "network_error";
 }
 
+export function recordWebhookDelivery(
+  outcome: "success" | "failure",
+  durationMs: number,
+  labels?: Record<string, string | number | boolean>,
+): void {
+  getWebhookDeliveryTotal().add(1, labels);
+  getWebhookDeliveryDuration().record(durationMs, labels);
+  if (outcome === "failure") {
+    getWebhookDeliveryFailuresTotal().add(1, labels);
+  }
+}
+
+export function recordWebhookDeadLetter(
+  labels?: Record<string, string | number | boolean>,
+): void {
+  getWebhookDeadLetterTotal().add(1, labels);
+}
+
+export function recordWebhookConsecutiveFailures(
+  labels?: Record<string, string | number | boolean>,
+): void {
+  getWebhookDeliveryConsecutiveFailures().add(1, labels);
+}
+
 export async function withRpcMetrics<T>(
   rpcMethod: StellarRpcMethod,
   fn: () => Promise<T>,
@@ -249,4 +343,9 @@ export function __resetMetricsForTests(): void {
   pgPoolWaitingQueries = undefined;
   pgPoolTimeoutTotal = undefined;
   duplicateEventAttempts = undefined;
+  webhookDeliveryTotal = undefined;
+  webhookDeliveryFailuresTotal = undefined;
+  webhookDeliveryConsecutiveFailures = undefined;
+  webhookDeliveryDuration = undefined;
+  webhookDeadLetterTotal = undefined;
 }

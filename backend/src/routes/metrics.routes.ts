@@ -41,6 +41,13 @@ export function createMetricsRouter(): Router {
         websocket: [
           "websocket_active_connections",
         ],
+        webhooks: [
+          "webhook_delivery_attempts_total",
+          "webhook_delivery_failures_total",
+          "webhook_delivery_consecutive_failures_total",
+          "webhook_delivery_duration_ms",
+          "webhook_dead_letter_total",
+        ],
       },
     });
   });

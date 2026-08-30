@@ -6,7 +6,8 @@ export type AlertType =
   | "db_connection_failure"
   | "redis_connection_failure"
   | "cache_unavailable"
-  | "pg_pool_saturation";
+  | "pg_pool_saturation"
+  | "webhook_delivery_failure";
 
 export type AlertSeverity = "critical" | "warning";
 
