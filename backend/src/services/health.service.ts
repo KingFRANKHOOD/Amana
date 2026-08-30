@@ -60,6 +60,14 @@ export interface AggregatedHealthResponse {
       globalLimit: number;
       maxPerUser: number;
     };
+    connectionPool: {
+      activeConnections: number;
+      idleConnections: number;
+      waitingQueries: number;
+      utilizationPercent: number;
+      status: "healthy" | "degraded" | "critical";
+      message: string;
+    };
   };
 }
 
@@ -386,6 +394,93 @@ export class HealthService {
   }
 
   /**
+   * Dispatch pool saturation alert if utilization exceeds threshold.
+   */
+  private async dispatchPoolAlert(
+    poolStatus: { activeConnections: number; utilizationPercent: number; status: string },
+    maxConnections: number,
+  ): Promise<void> {
+    if (poolStatus.status === "critical" && poolStatus.activeConnections > 0) {
+      await this.alerts.dispatchPoolSaturation(
+        poolStatus.activeConnections,
+        maxConnections,
+        { utilizationPercent: poolStatus.utilizationPercent },
+      );
+    }
+  }
+
+  /**
+   * Check PostgreSQL connection pool utilization.
+   * Queries pg_stat_activity to determine active/idle connection counts
+   * and calculates utilization against the configured pool limit.
+   */
+  private async checkConnectionPool(): Promise<{
+    activeConnections: number;
+    idleConnections: number;
+    waitingQueries: number;
+    utilizationPercent: number;
+    status: "healthy" | "degraded" | "critical";
+    message: string;
+  }> {
+    const startTime = Date.now();
+    const maxConnections = parseInt(env.DATABASE_POOL_SIZE ?? "15", 10);
+    const saturationThreshold = parseInt(env.POOL_SATURATION_WARN_THRESHOLD ?? "80", 10);
+
+    try {
+      const rows = await this.prisma.$queryRaw<
+        { state: string; count: bigint }[]
+      >`SELECT state, COUNT(*)::int as count FROM pg_stat_activity WHERE datname = current_database() GROUP BY state`;
+
+      const stateMap = new Map<string, number>();
+      for (const row of rows) {
+        stateMap.set(row.state ?? "unknown", Number(row.count));
+      }
+
+      const activeConnections = (stateMap.get("active") ?? 0) + (stateMap.get("idle in transaction") ?? 0);
+      const idleConnections = stateMap.get("idle") ?? 0;
+      const waitingQueries = stateMap.get("waiting") ?? 0;
+      const utilizationPercent = Math.round((activeConnections / maxConnections) * 100);
+
+      let status: "healthy" | "degraded" | "critical" = "healthy";
+      let message = `Pool utilization: ${activeConnections}/${maxConnections} (${utilizationPercent}%)`;
+
+      if (utilizationPercent >= saturationThreshold) {
+        status = "critical";
+        message = `Pool saturation alert: ${activeConnections}/${maxConnections} connections in use (${utilizationPercent}% >= ${saturationThreshold}% threshold)`;
+        appLogger.warn({ activeConnections, maxConnections, utilizationPercent }, "Connection pool saturation detected");
+      } else if (utilizationPercent >= saturationThreshold * 0.75) {
+        status = "degraded";
+        message = `Pool utilization elevated: ${activeConnections}/${maxConnections} (${utilizationPercent}%)`;
+      }
+
+      if (waitingQueries > 0) {
+        status = status === "healthy" ? "degraded" : status;
+        message += `; ${waitingQueries} queries waiting for connection`;
+      }
+
+      return {
+        activeConnections,
+        idleConnections,
+        waitingQueries,
+        utilizationPercent,
+        status,
+        message,
+      };
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      appLogger.error({ error, responseTime }, "Connection pool check failed");
+      return {
+        activeConnections: -1,
+        idleConnections: -1,
+        waitingQueries: -1,
+        utilizationPercent: -1,
+        status: "degraded",
+        message: `Pool check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
    * Check circuit breaker states for external service calls.
    */
   private checkCircuitBreakers(): Array<{ name: string; state: string }> {
@@ -595,6 +690,7 @@ export class HealthService {
       encryptionCheck,
       queuesCheck,
       storageCheck,
+      poolCheck,
     ] = await Promise.all([
       this.checkDatabase(),
       this.checkRedis(),
@@ -605,6 +701,7 @@ export class HealthService {
       Promise.resolve(this.checkEncryptionKey()),
       this.checkQueues(),
       Promise.resolve(this.checkStorage()),
+      this.checkConnectionPool(),
     ]);
 
     const toDependency = (
@@ -681,6 +778,7 @@ export class HealthService {
       details: {
         circuitBreakers,
         websocketConnections: EventStreamService.getConnectionStats(),
+        connectionPool: poolCheck,
       },
     };
   }

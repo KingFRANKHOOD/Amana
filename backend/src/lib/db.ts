@@ -7,11 +7,46 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
+const SLOW_QUERY_THRESHOLD_MS = 1000;
+
 const prismaClientSingleton = () => {
   const client = new PrismaClient({
     log: env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
+  client.$use(async (params: Prisma.MiddlewareParams, next: (params: Prisma.MiddlewareParams) => Promise<unknown>) => {
+    const model = String(params.model ?? "");
+    const operation = params.action ?? "unknown";
+    const start = performance.now();
+
+    try {
+      const result = await next(params);
+      const durationMs = performance.now() - start;
+
+      // Log slow queries for pool exhaustion diagnosis
+      if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+        console.warn(
+          `[db] Slow query: ${model}.${operation} took ${durationMs.toFixed(1)}ms`,
+        );
+      }
+
+      return result;
+    } catch (error) {
+      const durationMs = performance.now() - start;
+
+      // Log connection acquisition failures (pool exhaustion indicator)
+      const message = error instanceof Error ? error.message : String(error);
+      if (/connection|pool|timeout/i.test(message)) {
+        console.error(
+          `[db] Connection pool error: ${model}.${operation} failed after ${durationMs.toFixed(1)}ms — ${message}`,
+        );
+      }
+
+      throw error;
+    }
+  });
+
+  // Lowercase wallet addresses on write operations
   client.$use(async (params: Prisma.MiddlewareParams, next: (params: Prisma.MiddlewareParams) => Promise<unknown>) => {
     const model = String(params.model ?? "");
 
