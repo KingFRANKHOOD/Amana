@@ -302,6 +302,27 @@ model IndexedEvent {
   @@index([ledgerSequence])
 }
 
+/// Append-only audit trail for financial operations (trade creation, fund
+/// movement, dispute resolution). Rows are created via AuditLogService and
+/// are never updated or deleted by application code — only the scheduled
+/// retention job prunes rows past AUDIT_LOG_RETENTION_DAYS.
+model AuditLog {
+  id             Int      @id @default(autoincrement())
+  tradeId        String   @db.VarChar(255)
+  eventType      String   @db.VarChar(100)
+  toStatus       String   @db.VarChar(50)
+  actor          String?  @db.VarChar(255)
+  amountUsdc     String?  @db.VarChar(78)
+  ledgerSequence Int?
+  contractId     String?  @db.VarChar(255)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([tradeId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([createdAt])
+}
+
 /// Vault model representing a savings vault on Soroban
 /// - vaultId: Unique identifier from blockchain
 /// - ownerAddress: Wallet address of vault owner (lowercase)

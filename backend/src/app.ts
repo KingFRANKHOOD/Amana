@@ -43,6 +43,7 @@ import { stellarAccountCreateRoutes } from "./routes/stellar.account.create";
 import { createContractStateRouter } from "./routes/contract.state.routes";
 import { createAdminFeaturesRouter } from "./routes/admin.features.routes";
 import { createAdminEvidenceVerificationRouter } from "./routes/admin.evidence-verification.routes";
+import { createAuditLogRouter } from "./routes/auditLog.routes";
 import { createTrustScoreRouter } from "./routes/trust-score.routes";
 import { webhooksRoutes } from "./routes/webhooks.routes";
 import { createEventRouter } from "./routes/events.routes";
@@ -222,6 +223,7 @@ export function createApp(
     r.use("/treasury", createTreasuryRouter());
     r.use(createAdminFeaturesRouter());
     r.use(createAdminEvidenceVerificationRouter());
+    r.use(createAuditLogRouter());
     r.use("/webhooks", webhooksRoutes);
 
     return r;

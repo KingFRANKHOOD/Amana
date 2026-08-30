@@ -6,6 +6,7 @@ import { ContractService } from "./contract.service";
 import { appLogger } from "../middleware/logger";
 import { TracingHelper } from "../config/tracing";
 import { cacheService } from "../lib/cache";
+import { auditLogService } from "./auditLog.service";
 
 let _adminPubkeysCache: Set<string> | null = null;
 
@@ -54,7 +55,7 @@ export type TradeListFilters = {
 
 type TradeDatabase = Pick<
   PrismaClient,
-  "trade" | "dispute" | "disputeCategory" | "$queryRaw"
+  "trade" | "dispute" | "disputeCategory" | "auditLog" | "$queryRaw"
 > &
   Partial<Pick<PrismaClient, "$transaction" | "userWatchlist">>;
 
@@ -115,13 +116,31 @@ export class TradeService {
           userId: sanitizeLogField(input.buyerAddress)
         });
 
-        try {
-          return await this.prisma.trade.create({
+        const createTradeAndAuditLog = async (tx: TradeDatabase): Promise<Trade> => {
+          const trade = await tx.trade.create({
             data: {
               ...input,
               status: TradeStatus.PENDING_SIGNATURE,
             },
           });
+
+          await auditLogService.record(tx as unknown as Prisma.TransactionClient, {
+            tradeId: trade.tradeId,
+            eventType: "TradeCreationRequested",
+            toStatus: TradeStatus.PENDING_SIGNATURE,
+            actor: input.buyerAddress,
+            amountUsdc: input.amountUsdc,
+            metadata: { seller: input.sellerAddress },
+          });
+
+          return trade;
+        };
+
+        try {
+          if (this.prisma.$transaction) {
+            return await this.prisma.$transaction((tx) => createTradeAndAuditLog(tx as TradeDatabase));
+          }
+          return await createTradeAndAuditLog(this.prisma);
         } catch (error) {
           if (
             input.idempotencyKey &&

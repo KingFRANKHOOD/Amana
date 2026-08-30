@@ -129,6 +129,14 @@ export const envSchema = z.object({
   RATE_LIMIT_TRADE_CREATION_MAX: z.coerce.number().int().positive().default(30),
   RATE_LIMIT_EVIDENCE_UPLOAD_WINDOW_MS: z.coerce.number().int().positive().default(60 * 1000),
   RATE_LIMIT_EVIDENCE_UPLOAD_MAX: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_EVENT_QUERY_WINDOW_MS: z.coerce.number().int().positive().default(60 * 1000),
+  RATE_LIMIT_EVENT_QUERY_MAX: z.coerce.number().int().positive().default(30),
+  RATE_LIMIT_EVENT_BACKFILL_WINDOW_MS: z.coerce.number().int().positive().default(60 * 60 * 1000),
+  RATE_LIMIT_EVENT_BACKFILL_MAX: z.coerce.number().int().positive().default(3),
+
+  // Audit log retention (days). Financial audit trail rows older than this
+  // are pruned by the scheduled audit-log-retention worker.
+  AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(365 * 7),
 
   // PostgreSQL connection pool tuning
   DATABASE_POOL_SIZE: z.coerce.number().int().positive().default(15),

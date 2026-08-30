@@ -2,6 +2,7 @@ import { PrismaClient, DisputeStatus } from "@prisma/client";
 import { AppError, ErrorCode } from "../errors/errorCodes";
 import { isMediatorAddress } from "../lib/accessControl";
 import { TracingHelper } from "../config/tracing";
+import { auditLogService } from "./auditLog.service";
 import {
   COMPLETED_DISPUTE_STATUSES,
   applyDisputeStatusTransition,
@@ -236,6 +237,14 @@ export class DisputeService {
           const updated = await tx.dispute.findUniqueOrThrow({
             where: { id: dispute.id },
             include: disputeInclude,
+          });
+
+          await auditLogService.record(tx, {
+            tradeId,
+            eventType: "DisputeStatusTransition",
+            toStatus: newStatus,
+            actor: mediatorAddress,
+            metadata: { fromStatus: dispute.status, disputeId: dispute.id },
           });
 
           return toDisputeResponse(updated);

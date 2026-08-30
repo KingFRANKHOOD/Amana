@@ -4,7 +4,7 @@ import {
   getEventListenerConfig,
   EventListenerConfig,
 } from "../config/eventListener.config";
-import { EventType, ParsedEvent } from "../types/events";
+import { EventType, ParsedEvent, EVENT_TOPIC_MAP } from "../types/events";
 import { dispatchEvent } from "./eventHandlers";
 import { appLogger } from "../middleware/logger";
 import {
@@ -450,10 +450,6 @@ export class EventListenerService {
         return null;
       }
 
-      // Extract trade_id from second topic element or from value
-      const tradeId =
-        topic.length > 1 ? this.extractScalarValue(topic[1]!) : "unknown";
-
       const data: Record<string, unknown> = {};
       if (rawEvent.value) {
         data.raw = rawEvent.value;
@@ -468,9 +464,19 @@ export class EventListenerService {
         }
       }
 
+      // The contract emits a single topic element (the event symbol); the
+      // trade_id lives in the event's data map, not in a second topic slot.
+      const tradeId = data.trade_id != null ? String(data.trade_id) : "unknown";
+      if (tradeId === "unknown") {
+        appLogger.warn(
+          { eventSymbol, eventId: rawEvent.id },
+          "[EventListener] Event data missing trade_id",
+        );
+      }
+
       return {
         eventType,
-        tradeId: String(tradeId),
+        tradeId,
         ledgerSequence: rawEvent.ledger,
         contractId: String(rawEvent.contractId ?? this.config.contractId),
         eventId: rawEvent.id,
@@ -493,33 +499,14 @@ export class EventListenerService {
     }
   }
 
-  /** Extract a scalar value (string or number) from an XDR ScVal. */
-  private extractScalarValue(scVal: StellarSdk.xdr.ScVal): string {
-    try {
-      const nativeVal = StellarSdk.scValToNative(scVal);
-      return String(nativeVal);
-    } catch {
-      return "unknown";
-    }
-  }
-
   /** Map Soroban event topic symbol to our EventType enum. */
   private mapSymbolToEventType(symbol: string): EventType | null {
-    const mapping: Record<string, EventType> = {
-      TradeCreated: EventType.TradeCreated,
-      trade_created: EventType.TradeCreated,
-      TradeFunded: EventType.TradeFunded,
-      trade_funded: EventType.TradeFunded,
-      DeliveryConfirmed: EventType.DeliveryConfirmed,
-      delivery_confirmed: EventType.DeliveryConfirmed,
-      FundsReleased: EventType.FundsReleased,
-      funds_released: EventType.FundsReleased,
-      DisputeInitiated: EventType.DisputeInitiated,
-      dispute_initiated: EventType.DisputeInitiated,
-      DisputeResolved: EventType.DisputeResolved,
-      dispute_resolved: EventType.DisputeResolved,
-    };
-    return mapping[symbol] ?? null;
+    const eventType = EVENT_TOPIC_MAP[symbol];
+    if (!eventType) {
+      appLogger.warn({ symbol }, "[EventListener] Unknown event symbol, dropping event");
+      return null;
+    }
+    return eventType;
   }
 
   /** Exponential backoff on RPC failure. */

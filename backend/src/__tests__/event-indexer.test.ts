@@ -100,4 +100,68 @@ describe("EventIndexerService", () => {
     expect(records).toHaveLength(1);
     expect(emitted).toHaveBeenCalledTimes(1);
   });
+
+  it("resolves tradeId from the event data map for a real single-topic contract event", async () => {
+    const records: Array<Record<string, unknown>> = [];
+    const prisma = {
+      indexedEvent: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const record = { id: records.length + 1, ingestedAt: new Date(), ...data };
+          records.push(record);
+          return record;
+        }),
+      },
+    };
+    const service = new EventIndexerService(prisma as any);
+
+    // The escrow contract emits a single topic element (the event symbol);
+    // trade_id lives in the event's data map, e.g. topics=["TRDCRT"].
+    const singleTopicEvent = {
+      id: "evt-single-topic",
+      ledger: 456,
+      contractId: "CONTRACT_TEST",
+      txHash: "tx-2",
+      topic: [{ native: "TRDCRT" }],
+      value: {
+        type: "map",
+        value: [
+          { key: { value: "trade_id" }, val: { value: "trade-42" } },
+          { key: { value: "buyer" }, val: { value: "GBUYER" } },
+        ],
+      },
+    };
+
+    await service.ingestEvent(singleTopicEvent as any);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.tradeId).toBe("trade-42");
+  });
+
+  it("stores a null tradeId (not the literal string 'unknown') when data has no trade_id", async () => {
+    const records: Array<Record<string, unknown>> = [];
+    const prisma = {
+      indexedEvent: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const record = { id: records.length + 1, ingestedAt: new Date(), ...data };
+          records.push(record);
+          return record;
+        }),
+      },
+    };
+    const service = new EventIndexerService(prisma as any);
+
+    const eventWithoutTradeId = {
+      id: "evt-no-trade-id",
+      ledger: 789,
+      contractId: "CONTRACT_TEST",
+      txHash: "tx-3",
+      topic: [{ native: "MEDADD" }],
+      value: null,
+    };
+
+    await service.ingestEvent(eventWithoutTradeId as any);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.tradeId).toBeNull();
+  });
 });

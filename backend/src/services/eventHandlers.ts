@@ -65,7 +65,7 @@ export async function handleTradeCreated(tx: Prisma.TransactionClient, event: Pa
     status: EVENT_TO_STATUS[EventType.TradeCreated]!,
     version: 1,
   });
-  logEscrowEvent({
+  await logEscrowEvent(tx, {
     tradeId: event.tradeId,
     eventType: "TradeCreated",
     toStatus: TradeStatus.CREATED,
@@ -87,7 +87,7 @@ export async function handleTradeFunded(tx: Prisma.TransactionClient, event: Par
     status: EVENT_TO_STATUS[EventType.TradeFunded]!,
     version: 1,
   });
-  logEscrowEvent({
+  await logEscrowEvent(tx, {
     tradeId: event.tradeId,
     eventType: "TradeFunded",
     toStatus: TradeStatus.FUNDED,
@@ -116,7 +116,7 @@ export async function handleDeliveryConfirmed(tx: Prisma.TransactionClient, even
     status: EVENT_TO_STATUS[EventType.DeliveryConfirmed]!,
     version: 1,
   });
-  logEscrowEvent({
+  await logEscrowEvent(tx, {
     tradeId: event.tradeId,
     eventType: "DeliveryConfirmed",
     toStatus: TradeStatus.DELIVERED,
@@ -140,7 +140,7 @@ export async function handleFundsReleased(tx: Prisma.TransactionClient, event: P
   const amountUsdc = event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
   await feeAccountingService.recordFee(tx, event.tradeId, amountUsdc, event.ledgerSequence);
 
-  logEscrowEvent({
+  await logEscrowEvent(tx, {
     tradeId: event.tradeId,
     eventType: "FundsReleased",
     toStatus: TradeStatus.COMPLETED,
@@ -161,7 +161,7 @@ export async function handleDisputeInitiated(tx: Prisma.TransactionClient, event
     status: EVENT_TO_STATUS[EventType.DisputeInitiated]!,
     version: 1,
   });
-  logEscrowEvent({
+  await logEscrowEvent(tx, {
     tradeId: event.tradeId,
     eventType: "DisputeInitiated",
     toStatus: TradeStatus.DISPUTED,
@@ -187,7 +187,7 @@ export async function handleDisputeResolved(tx: Prisma.TransactionClient, event:
   const amountUsdc = event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
   await feeAccountingService.recordFee(tx, event.tradeId, amountUsdc, event.ledgerSequence);
 
-  logEscrowEvent({
+  await logEscrowEvent(tx, {
     tradeId: event.tradeId,
     eventType: "DisputeResolved",
     toStatus: TradeStatus.COMPLETED,
