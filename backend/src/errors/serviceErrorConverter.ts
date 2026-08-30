@@ -1,4 +1,4 @@
-import { AppError, ErrorCode } from './errorCodes';
+import { AppError, ErrorCode, StructuredErrorContext } from './errorCodes';
 import { appLogger } from '../middleware/logger';
 
 /**
@@ -35,70 +35,83 @@ export enum ServiceType {
  */
 export class ServiceErrorConverter {
   /**
-   * Convert any external service error to AppError
+   * Convert any external service error to AppError with structured business context
    */
   static convertToAppError(
     error: unknown,
     serviceType: ServiceType,
-    context?: string
+    context?: string | StructuredErrorContext
   ): AppError {
-    // If already an AppError, return as-is
+    const contextObj: StructuredErrorContext = typeof context === 'string'
+      ? { operation: context }
+      : (context || {});
+
+    const serviceContext = contextObj.operation || serviceType;
+
+    // If already an AppError, attach context and return
     if (error instanceof AppError) {
+      if (Object.keys(contextObj).length > 0) {
+        error.withContext(contextObj);
+      }
       return error;
     }
 
     // Handle structured AppError across boundaries
     if (this.isAppErrorStructural(error)) {
-      return error as AppError;
+      const structured = error as AppError;
+      if (Object.keys(contextObj).length > 0 && typeof structured.withContext === 'function') {
+        structured.withContext(contextObj);
+      }
+      return structured;
     }
 
     const externalError = error as ExternalServiceError;
-    const serviceContext = context || serviceType;
 
     // Network/timeout errors
     if (this.isNetworkError(externalError)) {
       appLogger.warn(
-        { service: serviceType, error: externalError.message },
+        { service: serviceType, error: externalError.message, ...contextObj },
         `[${serviceContext}] Network error detected`
       );
       return new AppError(
         ErrorCode.INFRA_ERROR,
         `${serviceContext} service unavailable: Network error`,
         503,
-        { service: serviceType, originalError: externalError.message }
-      );
+        { service: serviceType, originalError: externalError.message, ...contextObj }
+      ).withContext(contextObj);
     }
 
     // Timeout errors
     if (this.isTimeoutError(externalError)) {
       appLogger.warn(
-        { service: serviceType, error: externalError.message },
+        { service: serviceType, error: externalError.message, ...contextObj },
         `[${serviceContext}] Timeout error detected`
       );
       return new AppError(
         ErrorCode.PAYMENT_PROVIDER_TIMEOUT,
         `${serviceContext} service timeout`,
         504,
-        { service: serviceType, originalError: externalError.message }
-      );
+        { service: serviceType, originalError: externalError.message, ...contextObj }
+      ).withContext(contextObj);
     }
 
     // HTTP status errors
     if (externalError.response?.status) {
-      return this.convertHttpError(externalError, serviceType, serviceContext);
+      const err = this.convertHttpError(externalError, serviceType, String(serviceContext));
+      return err.withContext(contextObj);
     }
 
     // Generic unknown error
     appLogger.error(
-      { service: serviceType, error },
+      { service: serviceType, error, ...contextObj },
       `[${serviceContext}] Unknown error type`
     );
     return new AppError(
       ErrorCode.INTERNAL_ERROR,
       `${serviceContext} service error: ${this.extractMessage(error)}`,
       500,
-      { service: serviceType }
-    );
+      { service: serviceType, ...contextObj }
+    ).withContext(contextObj);
   }
 
   /**
@@ -236,7 +249,7 @@ export class ServiceErrorConverter {
   static async withErrorConversion<T>(
     fn: () => Promise<T>,
     serviceType: ServiceType,
-    context?: string
+    context?: string | StructuredErrorContext
   ): Promise<T> {
     try {
       return await fn();
@@ -248,21 +261,21 @@ export class ServiceErrorConverter {
   /**
    * Convert Stellar-specific errors
    */
-  static convertStellarError(error: unknown, context?: string): AppError {
+  static convertStellarError(error: unknown, context?: string | StructuredErrorContext): AppError {
     return this.convertToAppError(error, ServiceType.STELLAR, context);
   }
 
   /**
    * Convert IPFS-specific errors
    */
-  static convertIPFSError(error: unknown, context?: string): AppError {
+  static convertIPFSError(error: unknown, context?: string | StructuredErrorContext): AppError {
     return this.convertToAppError(error, ServiceType.IPFS, context);
   }
 
   /**
    * Convert webhook errors
    */
-  static convertWebhookError(error: unknown, context?: string): AppError {
+  static convertWebhookError(error: unknown, context?: string | StructuredErrorContext): AppError {
     return this.convertToAppError(error, ServiceType.WEBHOOK, context);
   }
 }

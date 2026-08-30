@@ -26,7 +26,7 @@ export const authMiddleware = async (
     if (isAppError(error)) {
       res.status(error.statusCode).json({
         code: error.code,
-        error: "Unauthorized",
+        error: error.message || "Unauthorized",
         details: error.details,
       });
       return;
