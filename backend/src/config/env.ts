@@ -138,6 +138,18 @@ export const envSchema = z.object({
   // are pruned by the scheduled audit-log-retention worker.
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(365 * 7),
 
+  // Extended data retention policies (days)
+  REFRESH_TOKEN_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
+  NOTIFICATION_READ_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  NOTIFICATION_UNREAD_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  WEBHOOK_DELIVERY_RETENTION_DAYS: z.coerce.number().int().positive().default(14),
+  PROCESSED_EVENT_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  INDEXED_EVENT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  TRADE_NOTE_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  TRADE_ARCHIVAL_THRESHOLD_DAYS: z.coerce.number().int().positive().default(180),
+  ARCHIVE_STORAGE_PATH: z.string().default('./data/archives'),
+  STORAGE_MONITORING_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+
   // PostgreSQL connection pool tuning
   DATABASE_POOL_SIZE: z.coerce.number().int().positive().default(15),
   DATABASE_POOL_TIMEOUT: z.coerce.number().int().positive().default(10),

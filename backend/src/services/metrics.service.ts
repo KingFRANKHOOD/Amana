@@ -25,6 +25,13 @@ class MetricsService {
   private pgPoolWaitingQueries: Gauge;
   private pgPoolTimeoutTotal: Counter;
 
+  // Storage metrics
+  private storageTableSizeGauge: Gauge;
+  private storageDatabaseSizeGauge: Gauge;
+  private storageTableRowCountGauge: Gauge;
+  private dataRetentionPrunedCounter: Counter;
+  private dataArchivalRecordsCounter: Counter;
+
   private constructor(meterProvider: MeterProvider) {
     this.meterProvider = meterProvider;
     const meter = meterProvider.getMeter("amana-backend");
@@ -130,6 +137,47 @@ class MetricsService {
         unit: "1",
       }
     );
+
+    // Storage and retention growth metrics
+    this.storageTableSizeGauge = meter.createGauge(
+      "storage_table_size_bytes",
+      {
+        description: "Size in bytes of PostgreSQL table including indexes",
+        unit: "By",
+      }
+    );
+
+    this.storageDatabaseSizeGauge = meter.createGauge(
+      "storage_database_size_bytes",
+      {
+        description: "Total size in bytes of the PostgreSQL database",
+        unit: "By",
+      }
+    );
+
+    this.storageTableRowCountGauge = meter.createGauge(
+      "storage_table_row_count",
+      {
+        description: "Estimated row count of PostgreSQL table",
+        unit: "1",
+      }
+    );
+
+    this.dataRetentionPrunedCounter = meter.createCounter(
+      "data_retention_records_pruned_total",
+      {
+        description: "Total number of records pruned by automated retention jobs",
+        unit: "1",
+      }
+    );
+
+    this.dataArchivalRecordsCounter = meter.createCounter(
+      "data_archival_records_archived_total",
+      {
+        description: "Total number of records moved to archival cold storage",
+        unit: "1",
+      }
+    );
   }
 
   static getInstance(
@@ -201,6 +249,28 @@ class MetricsService {
 
   recordPoolTimeout() {
     this.pgPoolTimeoutTotal.add(1);
+  }
+
+  // Storage and retention methods
+  recordStorageTableMetrics(
+    tableName: string,
+    sizeBytes: number,
+    rowCount: number
+  ) {
+    this.storageTableSizeGauge.record(sizeBytes, { table: tableName });
+    this.storageTableRowCountGauge.record(rowCount, { table: tableName });
+  }
+
+  recordDatabaseSize(sizeBytes: number) {
+    this.storageDatabaseSizeGauge.record(sizeBytes);
+  }
+
+  recordRetentionPruned(entityType: string, count: number) {
+    this.dataRetentionPrunedCounter.add(count, { entity_type: entityType });
+  }
+
+  recordArchivalMetrics(entityType: string, count: number) {
+    this.dataArchivalRecordsCounter.add(count, { entity_type: entityType });
   }
 
   getMeterProvider(): MeterProvider {

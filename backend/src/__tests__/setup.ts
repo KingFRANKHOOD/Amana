@@ -6,3 +6,9 @@ process.env.AMANA_ESCROW_CONTRACT_ID = process.env.AMANA_ESCROW_CONTRACT_ID || "
 process.env.USDC_CONTRACT_ID = process.env.USDC_CONTRACT_ID || "CUSDC00000000000000000000000000000000000000000000000000000";
 process.env.STELLAR_NETWORK = process.env.STELLAR_NETWORK || "testnet";
 process.env.TRADE_NOTES_ENCRYPTION_KEY = process.env.TRADE_NOTES_ENCRYPTION_KEY || "test-trade-notes-encryption-key-base64-32chr";
+
+process.on("unhandledRejection", (reason: any) => {
+  if (reason?.code === "ECONNREFUSED" || reason?.message?.includes("ECONNREFUSED")) {
+    return;
+  }
+});

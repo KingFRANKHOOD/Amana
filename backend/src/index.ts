@@ -24,7 +24,24 @@ import {
   auditLogRetentionQueue,
   scheduleAuditLogRetention,
 } from "./jobs/workers/audit-log-retention.worker";
-import { evidenceVerificationQueue, trustScoreRecalculationQueue, webhookQueue, notificationQueue, exportQueue } from "./jobs/queue";
+import {
+  createDataRetentionCleanupWorker,
+  scheduleDataRetentionCleanup,
+} from "./jobs/workers/data-retention-cleanup.worker";
+import {
+  createDataArchivalWorker,
+  scheduleDataArchival,
+} from "./jobs/workers/data-archival.worker";
+import {
+  evidenceVerificationQueue,
+  trustScoreRecalculationQueue,
+  webhookQueue,
+  notificationQueue,
+  exportQueue,
+  dataRetentionCleanupQueue,
+  dataArchivalQueue,
+} from "./jobs/queue";
+import { storageMonitoringService } from "./services/storageMonitoring.service";
 import {
   registerQueueForMetrics,
   startQueueMetricsCollection,
@@ -152,6 +169,8 @@ async function bootstrap() {
     registerQueueForMetrics("exports", exportQueue);
     registerQueueForMetrics("evidence-verification", evidenceVerificationQueue);
     registerQueueForMetrics("trust-score-recalculation", trustScoreRecalculationQueue);
+    registerQueueForMetrics("data-retention-cleanup", dataRetentionCleanupQueue);
+    registerQueueForMetrics("data-archival", dataArchivalQueue);
     startQueueMetricsCollection();
 
     // Start evidence verification worker for async jobs
@@ -188,7 +207,25 @@ async function bootstrap() {
       appLogger.error({ error }, "Failed to start AuditLogRetentionWorker");
     }
 
-    // Schedule periodic evidence pin verification
+    // Start comprehensive data retention cleanup worker and schedule daily cron
+    try {
+      workers.push(createDataRetentionCleanupWorker());
+      await scheduleDataRetentionCleanup();
+      appLogger.info("DataRetentionCleanupWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start DataRetentionCleanupWorker");
+    }
+
+    // Start cold data archival worker and schedule weekly cron
+    try {
+      workers.push(createDataArchivalWorker());
+      await scheduleDataArchival();
+      appLogger.info("DataArchivalWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start DataArchivalWorker");
+    }
+
+    // Schedule periodic evidence pin verification & storage monitoring
     const isTest = (process.env.NODE_ENV ?? env.NODE_ENV) === "test";
     if (!isTest) {
       const intervalMs = env.EVIDENCE_PIN_VERIFICATION_INTERVAL_MS;
@@ -240,6 +277,27 @@ async function bootstrap() {
       setInterval(() => {
         runTrustScoreRecalculation().catch(() => {});
       }, trustScoreIntervalMs);
+
+      // Schedule periodic storage growth monitoring
+      const storageIntervalMs = env.STORAGE_MONITORING_INTERVAL_MS;
+      appLogger.info({ intervalMs: storageIntervalMs }, "Scheduling periodic storage monitoring");
+
+      const runStorageCollection = async () => {
+        try {
+          appLogger.info("Running scheduled storage growth metrics collection");
+          await storageMonitoringService.collectStorageMetrics();
+        } catch (error) {
+          appLogger.warn({ error }, "Failed to collect scheduled storage metrics");
+        }
+      };
+
+      setTimeout(() => {
+        runStorageCollection().catch(() => {});
+      }, 30_000);
+
+      setInterval(() => {
+        runStorageCollection().catch(() => {});
+      }, storageIntervalMs);
     }
   });
 }
@@ -261,6 +319,8 @@ const shutdown = createGracefulShutdown({
     trustScoreRecalculationQueue,
     idempotencyCleanupQueue,
     auditLogRetentionQueue,
+    dataRetentionCleanupQueue,
+    dataArchivalQueue,
   ],
   stopMetrics: stopQueueMetricsCollection,
   disconnectDatabase: () => prisma.$disconnect(),
