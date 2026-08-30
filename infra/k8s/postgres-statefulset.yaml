@@ -35,7 +35,7 @@ spec:
           ports:
             - containerPort: 5432
               name: postgres
-          environment:
+          env:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -60,18 +60,24 @@ spec:
               mountPath: /var/lib/postgresql/data
           livenessProbe:
             exec:
+              # $(POSTGRES_USER)-style interpolation only happens for a
+              # container's own `command`/`args` fields, never for exec
+              # probe command arrays -- each array entry is passed to execve()
+              # literally, with no shell in between to expand anything.
+              # Wrapping in `sh -c` gives us an actual shell so $POSTGRES_USER
+              # expands from the container's real environment.
               command:
-                - pg_isready
-                - -U
-                - $(POSTGRES_USER)
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER"
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             exec:
               command:
-                - pg_isready
-                - -U
-                - $(POSTGRES_USER)
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER"
             initialDelaySeconds: 15
             periodSeconds: 10
   volumeClaimTemplates:
