@@ -15,6 +15,7 @@ import type { Trade, TradeStatus } from '../types/trade';
 import { useTradeStore } from '../stores/tradeStore';
 import { useAuthStore } from '../stores/authStore';
 import { offlineQueue, QueuedAction } from '../services/offline-queue';
+import { OfflineBanner } from '../components/OfflineBanner';
 
 type Props = StackScreenProps<RootStackParamList, 'TradeList'>;
 
@@ -118,6 +119,9 @@ export default function TradeListScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Offline & Sync Status Banner */}
+      <OfflineBanner onPressQueue={() => navigation.navigate('SyncQueue')} />
 
       {/* Filter tabs */}
       <View style={styles.filterRow}>

@@ -209,6 +209,123 @@ errors_total{error_type="database_error",error_code="UNIQUE_CONSTRAINT",endpoint
 errors_total{error_type="validation_error",error_code="SCHEMA_VALIDATION",endpoint="/trades"} 7
 ```
 
+## Storage & Data Retention Metrics
+
+### `storage_database_size_bytes` (Gauge)
+
+**Description**: Total size in bytes of the PostgreSQL database on disk.
+
+**Type**: Gauge
+
+**Unit**: Bytes
+
+**Example**:
+```
+storage_database_size_bytes 10737418240
+```
+
+### `storage_table_size_bytes` (Gauge)
+
+**Description**: Size in bytes of a specific PostgreSQL table including all indexes.
+
+**Type**: Gauge
+
+**Unit**: Bytes
+
+**Labels**:
+- `table`: Name of the database table (e.g., "Trade", "AuditLog", "InAppNotification")
+
+**Example**:
+```
+storage_table_size_bytes{table="Trade"} 52428800
+storage_table_size_bytes{table="AuditLog"} 104857600
+```
+
+### `storage_table_row_count` (Gauge)
+
+**Description**: Estimated live row count for a PostgreSQL table from system stats.
+
+**Type**: Gauge
+
+**Unit**: 1
+
+**Labels**:
+- `table`: Name of the database table
+
+**Example**:
+```
+storage_table_row_count{table="Trade"} 15420
+storage_table_row_count{table="AuditLog"} 84500
+```
+
+### `data_retention_records_pruned_total` (Counter)
+
+**Description**: Total number of expired records pruned by automated retention cleanup jobs.
+
+**Type**: Counter
+
+**Unit**: 1
+
+**Labels**:
+- `entity_type`: Entity type pruned (e.g., "refresh_tokens", "read_notifications", "webhook_deliveries", "processed_events", "manifest_pii_redacted", "trade_notes", "audit_logs")
+
+**Example**:
+```
+data_retention_records_pruned_total{entity_type="refresh_tokens"} 250
+data_retention_records_pruned_total{entity_type="read_notifications"} 1200
+data_retention_records_pruned_total{entity_type="webhook_deliveries"} 450
+```
+
+### `data_archival_records_archived_total` (Counter)
+
+**Description**: Total number of cold records moved to Gzip compressed archival storage with SHA-256 integrity verification.
+
+**Type**: Counter
+
+**Unit**: 1
+
+**Labels**:
+- `entity_type`: Entity type archived (e.g., "trades", "audit_logs")
+
+**Example**:
+```
+data_archival_records_archived_total{entity_type="trades"} 530
+```
+
+## PostgreSQL Pool Metrics
+
+### `pg_pool_active_connections` (Gauge)
+
+**Description**: Number of active connections currently in use from the pool.
+
+**Type**: Gauge
+
+**Unit**: 1
+
+### `pg_pool_idle_connections` (Gauge)
+
+**Description**: Number of idle connections waiting in the pool.
+
+**Type**: Gauge
+
+**Unit**: 1
+
+### `pg_pool_waiting_queries` (Gauge)
+
+**Description**: Number of queries currently queued waiting for an available connection from the pool.
+
+**Type**: Gauge
+
+**Unit**: 1
+
+### `pg_pool_timeout_total` (Counter)
+
+**Description**: Total count of queries that timed out waiting for an available pool connection.
+
+**Type**: Counter
+
+**Unit**: 1
+
 ## Prometheus Integration
 
 ### Configuration

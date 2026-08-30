@@ -64,3 +64,26 @@ export const trustScoreRecalculationQueue = new Queue<TrustScoreRecalculationJob
     connection: createQueueConnection(),
   },
 );
+
+export interface DataRetentionJobData {
+  triggeredBy: string;
+}
+
+export const dataRetentionCleanupQueue = new Queue<DataRetentionJobData>(
+  'data-retention-cleanup',
+  {
+    connection: createQueueConnection(),
+  },
+);
+
+export interface DataArchivalJobData {
+  triggeredBy: string;
+  thresholdDays?: number;
+}
+
+export const dataArchivalQueue = new Queue<DataArchivalJobData>(
+  'data-archival',
+  {
+    connection: createQueueConnection(),
+  },
+);

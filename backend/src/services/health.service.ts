@@ -8,13 +8,62 @@ import { AlertService, alertService as defaultAlertService } from "./alert.servi
 import { getCircuitBreakerStates } from "../lib/circuitBreaker";
 import { EventStreamService } from "./event-stream";
 
-interface HealthIndicatorResult {
+import fs from "fs";
+import path from "path";
+
+export interface HealthIndicatorResult {
   status: "up" | "down";
   message: string;
   responseTime: number;
 }
 
-interface HealthCheckResponse {
+export interface DependencyHealth {
+  name: string;
+  status: "healthy" | "degraded" | "unhealthy";
+  isCritical: boolean;
+  latencyMs: number;
+  message: string;
+  error?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface AggregatedHealthResponse {
+  status: "healthy" | "degraded" | "unhealthy";
+  systemHealthScore: number;
+  timestamp: string;
+  uptimeSeconds: number;
+  version: string;
+  environment: string;
+  summary: {
+    totalDependencies: number;
+    healthyCount: number;
+    degradedCount: number;
+    unhealthyCount: number;
+    criticalFailingCount: number;
+  };
+  dependencies: {
+    database: DependencyHealth;
+    redis: DependencyHealth;
+    stellarRpc: DependencyHealth;
+    eventIndexer: DependencyHealth;
+    ipfsStorage: DependencyHealth;
+    workerQueues: DependencyHealth;
+    localStorage: DependencyHealth;
+    configuration: DependencyHealth;
+    encryptionKey: DependencyHealth;
+  };
+  details: {
+    circuitBreakers: Array<{ name: string; state: string }>;
+    websocketConnections: {
+      total: number;
+      perUserLimit: number;
+      globalLimit: number;
+      maxPerUser: number;
+    };
+  };
+}
+
+export interface HealthCheckResponse {
   status: "healthy" | "degraded" | "unhealthy";
   timestamp: string;
   uptime: number;
@@ -475,5 +524,164 @@ export class HealthService {
       : "not_ready";
 
     return { status, timestamp, checks };
+  }
+
+  /**
+   * Check queue subsystem health (worker queue redis connectivity).
+   */
+  private async checkQueues(): Promise<HealthIndicatorResult> {
+    const startTime = Date.now();
+    try {
+      await this.cacheClient.ping();
+      const responseTime = Date.now() - startTime;
+      return {
+        status: "up",
+        message: "Queue redis connection active and accepting jobs",
+        responseTime,
+      };
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      return {
+        status: "down",
+        message: `Queue check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        responseTime,
+      };
+    }
+  }
+
+  /**
+   * Check local filesystem writeability and storage availability for archival/temp files.
+   */
+  private checkStorage(): HealthIndicatorResult {
+    const startTime = Date.now();
+    try {
+      const testDir = path.resolve(process.cwd(), "./data");
+      if (!fs.existsSync(testDir)) {
+        fs.mkdirSync(testDir, { recursive: true });
+      }
+      const testFile = path.join(testDir, `.health_probe_${Date.now()}`);
+      fs.writeFileSync(testFile, "probe");
+      fs.unlinkSync(testFile);
+
+      return {
+        status: "up",
+        message: "Storage volume writable and accessible",
+        responseTime: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        status: "down",
+        message: `Storage probe failed: ${error instanceof Error ? error.message : "Unknown storage error"}`,
+        responseTime: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
+   * Perform comprehensive aggregated health check across all dependencies
+   * with weighted scoring, component breakdown, and critical failure tracking.
+   */
+  async performAggregatedHealthCheck(): Promise<AggregatedHealthResponse> {
+    const timestamp = new Date().toISOString();
+    const uptimeSeconds = Math.floor((Date.now() - this.startTime) / 1000);
+
+    const [
+      dbCheck,
+      redisCheck,
+      stellarCheck,
+      indexerCheck,
+      ipfsCheck,
+      configCheck,
+      encryptionCheck,
+      queuesCheck,
+      storageCheck,
+    ] = await Promise.all([
+      this.checkDatabase(),
+      this.checkRedis(),
+      this.checkStellar(),
+      this.checkIndexer(),
+      this.checkIPFS(),
+      this.checkConfig(),
+      Promise.resolve(this.checkEncryptionKey()),
+      this.checkQueues(),
+      Promise.resolve(this.checkStorage()),
+    ]);
+
+    const toDependency = (
+      name: string,
+      check: HealthIndicatorResult,
+      isCritical: boolean,
+      degradedLatencyMs: number = 200,
+    ): DependencyHealth => {
+      let status: "healthy" | "degraded" | "unhealthy" = "healthy";
+      if (check.status === "down") {
+        status = isCritical ? "unhealthy" : "degraded";
+      } else if (check.responseTime > degradedLatencyMs) {
+        status = "degraded";
+      }
+
+      return {
+        name,
+        status,
+        isCritical,
+        latencyMs: check.responseTime,
+        message: check.message,
+        ...(check.status === "down" ? { error: check.message } : {}),
+      };
+    };
+
+    const dependencies = {
+      database: toDependency("PostgreSQL Database", dbCheck, true, 150),
+      redis: toDependency("Redis Cache & Session Store", redisCheck, true, 100),
+      stellarRpc: toDependency("Stellar Horizon / RPC", stellarCheck, true, 5000),
+      eventIndexer: toDependency("Soroban Event Indexer", indexerCheck, true, 200),
+      ipfsStorage: toDependency("IPFS / Pinata Storage", ipfsCheck, false, 3000),
+      workerQueues: toDependency("BullMQ Worker Queues", queuesCheck, false, 200),
+      localStorage: toDependency("Local Disk & Archival Volume", storageCheck, false, 100),
+      configuration: toDependency("Application Configuration", configCheck, true, 50),
+      encryptionKey: toDependency("Encryption Key Management", encryptionCheck, true, 50),
+    };
+
+    const depList = Object.values(dependencies);
+    const totalDependencies = depList.length;
+    const unhealthyCount = depList.filter((d) => d.status === "unhealthy").length;
+    const degradedCount = depList.filter((d) => d.status === "degraded").length;
+    const healthyCount = depList.filter((d) => d.status === "healthy").length;
+    const criticalFailingCount = depList.filter((d) => d.isCritical && d.status === "unhealthy").length;
+
+    let overallStatus: "healthy" | "degraded" | "unhealthy" = "healthy";
+    if (criticalFailingCount > 0) {
+      overallStatus = "unhealthy";
+    } else if (degradedCount > 0 || unhealthyCount > 0) {
+      overallStatus = "degraded";
+    }
+
+    const healthScore = Math.max(
+      0,
+      Math.round(((healthyCount * 1.0 + degradedCount * 0.5) / totalDependencies) * 100),
+    );
+
+    const circuitBreakers = this.checkCircuitBreakers();
+
+    return {
+      status: overallStatus,
+      systemHealthScore: criticalFailingCount > 0 ? Math.min(healthScore, 49) : healthScore,
+      timestamp,
+      uptimeSeconds,
+      version: process.env.npm_package_version ?? "1.0.0",
+      environment: env.NODE_ENV,
+      summary: {
+        totalDependencies,
+        healthyCount,
+        degradedCount,
+        unhealthyCount,
+        criticalFailingCount,
+      },
+      dependencies,
+      details: {
+        circuitBreakers,
+        websocketConnections: EventStreamService.getConnectionStats(),
+      },
+    };
   }
 }
