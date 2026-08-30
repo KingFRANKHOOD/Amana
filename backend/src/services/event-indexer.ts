@@ -322,9 +322,6 @@ export class EventIndexerService {
         return null;
       }
 
-      const tradeId =
-        topic.length > 1 ? this.extractScalarValue(topic[1]!) : "unknown";
-
       const data: Record<string, unknown> = {};
       if (rawEvent.value) {
         data.raw = rawEvent.value;
@@ -339,6 +336,16 @@ export class EventIndexerService {
             }
           }
         }
+      }
+
+      // The contract emits a single topic element (the event symbol); the
+      // trade_id lives in the event's data map, not in a second topic slot.
+      const tradeId = data.trade_id != null ? String(data.trade_id) : "unknown";
+      if (tradeId === "unknown") {
+        appLogger.warn(
+          { eventSymbol, eventId: rawEvent.id },
+          "[EventIndexer] Event data missing trade_id",
+        );
       }
 
       return {
@@ -362,15 +369,6 @@ export class EventIndexerService {
       return String(nativeVal);
     } catch {
       return null;
-    }
-  }
-
-  private extractScalarValue(scVal: StellarSdk.xdr.ScVal): string {
-    try {
-      const nativeVal = StellarSdk.scValToNative(scVal);
-      return String(nativeVal);
-    } catch {
-      return "unknown";
     }
   }
 }
