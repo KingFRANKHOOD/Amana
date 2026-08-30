@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { metricsService } from "../services/metrics.service";
 
 export function createMetricsRouter(): Router {
   const router = Router();
@@ -8,6 +9,8 @@ export function createMetricsRouter(): Router {
   // and runs on a separate port (default 9464) with endpoint /metrics.
   router.get("/metrics-info", (_req: Request, res: Response) => {
     const prometheusPort = process.env.PROMETHEUS_PORT || "9464";
+    const latencySummary = metricsService.getLatencySummary();
+
     res.json({
       message: "Prometheus metrics are available",
       endpoint: `http://localhost:${prometheusPort}/metrics`,
@@ -28,6 +31,7 @@ export function createMetricsRouter(): Router {
         ],
         requests: [
           "http_request_duration_ms",
+          "http_slow_requests_total",
         ],
         errors: [
           "errors_total",
@@ -41,6 +45,11 @@ export function createMetricsRouter(): Router {
         websocket: [
           "websocket_active_connections",
         ],
+      },
+      livePerformanceSummary: {
+        globalLatency: latencySummary.global,
+        slowRequestsCount: latencySummary.slowRequestsCount,
+        trackedRoutesCount: Object.keys(latencySummary.byRoute).length,
       },
     });
   });

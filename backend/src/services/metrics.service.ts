@@ -1,7 +1,82 @@
 import type { Counter, Gauge, Histogram } from "@opentelemetry/api";
 import { MeterProvider } from "@opentelemetry/sdk-metrics";
 
-class MetricsService {
+export interface LatencyPercentiles {
+  p50: number;
+  p95: number;
+  p99: number;
+  avg: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+export interface EndpointLatencyStats {
+  global: LatencyPercentiles;
+  byRoute: Record<string, LatencyPercentiles>;
+  slowRequestsCount: number;
+}
+
+// Fixed-capacity sliding window for rolling percentile computation
+class RollingWindowStats {
+  private samples: number[] = [];
+  private readonly maxSize: number;
+
+  constructor(maxSize: number = 1000) {
+    this.maxSize = maxSize;
+  }
+
+  add(value: number): void {
+    if (this.samples.length >= this.maxSize) {
+      this.samples.shift();
+    }
+    this.samples.push(value);
+  }
+
+  getPercentiles(): LatencyPercentiles {
+    if (this.samples.length === 0) {
+      return {
+        p50: 0,
+        p95: 0,
+        p99: 0,
+        avg: 0,
+        min: 0,
+        max: 0,
+        count: 0,
+      };
+    }
+
+    const sorted = [...this.samples].sort((a, b) => a - b);
+    const count = sorted.length;
+    const sum = sorted.reduce((acc, val) => acc + val, 0);
+
+    const getP = (p: number): number => {
+      const rank = Math.ceil((p / 100) * count);
+      const idx = Math.max(0, Math.min(rank - 1, count - 1));
+      const val = sorted[idx] ?? 0;
+      return Math.round(val * 100) / 100;
+    };
+
+    const minVal = sorted[0] ?? 0;
+    const maxVal = sorted[count - 1] ?? 0;
+
+    return {
+      p50: getP(50),
+      p95: getP(95),
+      p99: getP(99),
+      avg: Math.round((sum / count) * 100) / 100,
+      min: Math.round(minVal * 100) / 100,
+      max: Math.round(maxVal * 100) / 100,
+      count,
+    };
+  }
+
+  clear(): void {
+    this.samples = [];
+  }
+}
+
+export class MetricsService {
   private static instance: MetricsService;
   private meterProvider: MeterProvider;
 
@@ -17,7 +92,13 @@ class MetricsService {
 
   // General processing metrics
   private requestDurationHistogram: Histogram;
+  private slowRequestCounter: Counter;
   private errorCounter: Counter;
+
+  // In-memory percentile trackers
+  private globalRollingStats = new RollingWindowStats(2000);
+  private routeRollingStats = new Map<string, RollingWindowStats>();
+  private slowRequestsTotalCount: number = 0;
 
   // PostgreSQL pool metrics
   private pgPoolActiveConnections: Gauge;
@@ -32,9 +113,9 @@ class MetricsService {
   private dataRetentionPrunedCounter: Counter;
   private dataArchivalRecordsCounter: Counter;
 
-  private constructor(meterProvider: MeterProvider) {
-    this.meterProvider = meterProvider;
-    const meter = meterProvider.getMeter("amana-backend");
+  constructor(meterProvider?: MeterProvider) {
+    this.meterProvider = meterProvider ?? new MeterProvider();
+    const meter = this.meterProvider.getMeter("amana-backend");
 
     // Trade metrics
     this.tradeCounter = meter.createCounter("trades_created_total", {
@@ -90,7 +171,7 @@ class MetricsService {
       }
     );
 
-    // General metrics
+    // General metrics with standardized latency buckets for p50/p95/p99 tracking
     this.requestDurationHistogram = meter.createHistogram(
       "http_request_duration_ms",
       {
@@ -98,6 +179,11 @@ class MetricsService {
         unit: "ms",
       }
     );
+
+    this.slowRequestCounter = meter.createCounter("http_slow_requests_total", {
+      description: "Total number of slow requests exceeding threshold (>2s)",
+      unit: "1",
+    });
 
     this.errorCounter = meter.createCounter("errors_total", {
       description: "Total number of errors encountered",
@@ -181,7 +267,7 @@ class MetricsService {
   }
 
   static getInstance(
-    meterProvider: MeterProvider
+    meterProvider?: MeterProvider
   ): MetricsService {
     if (!MetricsService.instance) {
       MetricsService.instance = new MetricsService(meterProvider);
@@ -230,6 +316,48 @@ class MetricsService {
     attributes?: Record<string, string | number | boolean>
   ) {
     this.requestDurationHistogram.record(durationMs, attributes);
+    this.globalRollingStats.add(durationMs);
+
+    const route = typeof attributes?.route === "string" ? attributes.route : (typeof attributes?.path === "string" ? attributes.path : undefined);
+    if (route) {
+      if (!this.routeRollingStats.has(route)) {
+        this.routeRollingStats.set(route, new RollingWindowStats(500));
+      }
+      this.routeRollingStats.get(route)!.add(durationMs);
+    }
+
+    if (durationMs > 2000) {
+      this.slowRequestsTotalCount++;
+      this.slowRequestCounter.add(1, attributes);
+    }
+  }
+
+  recordHttpRequest(
+    method: string,
+    route: string,
+    statusCode: number,
+    durationMs: number
+  ): void {
+    const statusGroup = `${Math.floor(statusCode / 100)}xx`;
+    this.recordRequestDuration(durationMs, {
+      method,
+      route,
+      status_code: statusCode,
+      status_group: statusGroup,
+    });
+  }
+
+  getLatencySummary(): EndpointLatencyStats {
+    const byRoute: Record<string, LatencyPercentiles> = {};
+    for (const [route, stats] of this.routeRollingStats.entries()) {
+      byRoute[route] = stats.getPercentiles();
+    }
+
+    return {
+      global: this.globalRollingStats.getPercentiles(),
+      byRoute,
+      slowRequestsCount: this.slowRequestsTotalCount,
+    };
   }
 
   recordError(attributes?: Record<string, string | number | boolean>) {
@@ -278,4 +406,5 @@ class MetricsService {
   }
 }
 
+export const metricsService = MetricsService.getInstance();
 export default MetricsService;

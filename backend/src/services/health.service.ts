@@ -11,6 +11,8 @@ import { EventStreamService } from "./event-stream";
 import fs from "fs";
 import path from "path";
 
+import { metricsService, LatencyPercentiles, EndpointLatencyStats } from "./metrics.service";
+
 export interface HealthIndicatorResult {
   status: "up" | "down";
   message: string;
@@ -41,6 +43,11 @@ export interface AggregatedHealthResponse {
     unhealthyCount: number;
     criticalFailingCount: number;
   };
+  apiPerformance: {
+    responseTimeMs: number;
+    percentiles: LatencyPercentiles;
+    slowRequestsCount: number;
+  };
   dependencies: {
     database: DependencyHealth;
     redis: DependencyHealth;
@@ -67,6 +74,7 @@ export interface HealthCheckResponse {
   status: "healthy" | "degraded" | "unhealthy";
   timestamp: string;
   uptime: number;
+  apiResponseTimeMs?: number;
   checks: {
     database: HealthIndicatorResult;
     indexer: HealthIndicatorResult;
@@ -92,6 +100,7 @@ export interface HealthCheckResponse {
       globalLimit: number;
       maxPerUser: number;
     };
+    apiPerformance?: EndpointLatencyStats;
   };
 }
 
@@ -400,6 +409,7 @@ export class HealthService {
    * Returns detailed status for uptime integrations (Datadog, UptimeRobot, etc.)
    */
   async performHealthCheck(): Promise<HealthCheckResponse> {
+    const startExecTime = Date.now();
     const timestamp = new Date().toISOString();
     const uptime = Date.now() - this.startTime;
 
@@ -465,11 +475,14 @@ export class HealthService {
         : [];
 
     const circuitBreakers = this.checkCircuitBreakers();
+    const latencyStats = metricsService.getLatencySummary();
+    const apiResponseTimeMs = Date.now() - startExecTime;
 
     return {
       status,
       timestamp,
       uptime,
+      apiResponseTimeMs,
       checks: {
         database: databaseCheck,
         indexer: indexerCheck,
@@ -490,6 +503,7 @@ export class HealthService {
         encryptionKeyConfigured: encryptionKeyCheck.status === "up",
         circuitBreakers,
         websocketConnections: EventStreamService.getConnectionStats(),
+        apiPerformance: latencyStats,
       },
     };
   }
@@ -582,6 +596,7 @@ export class HealthService {
    * with weighted scoring, component breakdown, and critical failure tracking.
    */
   async performAggregatedHealthCheck(): Promise<AggregatedHealthResponse> {
+    const startExecTime = Date.now();
     const timestamp = new Date().toISOString();
     const uptimeSeconds = Math.floor((Date.now() - this.startTime) / 1000);
 
@@ -662,6 +677,8 @@ export class HealthService {
     );
 
     const circuitBreakers = this.checkCircuitBreakers();
+    const latencyStats = metricsService.getLatencySummary();
+    const responseTimeMs = Date.now() - startExecTime;
 
     return {
       status: overallStatus,
@@ -676,6 +693,11 @@ export class HealthService {
         degradedCount,
         unhealthyCount,
         criticalFailingCount,
+      },
+      apiPerformance: {
+        responseTimeMs,
+        percentiles: latencyStats.global,
+        slowRequestsCount: latencyStats.slowRequestsCount,
       },
       dependencies,
       details: {

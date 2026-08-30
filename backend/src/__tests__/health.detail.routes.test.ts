@@ -1,20 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { createHealthDetailRouter } from "../routes/health.detail.routes";
 import { HealthService } from "../services/health.service";
 
-vi.mock("../services/health.service");
-vi.mock("../middleware/logger", () => ({ appLogger: { info: vi.fn(), error: vi.fn() } }));
+jest.mock("../services/health.service");
+jest.mock("../middleware/logger", () => ({ appLogger: { info: jest.fn(), error: jest.fn() } }));
 
 const upCheck = (latency = 5) => ({ status: "up" as const, message: "ok", responseTime: latency });
 const downCheck = (msg = "timeout") => ({ status: "down" as const, message: msg, responseTime: 5000 });
 
-function makeHealthResult(overrides: Partial<{ status: "healthy" | "degraded" | "unhealthy"; checks: object }> = {}) {
+function makeHealthResult(overrides: Partial<{ status: "healthy" | "degraded" | "unhealthy"; checks: any }> = {}) {
     return {
         status: "healthy" as const,
         timestamp: new Date().toISOString(),
         uptime: 100,
+        apiResponseTimeMs: 12,
         checks: {
             database: upCheck(),
             indexer: upCheck(),
@@ -22,8 +22,20 @@ function makeHealthResult(overrides: Partial<{ status: "healthy" | "degraded" | 
             ipfs: upCheck(),
             redis: upCheck(),
             config: upCheck(),
+            encryptionKey: upCheck(),
         },
-        details: {},
+        details: {
+            databaseLatency: 5,
+            redisLatency: 5,
+            indexerLagSeconds: 0,
+            lastProcessedLedger: 1,
+            stellarNetwork: "testnet",
+            ipfsGateway: "",
+            missingEnvVars: [],
+            encryptionKeyConfigured: true,
+            circuitBreakers: [],
+            websocketConnections: { total: 0, perUserLimit: 5, globalLimit: 1000, maxPerUser: 0 },
+        },
         ...overrides,
     };
 }
@@ -37,22 +49,23 @@ function buildApp() {
 
 describe("GET /health/detail (#729)", () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     it("returns 200 with per-service status and latency when all healthy", async () => {
-        vi.mocked(HealthService.prototype.performHealthCheck).mockResolvedValue(makeHealthResult());
+        (HealthService.prototype.performHealthCheck as jest.Mock).mockResolvedValue(makeHealthResult());
 
         const res = await request(buildApp()).get("/health/detail");
 
         expect(res.status).toBe(200);
         expect(res.body.status).toBe("healthy");
+        expect(res.body.apiResponseTimeMs).toBeDefined();
         expect(res.body.checks.database).toMatchObject({ status: "up", latency: expect.any(Number) });
         expect(res.body.checks.redis).toMatchObject({ status: "up", latency: expect.any(Number) });
     });
 
     it("returns 200 with degraded status when one service is down", async () => {
-        vi.mocked(HealthService.prototype.performHealthCheck).mockResolvedValue(
+        (HealthService.prototype.performHealthCheck as jest.Mock).mockResolvedValue(
             makeHealthResult({
                 status: "degraded",
                 checks: {
@@ -62,6 +75,7 @@ describe("GET /health/detail (#729)", () => {
                     ipfs: upCheck(),
                     redis: upCheck(),
                     config: upCheck(),
+                    encryptionKey: upCheck(),
                 },
             })
         );
@@ -75,7 +89,7 @@ describe("GET /health/detail (#729)", () => {
     });
 
     it("returns 503 when all services are down (unhealthy)", async () => {
-        vi.mocked(HealthService.prototype.performHealthCheck).mockResolvedValue(
+        (HealthService.prototype.performHealthCheck as jest.Mock).mockResolvedValue(
             makeHealthResult({
                 status: "unhealthy",
                 checks: {
@@ -85,6 +99,7 @@ describe("GET /health/detail (#729)", () => {
                     ipfs: downCheck(),
                     redis: downCheck(),
                     config: downCheck(),
+                    encryptionKey: downCheck(),
                 },
             })
         );
@@ -96,7 +111,7 @@ describe("GET /health/detail (#729)", () => {
     });
 
     it("does not include error field for healthy services", async () => {
-        vi.mocked(HealthService.prototype.performHealthCheck).mockResolvedValue(makeHealthResult());
+        (HealthService.prototype.performHealthCheck as jest.Mock).mockResolvedValue(makeHealthResult());
 
         const res = await request(buildApp()).get("/health/detail");
 
@@ -104,7 +119,7 @@ describe("GET /health/detail (#729)", () => {
     });
 
     it("returns 503 with error field when performHealthCheck throws", async () => {
-        vi.mocked(HealthService.prototype.performHealthCheck).mockRejectedValue(new Error("unexpected"));
+        (HealthService.prototype.performHealthCheck as jest.Mock).mockRejectedValue(new Error("unexpected"));
 
         const res = await request(buildApp()).get("/health/detail");
 
