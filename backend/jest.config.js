@@ -13,6 +13,7 @@ module.exports = {
   },
   modulePaths: ["<rootDir>"],
   setupFiles: ["<rootDir>/src/__tests__/setup.ts"],
+  setupFilesAfterEnv: ["<rootDir>/src/__tests__/cleanup.ts"],
   collectCoverage: true,
   coverageDirectory: "<rootDir>/coverage",
   coverageReporters: ["text", "lcov", "clover"],
@@ -30,6 +31,6 @@ module.exports = {
       statements: 80,
     },
   },
-  forceExit: true,
   detectOpenHandles: true,
+  globalTeardown: "<rootDir>/src/__tests__/globalTeardown.ts",
 };
