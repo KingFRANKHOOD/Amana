@@ -19,6 +19,11 @@ import {
   idempotencyCleanupQueue,
   scheduleIdempotencyCleanup,
 } from "./jobs/workers/idempotency-cleanup.worker";
+import {
+  createAuditLogRetentionWorker,
+  auditLogRetentionQueue,
+  scheduleAuditLogRetention,
+} from "./jobs/workers/audit-log-retention.worker";
 import { evidenceVerificationQueue, trustScoreRecalculationQueue, webhookQueue, notificationQueue, exportQueue } from "./jobs/queue";
 import {
   registerQueueForMetrics,
@@ -174,6 +179,15 @@ async function bootstrap() {
       appLogger.error({ error }, "Failed to start IdempotencyCleanupWorker");
     }
 
+    // Start audit log retention worker and schedule daily cron
+    try {
+      workers.push(createAuditLogRetentionWorker());
+      await scheduleAuditLogRetention();
+      appLogger.info("AuditLogRetentionWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start AuditLogRetentionWorker");
+    }
+
     // Schedule periodic evidence pin verification
     const isTest = (process.env.NODE_ENV ?? env.NODE_ENV) === "test";
     if (!isTest) {
@@ -246,6 +260,7 @@ const shutdown = createGracefulShutdown({
     evidenceVerificationQueue,
     trustScoreRecalculationQueue,
     idempotencyCleanupQueue,
+    auditLogRetentionQueue,
   ],
   stopMetrics: stopQueueMetricsCollection,
   disconnectDatabase: () => prisma.$disconnect(),

@@ -2,14 +2,19 @@ import { PrismaClient, TradeStatus } from "@prisma/client";
 import { TradeAccessDeniedError, TradeService } from "../services/trade.service";
 
 function createMockPrisma() {
-  return {
+  const prisma: Record<string, unknown> = {
     trade: {
       create: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
       findFirst: jest.fn(),
     },
-  } as unknown as PrismaClient;
+    auditLog: {
+      create: jest.fn(),
+    },
+  };
+  prisma.$transaction = jest.fn(async (callback: (tx: unknown) => unknown) => callback(prisma));
+  return prisma as unknown as PrismaClient;
 }
 
 describe("TradeService", () => {
@@ -22,7 +27,7 @@ describe("TradeService", () => {
   });
 
   it("stores a pending trade with PENDING_SIGNATURE status", async () => {
-    prisma.trade.create = jest.fn().mockResolvedValue({});
+    (prisma.trade.create as jest.Mock).mockResolvedValue({ tradeId: "4294967297" });
 
     await service.createPendingTrade({
       tradeId: "4294967297",
@@ -44,6 +49,30 @@ describe("TradeService", () => {
         status: TradeStatus.PENDING_SIGNATURE,
       },
     });
+  });
+
+  it("records an audit log entry for trade creation", async () => {
+    (prisma.trade.create as jest.Mock).mockResolvedValue({ tradeId: "4294967297" });
+
+    await service.createPendingTrade({
+      tradeId: "4294967297",
+      buyerAddress: "buyer-address",
+      sellerAddress: "seller-address",
+      amountUsdc: "15.5000000",
+      buyerLossBps: 5000,
+      sellerLossBps: 5000,
+    });
+
+    expect((prisma as any).auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tradeId: "4294967297",
+          eventType: "TradeCreationRequested",
+          toStatus: TradeStatus.PENDING_SIGNATURE,
+          actor: "buyer-address",
+        }),
+      }),
+    );
   });
 
   it("GET /trades returns only caller's trades", async () => {
