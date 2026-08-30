@@ -44,7 +44,7 @@
     "@expo/config-plugins": "^8.0.8",
     "@testing-library/react-native": "^12.4.3",
     "@types/jest": "^29.5.12",
-    "@types/node": "^20.10.0",
+    "@types/node": "^26.4.0",
     "@types/react": "^18.3.3",
     "@types/react-native": "^0.73.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
