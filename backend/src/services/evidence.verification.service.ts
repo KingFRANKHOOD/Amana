@@ -1,8 +1,10 @@
 import axios from "axios";
 import { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
+import { env } from "../config/env";
 import { IPFSService, PinVerificationResult } from "./ipfs.service";
 import { appLogger } from "../middleware/logger";
+import { recordEvidenceVerificationBatch } from "../lib/metrics";
 
 export interface EvidenceVerificationRecord {
   evidenceId: number;
@@ -15,6 +17,52 @@ export interface EvidenceVerificationRecord {
   pinResult: PinVerificationResult;
 }
 
+/** Per-batch processing metrics, useful for spotting slow or flaky batches. */
+export interface BatchMetrics {
+  batchNumber: number;
+  recordCount: number;
+  uniqueCidCount: number;
+  durationMs: number;
+  /** Number of extra verification attempts spent retrying transient failures. */
+  retries: number;
+  /** CIDs still failing with a transient error after all retries were spent. */
+  failedCidCount: number;
+}
+
+/** Aggregate performance summary across every batch in a run. */
+export interface VerificationPerformance {
+  batchCount: number;
+  batchesWithRetries: number;
+  totalRetries: number;
+  avgBatchMs: number;
+  minBatchMs: number;
+  maxBatchMs: number;
+  recordsPerSecond: number;
+}
+
+/** Emitted after each batch so callers can surface progress for long runs. */
+export interface VerificationProgress {
+  batchNumber: number;
+  processedRecords: number;
+  /** Total records to check, or `null` when the datastore cannot be counted. */
+  totalRecords: number | null;
+  pinnedCount: number;
+  missingCount: number;
+  errorCount: number;
+  batchDurationMs: number;
+}
+
+export interface VerifyAllOptions {
+  /** Override the configured batch size for this run. */
+  batchSize?: number;
+  /** Max retry attempts per batch for transient pin-check failures. */
+  maxRetries?: number;
+  /** Invoked after every batch with cumulative progress. */
+  onProgress?: (progress: VerificationProgress) => void | Promise<void>;
+  /** Injectable delay, primarily for tests. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
 export interface VerificationReport {
   totalChecked: number;
   pinnedCount: number;
@@ -24,6 +72,10 @@ export interface VerificationReport {
   errors: EvidenceVerificationRecord[];
   checkedAt: Date;
   durationMs: number;
+  /** Number of database pages processed. */
+  batchCount: number;
+  batchMetrics: BatchMetrics[];
+  performance: VerificationPerformance;
 }
 
 export interface RepairResult {
@@ -33,90 +85,216 @@ export interface RepairResult {
   error?: string;
 }
 
+type EvidenceRow = {
+  id: number;
+  tradeId: string;
+  cid: string;
+  filename: string;
+  mimeType: string;
+  uploadedBy: string;
+  createdAt: Date;
+};
+
 type EvidenceDatabase = {
   tradeEvidence: Pick<
     PrismaClient["tradeEvidence"],
     "findMany" | "update"
-  >;
+  > &
+    Partial<Pick<PrismaClient["tradeEvidence"], "count">>;
 };
+
+const DEFAULT_RETRY_BACKOFF_MS = 1_000;
+
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A pin check never throws — it resolves with `{ pinned: false, error }` on
+ * failure. Retry only errors that look transient (network, timeout, rate
+ * limiting, circuit breaker); a permanent misconfiguration will not fix itself.
+ */
+function isTransientPinError(result: PinVerificationResult): boolean {
+  if (result.pinned || !result.error) return false;
+  const message = result.error.toLowerCase();
+  if (message.includes("not configured")) return false;
+  if (message.includes("no verification result")) return false;
+  return true;
+}
+
+function summarizePerformance(
+  batchMetrics: BatchMetrics[],
+  processedRecords: number,
+  durationMs: number,
+): VerificationPerformance {
+  const durations = batchMetrics.map((b) => b.durationMs);
+  const totalRetries = batchMetrics.reduce((sum, b) => sum + b.retries, 0);
+  return {
+    batchCount: batchMetrics.length,
+    batchesWithRetries: batchMetrics.filter((b) => b.retries > 0).length,
+    totalRetries,
+    avgBatchMs:
+      durations.length > 0
+        ? durations.reduce((sum, d) => sum + d, 0) / durations.length
+        : 0,
+    minBatchMs: durations.length > 0 ? Math.min(...durations) : 0,
+    maxBatchMs: durations.length > 0 ? Math.max(...durations) : 0,
+    recordsPerSecond:
+      durationMs > 0 ? (processedRecords / durationMs) * 1000 : 0,
+  };
+}
 
 export class EvidenceVerificationService {
   private ipfs: IPFSService;
   private batchSize: number;
+  private maxRetries: number;
+  private retryBackoffMs: number;
 
   constructor(
     private readonly prisma: EvidenceDatabase = defaultPrisma as unknown as EvidenceDatabase,
     ipfs?: IPFSService,
     batchSize?: number,
+    options?: { maxRetries?: number; retryBackoffMs?: number },
   ) {
     this.ipfs = ipfs ?? new IPFSService();
-    this.batchSize = batchSize ?? 50;
+    this.batchSize =
+      batchSize ?? env.EVIDENCE_PIN_VERIFICATION_BATCH_SIZE ?? 50;
+    this.maxRetries =
+      options?.maxRetries ??
+      env.EVIDENCE_PIN_VERIFICATION_MAX_RETRIES ??
+      3;
+    this.retryBackoffMs =
+      options?.retryBackoffMs ??
+      env.EVIDENCE_PIN_VERIFICATION_RETRY_BACKOFF_MS ??
+      DEFAULT_RETRY_BACKOFF_MS;
   }
 
   /**
    * Run a full verification pass over all evidence records.
-   * Checks each CID against Pinata and returns a structured report.
+   *
+   * Evidence is streamed from the database one page at a time (cursor
+   * pagination) so memory stays flat regardless of dataset size. Each page:
+   *   - de-duplicates CIDs and checks them against Pinata,
+   *   - retries transient pin-check failures with backoff,
+   *   - records timing/retry metrics and reports progress.
    */
-  async verifyAll(): Promise<VerificationReport> {
+  async verifyAll(options: VerifyAllOptions = {}): Promise<VerificationReport> {
     const startTime = Date.now();
-    appLogger.info("[EvidenceVerification] Starting full verification pass");
+    const batchSize = Math.max(1, options.batchSize ?? this.batchSize);
+    const maxRetries = Math.max(0, options.maxRetries ?? this.maxRetries);
+    const sleep = options.sleep ?? defaultSleep;
 
-    const allEvidence = await this.prisma.tradeEvidence.findMany({
-      orderBy: { createdAt: "asc" },
-    });
+    const totalRecords = await this.countEvidence();
+
+    appLogger.info(
+      { batchSize, maxRetries, totalRecords },
+      "[EvidenceVerification] Starting full verification pass",
+    );
 
     const missingPins: EvidenceVerificationRecord[] = [];
     const errors: EvidenceVerificationRecord[] = [];
+    const batchMetrics: BatchMetrics[] = [];
     let pinnedCount = 0;
+    let processedRecords = 0;
+    let cursorId: number | undefined;
+    let batchNumber = 0;
 
-    const uniqueCids = [...new Set(allEvidence.map((e: { cid: string }) => e.cid))];
-    appLogger.info(
-      { totalRecords: allEvidence.length, uniqueCids: uniqueCids.length },
-      "[EvidenceVerification] Checking CIDs against Pinata",
-    );
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const page = (await this.prisma.tradeEvidence.findMany({
+        orderBy: { id: "asc" },
+        take: batchSize,
+        ...(cursorId !== undefined
+          ? { cursor: { id: cursorId }, skip: 1 }
+          : {}),
+      })) as EvidenceRow[];
 
-    const cidResults = new Map<string, PinVerificationResult>();
-    for (let i = 0; i < uniqueCids.length; i += this.batchSize) {
-      const batch = uniqueCids.slice(i, i + this.batchSize);
-      const results = await Promise.all(
-        batch.map((cid: string) => this.ipfs.verifyPin(cid)),
+      if (page.length === 0) break;
+
+      batchNumber += 1;
+      cursorId = page[page.length - 1]!.id;
+      const batchStart = Date.now();
+
+      const uniqueCids = [...new Set(page.map((e) => e.cid))];
+      const { results: cidResults, retries } = await this.verifyCidBatch(
+        uniqueCids,
+        maxRetries,
+        sleep,
       );
-      for (const result of results) {
-        cidResults.set(result.cid, result);
+
+      let failedCidCount = 0;
+      for (const record of page) {
+        const pinResult = cidResults.get(record.cid) ?? {
+          pinned: false,
+          cid: record.cid,
+          error: "No verification result",
+        };
+
+        const enriched: EvidenceVerificationRecord = {
+          evidenceId: record.id,
+          tradeId: record.tradeId,
+          cid: record.cid,
+          filename: record.filename,
+          mimeType: record.mimeType,
+          uploadedBy: record.uploadedBy,
+          createdAt: record.createdAt,
+          pinResult,
+        };
+
+        if (pinResult.error && !pinResult.pinned) {
+          errors.push(enriched);
+          if (isTransientPinError(pinResult)) failedCidCount += 1;
+        } else if (pinResult.pinned) {
+          pinnedCount++;
+        } else {
+          missingPins.push(enriched);
+        }
       }
-    }
 
-    for (const record of allEvidence) {
-      const pinResult = cidResults.get(record.cid) ?? {
-        pinned: false,
-        cid: record.cid,
-        error: "No verification result",
+      processedRecords += page.length;
+      const batchDurationMs = Date.now() - batchStart;
+
+      const metric: BatchMetrics = {
+        batchNumber,
+        recordCount: page.length,
+        uniqueCidCount: uniqueCids.length,
+        durationMs: batchDurationMs,
+        retries,
+        failedCidCount,
       };
+      batchMetrics.push(metric);
+      recordEvidenceVerificationBatch(metric);
 
-      const enriched: EvidenceVerificationRecord = {
-        evidenceId: record.id,
-        tradeId: record.tradeId,
-        cid: record.cid,
-        filename: record.filename,
-        mimeType: record.mimeType,
-        uploadedBy: record.uploadedBy,
-        createdAt: record.createdAt,
-        pinResult,
-      };
+      appLogger.info(
+        {
+          batchNumber,
+          processedRecords,
+          totalRecords,
+          batchDurationMs,
+          retries,
+          failedCidCount,
+        },
+        "[EvidenceVerification] Batch complete",
+      );
 
-      if (pinResult.error && !pinResult.pinned) {
-        errors.push(enriched);
-      } else if (pinResult.pinned) {
-        pinnedCount++;
-      } else {
-        missingPins.push(enriched);
+      if (options.onProgress) {
+        await options.onProgress({
+          batchNumber,
+          processedRecords,
+          totalRecords,
+          pinnedCount,
+          missingCount: missingPins.length,
+          errorCount: errors.length,
+          batchDurationMs,
+        });
       }
+
+      if (page.length < batchSize) break;
     }
 
     const durationMs = Date.now() - startTime;
 
     const report: VerificationReport = {
-      totalChecked: allEvidence.length,
+      totalChecked: processedRecords,
       pinnedCount,
       missingCount: missingPins.length,
       errorCount: errors.length,
@@ -124,6 +302,9 @@ export class EvidenceVerificationService {
       errors,
       checkedAt: new Date(),
       durationMs,
+      batchCount: batchNumber,
+      batchMetrics,
+      performance: summarizePerformance(batchMetrics, processedRecords, durationMs),
     };
 
     appLogger.info(
@@ -132,7 +313,9 @@ export class EvidenceVerificationService {
         pinned: report.pinnedCount,
         missing: report.missingCount,
         errors: report.errorCount,
+        batchCount: report.batchCount,
         durationMs,
+        performance: report.performance,
       },
       "[EvidenceVerification] Verification pass complete",
     );
@@ -145,6 +328,64 @@ export class EvidenceVerificationService {
     }
 
     return report;
+  }
+
+  /** Count evidence rows, tolerating datastores/mocks without `count()`. */
+  private async countEvidence(): Promise<number | null> {
+    const counter = this.prisma.tradeEvidence.count;
+    if (typeof counter !== "function") return null;
+    try {
+      return await counter.call(this.prisma.tradeEvidence);
+    } catch (err) {
+      appLogger.warn(
+        { err },
+        "[EvidenceVerification] Failed to count evidence; progress totals disabled",
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Verify a page's unique CIDs against Pinata, retrying only the CIDs whose
+   * result looks transiently failed. Returns the merged results plus the number
+   * of retry rounds actually spent.
+   */
+  private async verifyCidBatch(
+    uniqueCids: string[],
+    maxRetries: number,
+    sleep: (ms: number) => Promise<void>,
+  ): Promise<{ results: Map<string, PinVerificationResult>; retries: number }> {
+    const results = new Map<string, PinVerificationResult>();
+    let pending = uniqueCids;
+    let retries = 0;
+
+    for (let attempt = 0; ; attempt += 1) {
+      const settled = await Promise.all(
+        pending.map((cid) => this.ipfs.verifyPin(cid)),
+      );
+      for (const result of settled) {
+        results.set(result.cid, result);
+      }
+
+      const stillFailing = settled
+        .filter(isTransientPinError)
+        .map((r) => r.cid);
+
+      if (stillFailing.length === 0 || attempt >= maxRetries) {
+        break;
+      }
+
+      retries += 1;
+      const delayMs = this.retryBackoffMs * Math.pow(2, attempt);
+      appLogger.warn(
+        { retryRound: retries, failingCids: stillFailing.length, delayMs },
+        "[EvidenceVerification] Retrying transient pin-check failures",
+      );
+      await sleep(delayMs);
+      pending = stillFailing;
+    }
+
+    return { results, retries };
   }
 
   /**

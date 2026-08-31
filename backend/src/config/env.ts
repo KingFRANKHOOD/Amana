@@ -69,6 +69,8 @@ export const envSchema = z.object({
   // Evidence pin verification
   EVIDENCE_PIN_VERIFICATION_BATCH_SIZE: z.coerce.number().int().positive().default(50),
   EVIDENCE_PIN_VERIFICATION_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+  EVIDENCE_PIN_VERIFICATION_MAX_RETRIES: z.coerce.number().int().nonnegative().default(3),
+  EVIDENCE_PIN_VERIFICATION_RETRY_BACKOFF_MS: z.coerce.number().int().positive().default(1_000),
 
   // Evidence / manifest retention
   EVIDENCE_MAX_BYTES: z.coerce.number().default(52428800),

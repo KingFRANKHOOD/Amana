@@ -2,6 +2,13 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * @see https://playwright.dev/docs/test-configuration
+ *
+ * Environment configuration:
+ * - `PLAYWRIGHT_BASE_URL` – front-end origin under test (default `http://localhost:3000`).
+ *   When set, the local dev `webServer` is skipped so tests run against a deployed app.
+ * - `PLAYWRIGHT_API_URL`  – backend API origin that specs mock via `page.route(...)`
+ *   (default `http://localhost:4000`, falling back to `NEXT_PUBLIC_API_URL`).
+ *   Centralized in `tests/support/api.ts`; see `TESTING.md`.
  */
 export default defineConfig({
   testDir: './tests',

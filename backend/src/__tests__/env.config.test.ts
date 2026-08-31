@@ -151,6 +151,39 @@ describe('env config — invalid formats', () => {
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.EVIDENCE_SCAN_REQUIRED).toBe(true);
   });
+
+  it('defaults evidence pin verification retry knobs', () => {
+    const result = parseEnv(VALID_BASE);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.EVIDENCE_PIN_VERIFICATION_BATCH_SIZE).toBe(50);
+      expect(result.data.EVIDENCE_PIN_VERIFICATION_MAX_RETRIES).toBe(3);
+      expect(result.data.EVIDENCE_PIN_VERIFICATION_RETRY_BACKOFF_MS).toBe(1000);
+    }
+  });
+
+  it('coerces evidence pin verification retry knobs from strings', () => {
+    const result = parseEnv({
+      ...VALID_BASE,
+      EVIDENCE_PIN_VERIFICATION_BATCH_SIZE: '200',
+      EVIDENCE_PIN_VERIFICATION_MAX_RETRIES: '0',
+      EVIDENCE_PIN_VERIFICATION_RETRY_BACKOFF_MS: '250',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.EVIDENCE_PIN_VERIFICATION_BATCH_SIZE).toBe(200);
+      expect(result.data.EVIDENCE_PIN_VERIFICATION_MAX_RETRIES).toBe(0);
+      expect(result.data.EVIDENCE_PIN_VERIFICATION_RETRY_BACKOFF_MS).toBe(250);
+    }
+  });
+
+  it('rejects a negative EVIDENCE_PIN_VERIFICATION_MAX_RETRIES', () => {
+    const result = parseEnv({
+      ...VALID_BASE,
+      EVIDENCE_PIN_VERIFICATION_MAX_RETRIES: '-1',
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('env config — optional fields absent or malformed', () => {
