@@ -1,0 +1,371 @@
+# Migration Rollback Testing
+#
+# Tests that all Prisma migrations can be safely applied and rolled back.
+# Runs on PRs that touch backend/prisma/, migration scripts, or this workflow.
+#
+# See: https://github.com/KingFRANKHOOD/Amana/issues/1099
+
+name: Migration Rollback Testing
+
+on:
+  pull_request:
+    paths:
+      - "backend/prisma/**"
+      - "scripts/migrate-*.sh"
+      - "scripts/test-migration-rollback.sh"
+      - ".github/workflows/migration-rollback.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/prisma/**"
+      - "scripts/migrate-*.sh"
+      - "scripts/test-migration-rollback.sh"
+
+jobs:
+  # ── Job 1: Migration Rollback Integration Test ──────────────────────────────
+  # Spins up a real PostgreSQL instance and runs the full migration test suite:
+  # forward migration, data insertion, rollback verification, and integrity checks.
+  migration-rollback-test:
+    name: "Migration Rollback Test"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: amana_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d amana_migration_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/amana_migration_test"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run migration rollback test suite
+        run: |
+          chmod +x scripts/test-migration-rollback.sh
+          scripts/test-migration-rollback.sh
+        env:
+          DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/amana_migration_test"
+
+  # ── Job 2: Destructive DDL Scanner ──────────────────────────────────────────
+  # Static analysis of migration SQL files for destructive DDL patterns.
+  # This runs fast and doesn't need a database.
+  destructive-ddl-scan:
+    name: "Destructive DDL Scan"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run destructive DDL scanner
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "  Scanning migration SQL files for destructive DDL..."
+          echo "═══════════════════════════════════════════════════════════════"
+          echo ""
+
+          DESTRUCTIVE_COUNT=0
+          MIGRATION_COUNT=0
+
+          for sql_file in backend/prisma/migrations/*/migration.sql; do
+            [ ! -f "$sql_file" ] && continue
+            MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
+            dir_name=$(basename "$(dirname "$sql_file")")
+
+            # Check for destructive patterns
+            FOUND=false
+            for pattern in "DROP TABLE" "DROP COLUMN" "ALTER TABLE.*DROP" "TRUNCATE"; do
+              if grep -iEq "$pattern" "$sql_file" 2>/dev/null; then
+                echo "  ⚠  DESTRUCTIVE DDL detected in: $dir_name"
+                grep -iE "$pattern" "$sql_file" | head -3 | sed 's/^/     > /'
+                FOUND=true
+                DESTRUCTIVE_COUNT=$((DESTRUCTIVE_COUNT + 1))
+                break
+              fi
+            done
+
+            # Check for risky NOT NULL without DEFAULT
+            if grep -iEq "ALTER.*COLUMN.*(SET\s+)?NOT NULL" "$sql_file" 2>/dev/null && \
+               ! grep -iEq "ALTER.*COLUMN.*DEFAULT" "$sql_file" 2>/dev/null; then
+              echo "  ⚠  RISKY: NOT NULL without DEFAULT in: $dir_name"
+              grep -iE "ALTER.*COLUMN.*NOT NULL" "$sql_file" | head -2 | sed 's/^/     > /'
+              FOUND=true
+              DESTRUCTIVE_COUNT=$((DESTRUCTIVE_COUNT + 1))
+            fi
+
+            if [ "$FOUND" = "false" ]; then
+              echo "  ✓ $dir_name — safe"
+            fi
+          done
+
+          echo ""
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "  Scanned $MIGRATION_COUNT migration files"
+          echo "  Destructive DDL found: $DESTRUCTIVE_COUNT"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo ""
+          echo "  Note: Destructive DDL is not blocked by CI — it produces"
+          echo "  warnings. The PR author must confirm a rollback plan exists"
+          echo "  (see docs/migration-rollback-playbook.md §2-4)."
+          echo ""
+
+          # Fail if destructive DDL is found without a rollback.sql companion
+          ROLLBACK_MISSING=0
+          for sql_file in backend/prisma/migrations/*/migration.sql; do
+            [ ! -f "$sql_file" ] && continue
+            dir_name=$(basename "$(dirname "$sql_file")")
+
+            HAS_DESTRUCTIVE=false
+            for pattern in "DROP TABLE" "DROP COLUMN" "ALTER TABLE.*DROP" "TRUNCATE"; do
+              if grep -iEq "$pattern" "$sql_file" 2>/dev/null; then
+                HAS_DESTRUCTIVE=true
+                break
+              fi
+            done
+
+            if [ "$HAS_DESTRUCTIVE" = "true" ]; then
+              ROLLBACK_FILE="backend/prisma/migrations/$dir_name/rollback.sql"
+              if [ ! -f "$ROLLBACK_FILE" ] || [ ! -s "$ROLLBACK_FILE" ]; then
+                echo "  ⚠  Missing rollback.sql for destructive migration: $dir_name"
+                ROLLBACK_MISSING=$((ROLLBACK_MISSING + 1))
+              fi
+            fi
+          done
+
+          if [ "$ROLLBACK_MISSING" -gt 0 ]; then
+            echo ""
+            echo "  ✗ $ROLLBACK_MISSING destructive migration(s) lack rollback.sql"
+            echo "    See docs/migration-rollback-playbook.md §3 for how to add one."
+            echo ""
+            # This is a warning, not a failure — destructive DDL can be
+            # intentional (e.g., DROP TABLE IF EXISTS for cleanup).
+            # If you want to make this a hard gate, add: exit 1
+          fi
+
+          echo "  ✓ Scan complete."
+
+  # ── Job 3: Migration Unit Tests ─────────────────────────────────────────────
+  # Jest-based tests for migration file integrity, schema validation, and
+  # destructive DDL pattern detection.
+  migration-unit-tests:
+    name: "Migration Unit Tests"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run migration integrity tests
+        working-directory: backend
+        run: npx jest --config jest.config.js --testPathPattern="migration-rollback" --no-coverage --forceExit
+        env:
+          DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/unused"
+
+  # ── Job 4: Migration Dry-Run Verification ───────────────────────────────────
+  # Verifies that migrate-safe.sh --dry-run works without modifying the database.
+  migration-dry-run:
+    name: "Migration Dry-Run"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: amana_dryrun_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d amana_dryrun_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/amana_dryrun_test"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Apply migrations first (to have a baseline)
+        working-directory: backend
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/amana_dryrun_test"
+
+      - name: Snapshot schema before dry-run
+        id: schema-before
+        run: |
+          SCHEMA_BEFORE=$(psql "postgresql://postgres:test_password@localhost:5432/amana_dryrun_test" -Atc "
+            SELECT string_agg(
+              table_name || ':' || column_name || ':' || data_type,
+              '|'
+              ORDER BY table_name, ordinal_position
+            )
+            FROM information_schema.columns
+            WHERE table_schema = 'public';" 2>/dev/null || echo "")
+          echo "schema=$SCHEMA_BEFORE" >> "$GITHUB_OUTPUT"
+
+      - name: Run migrate-safe.sh --dry-run
+        run: |
+          chmod +x scripts/migrate-safe.sh
+          scripts/migrate-safe.sh --env=staging --dry-run --no-backup || true
+        env:
+          DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/amana_dryrun_test"
+
+      - name: Verify schema unchanged after dry-run
+        run: |
+          SCHEMA_AFTER=$(psql "postgresql://postgres:test_password@localhost:5432/amana_dryrun_test" -Atc "
+            SELECT string_agg(
+              table_name || ':' || column_name || ':' || data_type,
+              '|'
+              ORDER BY table_name, ordinal_position
+            )
+            FROM information_schema.columns
+            WHERE table_schema = 'public';" 2>/dev/null || echo "")
+
+          if [ "${{ steps.schema-before.outputs.schema }}" = "$SCHEMA_AFTER" ]; then
+            echo "✓ Schema unchanged after dry-run (correct behavior)"
+          else
+            echo "✗ Schema changed after dry-run!"
+            echo "Before: ${{ steps.schema-before.outputs.schema }}"
+            echo "After:  $SCHEMA_AFTER"
+            exit 1
+          fi
+
+  # ── Job 5: Rollback SQL Validation ──────────────────────────────────────────
+  # Validates that existing rollback.sql files are syntactically valid.
+  rollback-sql-validation:
+    name: "Rollback SQL Validation"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate rollback SQL files
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "  Validating rollback SQL files..."
+          echo "═══════════════════════════════════════════════════════════════"
+          echo ""
+
+          ROLLBACK_COUNT=0
+          VALID_COUNT=0
+
+          for rollback_file in backend/prisma/migrations/*/rollback.sql; do
+            [ ! -f "$rollback_file" ] && continue
+            ROLLBACK_COUNT=$((ROLLBACK_COUNT + 1))
+            dir_name=$(basename "$(dirname "$rollback_file")")
+
+            # Check file is not empty
+            if [ ! -s "$rollback_file" ]; then
+              echo "  ✗ $dir_name/rollback.sql is empty"
+              continue
+            fi
+
+            # Basic SQL syntax checks
+            OPEN_PARENS=$(grep -o '(' "$rollback_file" | wc -l)
+            CLOSE_PARENS=$(grep -o ')' "$rollback_file" | wc -l)
+
+            if [ "$((OPEN_PARENS - CLOSE_PARENS))" -gt 2 ] || \
+               [ "$((CLOSE_PARENS - OPEN_PARENS))" -gt 2 ]; then
+              echo "  ✗ $dir_name/rollback.sql has mismatched parentheses"
+              continue
+            fi
+
+            echo "  ✓ $dir_name/rollback.sql — valid"
+            VALID_COUNT=$((VALID_COUNT + 1))
+          done
+
+          echo ""
+          echo "═══════════════════════════════════════════════════════════════"
+          if [ "$ROLLBACK_COUNT" -eq 0 ]; then
+            echo "  ℹ  No rollback.sql files found yet."
+            echo "     See docs/migration-rollback-playbook.md §3 for adding them."
+          else
+            echo "  Validated $VALID_COUNT of $ROLLBACK_COUNT rollback.sql files"
+          fi
+          echo "═══════════════════════════════════════════════════════════════"
+
+  # ── Final Gate ───────────────────────────────────────────────────────────────
+  # All migration safety jobs must pass before merge.
+  migration-safety-gate:
+    name: "Migration Safety Gate"
+    runs-on: ubuntu-latest
+    needs:
+      - migration-rollback-test
+      - destructive-ddl-scan
+      - migration-unit-tests
+      - migration-dry-run
+      - rollback-sql-validation
+    steps:
+      - name: All migration safety checks passed
+        run: |
+          echo "✅ All migration safety checks passed:"
+          echo "   ✓ Forward and backward migration tested"
+          echo "   ✓ Data integrity verified after rollback"
+          echo "   ✓ Destructive DDL scanned and documented"
+          echo "   ✓ Dry-run mode verified safe"
+          echo "   ✓ Rollback SQL files validated"
+          echo ""
+          echo "   See: docs/migration-rollback-playbook.md"

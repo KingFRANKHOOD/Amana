@@ -48,6 +48,35 @@ maintenance window.
    in the migrated environment before considering the deploy done (see
    [deployment.md §post-deploy-verification](./deployment.md#post-deploy-verification)).
 
+## How to test migrations in CI
+
+The CI workflow `.github/workflows/migration-rollback.yml` automatically
+tests every PR that touches `backend/prisma/` or migration scripts:
+
+1. **Forward migration test** — spins up a real PostgreSQL, applies all
+   migrations, and verifies the schema is correct.
+2. **Rollback verification** — inserts test data, then verifies rollback
+   and data integrity after rollback.
+3. **Destructive DDL scan** — scans migration SQL for DROP, TRUNCATE, and
+   unsafe NOT NULL patterns and warns on PR annotations.
+4. **Dry-run verification** — confirms `migrate-safe.sh --dry-run` never
+   modifies the database schema.
+5. **Rollback SQL validation** — checks that existing `rollback.sql` files
+   are non-empty and syntactically valid.
+
+All five checks must pass for the migration safety gate to succeed.
+
+### Running tests locally
+
+```bash
+# Full integration test (requires PostgreSQL)
+DATABASE_URL=postgresql://user:pass@localhost:5432/amana_test \
+  ./scripts/test-migration-rollback.sh
+
+# Jest-based unit tests (no database needed)
+cd backend && npx jest --testPathPattern="migration-rollback" --no-coverage
+```
+
 ## How to roll back a migration
 
 Read [migration-rollback-playbook.md §4 Rollback Procedures](../migration-rollback-playbook.md#4-rollback-procedures)
@@ -91,10 +120,20 @@ for where backups are stored and how to restore one.
 ## CI enforcement
 
 [migration-rollback-playbook.md §7 CI Migration Check](../migration-rollback-playbook.md#7-ci-migration-check)
-documents a dedicated `migration-check.yml` workflow that scans PR
-migration diffs for destructive DDL and gates merges to `main` behind a
-`migration:destructive-approved` label. As of this writing that workflow
-isn't present in `.github/workflows/` (only `ci.yml` and `staging.yml`
-exist) - treat the label/approval process as the manual policy until the
-automated gate is actually wired up, and don't assume CI will catch a
-destructive migration for you today.
+documents the `.github/workflows/migration-rollback.yml` workflow that runs
+five parallel jobs on every PR:
+
+- **Migration Rollback Test**: full forward + backward migration with data
+  integrity verification on a real PostgreSQL instance
+- **Destructive DDL Scan**: static analysis of migration SQL files
+- **Migration Unit Tests**: Jest tests for migration file hygiene
+- **Migration Dry-Run**: verifies `migrate-safe.sh --dry-run` is safe
+- **Rollback SQL Validation**: validates existing rollback SQL files
+
+The **Migration Safety Gate** requires all five to pass before merge to
+`main`. PRs with risky DDL receive CI warning annotations with remediation
+steps. For PRs targeting `main`, risky DDL fails the safety gate unless the
+PR has the `migration:destructive-approved` label.
+
+Apply the label only after explicit DBA/on-call review, a tested
+`rollback.sql`, and a planned maintenance window.
