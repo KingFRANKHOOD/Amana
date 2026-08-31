@@ -154,7 +154,7 @@ export class AuthHelper {
     // Generic auth error (not network)
     return new AppError(
       ErrorCode.AUTH_ERROR,
-      'Authentication failed',
+      'Unauthorized',
       401,
       { errorType: AuthErrorType.INVALID_TOKEN, originalError: err.message }
     );
