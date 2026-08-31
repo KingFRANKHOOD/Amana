@@ -45,6 +45,7 @@ Amana/
 ├── frontend/          # Next.js web application
 ├── mobile/            # React Native Expo app
 ├── contracts/         # Soroban smart contracts (Rust)
+├── routes-d/          # Standalone Stellar route-building service (Express)
 ├── docs/              # Project documentation (you are here)
 ├── infra/             # Docker and deployment configs
 ├── k6/                # Performance testing scripts
@@ -63,6 +64,7 @@ Amana/
 | [PROMETHEUS_METRICS.md](./PROMETHEUS_METRICS.md) | Application metrics and monitoring |
 | [architecture.md](./architecture.md) | System design and component interactions |
 | [sequence-diagrams.md](./sequence-diagrams.md) | Trade lifecycle and workflow sequences |
+| [routes-d/README.md](../routes-d/README.md) | Route-building service purpose, API, and usage |
 
 ---
 
@@ -198,6 +200,28 @@ cargo test --locked
 # Build and verify
 cargo build --features wasm --release
 ```
+
+#### routes-d Setup
+
+```bash
+cd routes-d
+
+# Install dependencies
+npm install
+
+# Run tests (Vitest, 80% coverage threshold)
+npm test
+
+# Type-check / lint
+npm run lint
+```
+
+**Configuration** (`routes-d`):
+- `STELLAR_NETWORK`: Stellar network to use (`testnet` default, or `mainnet`).
+  Selects the Horizon endpoint and network passphrase.
+
+See [routes-d/README.md](../routes-d/README.md) for the full API surface and
+usage.
 
 ### Docker Compose Services
 
@@ -339,6 +363,21 @@ cargo test --locked
 # Run with output
 cargo test -- --nocapture
 ```
+
+### routes-d Tests
+
+```bash
+cd routes-d
+
+# Run tests (Vitest with 80% coverage threshold)
+npm test
+
+# Type-check / lint
+npm run lint
+```
+
+The route-building service tests stub the Stellar SDK, so no network access is
+required.
 
 ### Full CI Simulation
 
