@@ -14,3 +14,4 @@ npm-debug.*
 web-build/
 .DS_Store
 *.log
+tests/pact/pacts/
