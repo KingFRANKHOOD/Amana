@@ -134,11 +134,19 @@ test.describe('Dispute Resolution Flow', () => {
     const equalSplitButton = page.getByRole('button', {
       name: /equal split|50\/50/i,
     }).first();
-    if (await equalSplitButton.isVisible()) {
-      await equalSplitButton.click();
-      await expect(page.getByText(/confirm resolution/i)).toBeVisible();
-      await expect(page.getByText(/seller receives/i)).toBeVisible();
-    }
+    await expect(
+      equalSplitButton,
+      'Equal-split resolution button must be visible on the mediator dispute-resolution screen',
+    ).toBeVisible();
+    await equalSplitButton.click();
+    await expect(
+      page.getByText(/confirm resolution/i),
+      'Confirm-resolution prompt must render after choosing Equal split',
+    ).toBeVisible();
+    await expect(
+      page.getByText(/seller receives/i),
+      'Resolution breakdown must show the seller-receives amount',
+    ).toBeVisible();
   });
 
   test('submits evidence for a dispute', async ({ page }) => {

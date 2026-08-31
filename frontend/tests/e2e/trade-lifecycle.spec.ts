@@ -113,10 +113,15 @@ test.describe('Trade Lifecycle E2E', () => {
     await page.waitForLoadState('networkidle');
 
     const depositButton = page.getByRole('button', { name: /deposit|fund/i }).first();
-    if (await depositButton.isVisible()) {
-      await depositButton.click();
-      await expect(page.getByText(/unsignedXdr|deposit/i)).toBeVisible();
-    }
+    await expect(
+      depositButton,
+      'Deposit/Fund button must be visible on a CREATED trade for the buyer',
+    ).toBeVisible();
+    await depositButton.click();
+    await expect(
+      page.getByText(/unsignedXdr|deposit/i),
+      'Deposit transaction details must render after clicking Deposit/Fund',
+    ).toBeVisible();
   });
 
   test('confirms delivery on a funded trade', async ({ page }) => {
@@ -153,10 +158,15 @@ test.describe('Trade Lifecycle E2E', () => {
     await page.waitForLoadState('networkidle');
 
     const confirmButton = page.getByRole('button', { name: /confirm/i }).first();
-    if (await confirmButton.isVisible()) {
-      await confirmButton.click();
-      await expect(page.getByText(/delivery confirmed|confirmed/i)).toBeVisible();
-    }
+    await expect(
+      confirmButton,
+      'Confirm-delivery button must be visible on a FUNDED trade',
+    ).toBeVisible();
+    await confirmButton.click();
+    await expect(
+      page.getByText(/delivery confirmed|confirmed/i),
+      'Delivery-confirmed status must render after clicking Confirm',
+    ).toBeVisible();
   });
 
   test('initiates a dispute on an active trade', async ({ page }) => {
@@ -216,15 +226,24 @@ test.describe('Trade Lifecycle E2E', () => {
     await page.waitForLoadState('networkidle');
 
     const disputeButton = page.getByRole('button', { name: /dispute/i }).first();
-    if (await disputeButton.isVisible()) {
-      await disputeButton.click();
-      await page.getByLabel(/reason/i).fill('Goods not delivered as per agreement.');
-      await page.getByRole('button', { name: /confirm/i }).click();
-      await expect(page.getByText(/dispute initiated/i)).toBeVisible();
-      expect(disputeRequestBody).toMatchObject({
-        reason: expect.stringContaining('Goods not delivered'),
-      });
-    }
+    await expect(
+      disputeButton,
+      'Dispute button must be visible on an active trade',
+    ).toBeVisible();
+    await disputeButton.click();
+    await expect(
+      page.getByLabel(/reason/i),
+      'Dispute reason field must appear after clicking Dispute',
+    ).toBeVisible();
+    await page.getByLabel(/reason/i).fill('Goods not delivered as per agreement.');
+    await page.getByRole('button', { name: /confirm/i }).click();
+    await expect(
+      page.getByText(/dispute initiated/i),
+      'Dispute-initiated confirmation must render after submitting the dispute',
+    ).toBeVisible();
+    expect(disputeRequestBody).toMatchObject({
+      reason: expect.stringContaining('Goods not delivered'),
+    });
   });
 
   test('completes the full trade lifecycle end-to-end', async ({ page }) => {
@@ -315,27 +334,40 @@ test.describe('Trade Lifecycle E2E', () => {
 
     // Upload PoD video evidence
     const uploadButton = page.getByRole('button', { name: /upload|evidence|proof/i }).first();
-    if (await uploadButton.isVisible()) {
-      await uploadButton.click();
-      const fileInput = page.locator('input[type="file"]').first();
-      if (await fileInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await fileInput.setInputFiles({
-          name: 'delivery-proof.mp4',
-          mimeType: 'video/mp4',
-          buffer: Buffer.from('mock-video-content'),
-        });
-        const submitEvidence = page.getByRole('button', { name: /submit|upload/i }).first();
-        if (await submitEvidence.isVisible()) await submitEvidence.click();
-      }
-    }
+    await expect(
+      uploadButton,
+      'Upload/evidence button must be visible on a FUNDED trade',
+    ).toBeVisible();
+    await uploadButton.click();
+
+    // The native <input type="file"> is deliberately visually hidden (see
+    // VideoUploadCard.tsx: `className="hidden ..."`), triggered by a styled
+    // label — asserting toBeVisible() on it would always fail by design.
+    // setInputFiles() works on a hidden file input regardless.
+    const fileInput = page.locator('input[type="file"]').first();
+    await fileInput.setInputFiles({
+      name: 'delivery-proof.mp4',
+      mimeType: 'video/mp4',
+      buffer: Buffer.from('mock-video-content'),
+    });
+
+    const submitEvidence = page.getByRole('button', { name: /submit|upload/i }).first();
+    await expect(
+      submitEvidence,
+      'Submit-evidence button must be visible after selecting a file',
+    ).toBeVisible();
+    await submitEvidence.click();
 
     // Trigger settlement / release
     const releaseButton = page.getByRole('button', { name: /release|settle|confirm delivery/i }).first();
-    if (await releaseButton.isVisible()) {
-      await releaseButton.click();
-      await expect(
-        page.getByText(/settlement|released|completed|delivery confirmed/i),
-      ).toBeVisible();
-    }
+    await expect(
+      releaseButton,
+      'Release/settle button must be visible after evidence submission',
+    ).toBeVisible();
+    await releaseButton.click();
+    await expect(
+      page.getByText(/settlement|released|completed|delivery confirmed/i),
+      'A settlement/release confirmation must render after clicking Release',
+    ).toBeVisible();
   });
 });

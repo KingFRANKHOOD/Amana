@@ -75,9 +75,11 @@ test.describe('Wallet Connection Flow', () => {
     await page.waitForLoadState('networkidle');
 
     const connectButton = page.getByRole('button', { name: /connect|login|sign/i }).first();
-    if (await connectButton.isVisible()) {
-      await connectButton.click();
-    }
+    await expect(
+      connectButton,
+      'Connect/login/sign button must be visible on an unauthenticated landing page',
+    ).toBeVisible();
+    await connectButton.click();
 
     await page.waitForTimeout(1000);
     const hasToken = await page.evaluate(() => window.sessionStorage.getItem('amana_jwt'));
