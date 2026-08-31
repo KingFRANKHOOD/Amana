@@ -17,8 +17,20 @@ workflow** on any **high** or **critical** severity vulnerability.
 | `contracts` | cargo audit | `cargo audit` | any advisory |
 | `routes-d` | npm audit | `npm audit --audit-level=high` | high + critical |
 
-Pull requests also run GitHub's dependency review with a high-severity
-threshold. The weekly workflow runs Trivy across all five stacks and uploads
+Pull requests also run GitHub's dependency review (`dependency-review` job in
+`security-audit.yml`) against any dependency-manifest changes in the diff,
+with two independent gates that both block merge:
+
+- **Severity**: `fail-on-severity: high` — a newly-introduced dependency
+  with a known high or critical advisory fails the PR.
+- **License compliance**: `allow-licenses` restricts new dependencies to a
+  permissive allowlist (MIT, Apache-2.0, ISC, BSD-2/3-Clause, 0BSD,
+  CC0-1.0, Unlicense, BlueOak-1.0.0, Python-2.0). A dependency under a
+  copyleft license (GPL, AGPL, etc.) or an unrecognized license fails the
+  PR rather than being silently allowed in. Widen the allowlist in that
+  job's `with:` block if a legitimately-needed dependency is blocked.
+
+The weekly workflow runs Trivy across all five stacks and uploads
 SARIF results to the GitHub Security tab. Audit JSON and SARIF files are kept
 as workflow artifacts for investigation.
 

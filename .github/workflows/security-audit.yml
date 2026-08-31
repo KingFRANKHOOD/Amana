@@ -129,6 +129,12 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # #1055 — license-compliance: fail the PR if a newly-introduced
+          # dependency carries a license outside this allowlist (covers
+          # the overwhelming majority of the npm ecosystem; anything
+          # copyleft like GPL/AGPL, or unrecognized, fails closed rather
+          # than being silently allowed in).
+          allow-licenses: MIT, Apache-2.0, ISC, BSD-2-Clause, BSD-3-Clause, 0BSD, CC0-1.0, Unlicense, BlueOak-1.0.0, Python-2.0
 
   notify:
     name: Notify security audit failure
