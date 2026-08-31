@@ -172,6 +172,10 @@ Amana includes comprehensive distributed tracing with OpenTelemetry for end-to-e
 
 See [DISTRIBUTED_TRACING_GUIDE.md](./DISTRIBUTED_TRACING_GUIDE.md) for detailed setup and usage instructions.
 
+**Logging & Observability**:
+- **[Logging Standards](./docs/LOGGING_STANDARDS.md)** — Comprehensive logging standards across all stacks (backend Pino, frontend TracedHttpClient, mobile, contracts, background jobs, log levels, PII redaction, Loki queries, and retention)
+- **[Error Logging Standards](./docs/ERROR_LOGGING_STANDARDS.md)** — Structured error logging with AppError, error correlation IDs, and Zod validation errors
+
 **Application Metrics & Monitoring**:
 - **[Prometheus Metrics](./docs/PROMETHEUS_METRICS.md)** — Trade throughput, dispute counts, and processing latency metrics exposed at `/metrics`
 
