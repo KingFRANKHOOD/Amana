@@ -113,6 +113,14 @@ export class MetricsService {
   private dataRetentionPrunedCounter: Counter;
   private dataArchivalRecordsCounter: Counter;
 
+  // Redis metrics
+  private redisMemoryUsedGauge: Gauge;
+  private redisMaxmemoryGauge: Gauge;
+  private redisMemoryUsagePercentGauge: Gauge;
+  private redisEvictedKeysCounter: Counter;
+  private redisConnectedClientsGauge: Gauge;
+  private redisHealthGauge: Gauge;
+
   constructor(meterProvider?: MeterProvider) {
     this.meterProvider = meterProvider ?? new MeterProvider();
     const meter = this.meterProvider.getMeter("amana-backend");
@@ -264,6 +272,55 @@ export class MetricsService {
         unit: "1",
       }
     );
+
+    // Redis metrics
+    this.redisMemoryUsedGauge = meter.createGauge(
+      "redis_memory_used_bytes",
+      {
+        description: "Current memory used by Redis in bytes",
+        unit: "By",
+      }
+    );
+
+    this.redisMaxmemoryGauge = meter.createGauge(
+      "redis_maxmemory_bytes",
+      {
+        description: "Configured maxmemory limit for Redis in bytes",
+        unit: "By",
+      }
+    );
+
+    this.redisMemoryUsagePercentGauge = meter.createGauge(
+      "redis_memory_used_percent",
+      {
+        description: "Redis memory usage as a percentage of maxmemory",
+        unit: "1",
+      }
+    );
+
+    this.redisEvictedKeysCounter = meter.createCounter(
+      "redis_evicted_keys_total",
+      {
+        description: "Total number of keys evicted by Redis due to maxmemory policy",
+        unit: "1",
+      }
+    );
+
+    this.redisConnectedClientsGauge = meter.createGauge(
+      "redis_connected_clients",
+      {
+        description: "Number of client connections to Redis",
+        unit: "1",
+      }
+    );
+
+    this.redisHealthGauge = meter.createGauge(
+      "redis_health_status",
+      {
+        description: "Whether Redis is reachable and healthy (1 = healthy, 0 = unhealthy)",
+        unit: "1",
+      }
+    );
   }
 
   static getInstance(
@@ -399,6 +456,30 @@ export class MetricsService {
 
   recordArchivalMetrics(entityType: string, count: number) {
     this.dataArchivalRecordsCounter.add(count, { entity_type: entityType });
+  }
+
+  // Redis metrics
+  recordRedisMetrics(
+    memoryUsed: number,
+    maxmemory: number,
+    connectedClients?: number
+  ) {
+    this.redisMemoryUsedGauge.record(memoryUsed);
+    this.redisMaxmemoryGauge.record(maxmemory);
+    if (maxmemory > 0) {
+      this.redisMemoryUsagePercentGauge.record((memoryUsed / maxmemory) * 100);
+    }
+    if (connectedClients !== undefined) {
+      this.redisConnectedClientsGauge.record(connectedClients);
+    }
+  }
+
+  recordRedisEvictions(evictedKeys: number) {
+    this.redisEvictedKeysCounter.add(evictedKeys);
+  }
+
+  recordRedisHealth(healthy: boolean) {
+    this.redisHealthGauge.record(healthy ? 1 : 0);
   }
 
   getMeterProvider(): MeterProvider {
