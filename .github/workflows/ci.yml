@@ -263,7 +263,7 @@ jobs:
           echo "Mobile checks completed at $(date --utc)" > mobile/ci-artifacts/mobile-ci-summary.txt
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.stack }}-artifact
           path: ${{ matrix.stack == 'frontend' && 'frontend/coverage/' || matrix.stack == 'backend' && 'backend/coverage/' || matrix.stack == 'mobile' && 'mobile/ci-artifacts/' || matrix.stack == 'contracts' && 'contracts/amana_escrow/target/wasm32-unknown-unknown/release/amana_escrow.wasm' }}
@@ -316,7 +316,7 @@ jobs:
 
       - name: Upload routes-d artifact
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: routes-d-artifact
           path: routes-d/coverage/
@@ -409,7 +409,7 @@ jobs:
 
       - name: Upload Playwright reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-e2e-reports
           path: |
@@ -574,7 +574,7 @@ jobs:
         working-directory: backend
 
       - name: Publish pact artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: amana-pacts
           path: frontend/tests/pact/pacts/*.json
