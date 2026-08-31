@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import { prisma as defaultPrisma } from "../lib/db";
 import { TOKEN_CONFIG } from "../config/token";
-import { getAdminAllowlistLowercase } from "../lib/accessControl";
+import { getAdminAllowlistLowercase, isMediatorAddress } from "../lib/accessControl";
 import { getAuditSigningConfig } from "../config/auditSigning";
 import { env } from "../config/env";
 
@@ -129,10 +129,10 @@ export class AuditTrailService {
         // Fetch dispute early — needed for both mediator access check and event assembly
         const dispute = await this.prisma.dispute.findUnique({ where: { tradeId } });
 
-        // Check mediator access: any caller who is neither buyer nor seller is allowed
-        // only when a dispute exists (mediator context). A stricter implementation would
-        // query a dedicated mediator registry; this matches the current schema.
-        const isMediator = !isBuyer && !isSeller && dispute !== null;
+        // Mediator access requires the caller to actually be in the mediator/arbitrator
+        // allowlist (ADMIN_STELLAR_PUBKEYS), not merely "neither buyer nor seller" —
+        // otherwise any unrelated authenticated user could read a disputed trade's history.
+        const isMediator = isMediatorAddress(caller) && dispute !== null;
 
         if (!isBuyer && !isSeller && !isMediator && !isAdmin) {
             throw new AuditTrailAccessDeniedError();
