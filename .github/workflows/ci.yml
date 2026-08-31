@@ -152,7 +152,7 @@ jobs:
 
       - name: Frontend visual regression tests
         if: matrix.stack == 'frontend'
-        run: pnpm test:visual
+        run: pnpm exec playwright test --project=visual-regression
         working-directory: frontend
 
       - name: Backend test
