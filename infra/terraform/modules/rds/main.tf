@@ -28,11 +28,14 @@ resource "aws_security_group" "this" {
     cidr_blocks = var.allowed_cidr_blocks
   }
 
+  # Restrict egress to VPC CIDR only — RDS has no need for internet access.
+  # Limits blast radius if the instance is compromised.
   egress {
     from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "Allow TCP egress within VPC only"
   }
 
   tags = {
@@ -110,6 +113,11 @@ variable "allowed_cidr_blocks" {
   description = "CIDR blocks allowed to access RDS"
   type        = list(string)
   default     = []
+}
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block used to restrict RDS egress traffic to the VPC only"
+  type        = string
 }
 
 variable "engine" {

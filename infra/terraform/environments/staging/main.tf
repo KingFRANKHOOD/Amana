@@ -42,6 +42,7 @@ module "rds" {
   vpc_id                = module.vpc.vpc_id
   subnet_ids            = module.vpc.private_subnet_ids
   allowed_cidr_blocks   = [module.vpc.vpc_cidr]
+  vpc_cidr              = module.vpc.vpc_cidr
   engine                = "aurora-postgresql"
   engine_version        = "15.4"
   instance_class        = "db.r5.large"
