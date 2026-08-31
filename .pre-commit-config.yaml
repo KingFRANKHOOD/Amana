@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: forbid-kubernetes-secrets-file
+        name: Forbid infra/k8s/secrets.yaml
+        language: fail
+        entry: Use the Vault-backed ExternalSecret instead of infra/k8s/secrets.yaml
+        files: '^infra/k8s/secrets\.yaml$'
+      - id: forbid-plaintext-kubernetes-secrets
+        name: Forbid plaintext Kubernetes stringData
+        language: pygrep
+        entry: '(?i)\bstringData\s*:'
+        files: '^infra/k8s/.*\.ya?ml$'

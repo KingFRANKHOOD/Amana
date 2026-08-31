@@ -35,3 +35,6 @@ gitleaks-report.sarif
 
 # Git worktrees (local dev workspaces)
 .worktrees/
+
+# Local Kubernetes secrets are sourced from Vault and must never be committed
+infra/k8s/secrets.yaml

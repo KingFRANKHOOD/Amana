@@ -56,6 +56,17 @@ JWT_SECRET=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 Reference secrets as `${{ secrets.MY_SECRET }}` in workflows. Never echo or print them.
 
+### Use Vault for Kubernetes
+
+`infra/k8s/external-secret.yaml` syncs the Vault KV v2 path
+`secret/amana/application` into the `amana-secrets` Kubernetes Secret. The
+cluster must have External Secrets Operator installed and a Vault Kubernetes
+auth role named `amana` bound to the `default/amana-vault-auth` service
+account. Configure the trusted Vault endpoint in
+`infra/k8s/vault-secret-store.yaml`.
+
+Never commit a Kubernetes `Secret` manifest containing `stringData`.
+
 ### Rotate immediately if exposed
 
 If a key is accidentally committed, assume it is compromised even if the commit is later removed from history.
@@ -83,10 +94,10 @@ Removing from git history is **optional for revoked keys** but required for comp
 ```bash
 # Using git-filter-repo (preferred)
 pip install git-filter-repo
-git filter-repo --path-glob '*.env' --invert-paths
+git filter-repo --path infra/k8s/secrets.yaml --invert-paths
 
 # Or using BFG Repo Cleaner
-java -jar bfg.jar --delete-files '*.env' repo.git
+java -jar bfg.jar --delete-files secrets.yaml repo.git
 ```
 
 After rewriting history, force-push and notify all team members to re-clone.
@@ -105,21 +116,12 @@ Document the root cause and add a `.gitleaks.toml` rule if the pattern isn't alr
 
 ## 4. Local Pre-commit Hook
 
-Install Gitleaks locally to catch secrets before pushing:
+Install the tracked hooks to catch secrets before committing:
 
 ```bash
-# Install gitleaks (macOS)
-brew install gitleaks
-
-# Run manually
-gitleaks detect --config=.gitleaks.toml --source=. --verbose
-
-# Or install as a pre-commit hook
-cat > .git/hooks/pre-commit << 'EOF'
-#!/usr/bin/env bash
-gitleaks protect --config=.gitleaks.toml --staged --verbose
-EOF
-chmod +x .git/hooks/pre-commit
+pipx install pre-commit
+pre-commit install
+pre-commit run --all-files
 ```
 
 ---
@@ -163,8 +165,9 @@ comment explaining why they are safe.
 
 ## 7. Secret Rotation Schedule
 
-Every secret listed in `.env.staging.example`/K8s `secrets.yaml` should be
-rotated on a schedule, not only in response to a leak:
+Every secret listed in `.env.staging.example` or stored at the Vault KV v2
+path `secret/amana/application` should be rotated on a schedule, not only in
+response to a leak:
 
 | Secret | Rotation interval |
 |---|---|
@@ -174,13 +177,7 @@ rotated on a schedule, not only in response to a leak:
 | Supabase service role key | 90 days |
 | Redis password | 180 days |
 
-**Status: policy only — not yet automated.** Automating this requires a
-versioned secrets backend (AWS Secrets Manager or HashiCorp Vault) that the
-backend fetches from at startup with a cache TTL and re-fetches on a
-rotation signal, plus an overlapping grace period so an in-flight request
-signed with the old JWT secret isn't rejected mid-rotation. Choosing and
-wiring up that backend is a significant, infrastructure-dependent piece of
-work on its own — deliberately not attempted as part of the gitleaks CI fix
-above. Until it exists, rotate these manually by following the incident
-rotation steps in section 3, on the schedule above rather than only after a
-leak.
+External Secrets Operator refreshes `amana-secrets` from Vault hourly.
+Rotation remains an operational action: write new values through the approved
+Vault workflow, then restart workloads that consume them as environment
+variables. JWT rotation must also invalidate active sessions.
