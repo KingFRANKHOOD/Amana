@@ -17,6 +17,17 @@ export interface HealthIndicatorResult {
   status: "up" | "down";
   message: string;
   responseTime: number;
+  details?: Record<string, unknown>;
+}
+
+export interface RedisMemoryMetrics {
+  usedMemoryBytes: number;
+  maxMemoryBytes: number;
+  memoryUsagePercent: number;
+  maxmemoryPolicy: string;
+  evictedKeys: number;
+  peakMemoryBytes: number;
+  fragmentationRatio: number;
 }
 
 export interface DependencyHealth {
@@ -123,6 +134,8 @@ interface HealthDatabase {
 }
 interface HealthRedis {
   ping(): Promise<string>;
+  info(section?: string): Promise<string>;
+  config(...args: string[]): Promise<[string, string]>;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -302,6 +315,56 @@ export class HealthService {
     }
   }
 
+  private parseRedisInfo(infoText: string): Record<string, string> {
+    const parsed: Record<string, string> = {};
+    for (const line of infoText.split(/\r?\n/)) {
+      if (!line || line.startsWith("#")) {
+        continue;
+      }
+      const separatorIndex = line.indexOf(":");
+      if (separatorIndex > 0) {
+        parsed[line.slice(0, separatorIndex)] = line.slice(separatorIndex + 1);
+      }
+    }
+    return parsed;
+  }
+
+  private async getRedisMemoryMetrics(): Promise<RedisMemoryMetrics | null> {
+    try {
+      const [memoryInfoText, statsInfoText, policyResult] = await Promise.all([
+        this.cacheClient.info("memory"),
+        this.cacheClient.info("stats"),
+        this.cacheClient.config("GET", "maxmemory-policy"),
+      ]);
+
+      const memoryInfo = this.parseRedisInfo(memoryInfoText);
+      const statsInfo = this.parseRedisInfo(statsInfoText);
+
+      const usedMemoryBytes = Number(memoryInfo["used_memory"] ?? 0);
+      const maxMemoryBytes = Number(memoryInfo["maxmemory"] ?? 0);
+      const peakMemoryBytes = Number(memoryInfo["used_memory_peak"] ?? 0);
+      const fragmentationRatio = Number(memoryInfo["mem_fragmentation_ratio"] ?? 0);
+      const evictedKeys = Number(statsInfo["evicted_keys"] ?? 0);
+      const maxmemoryPolicy = Array.isArray(policyResult) ? policyResult[1] ?? "unknown" : "unknown";
+      const memoryUsagePercent = maxMemoryBytes > 0
+        ? Math.round((usedMemoryBytes / maxMemoryBytes) * 1000) / 10
+        : 0;
+
+      return {
+        usedMemoryBytes,
+        maxMemoryBytes,
+        memoryUsagePercent,
+        maxmemoryPolicy,
+        evictedKeys,
+        peakMemoryBytes,
+        fragmentationRatio,
+      };
+    } catch (error) {
+      appLogger.warn({ error }, "Redis memory metrics check failed");
+      return null;
+    }
+  }
+
   /**
    * Check Redis cache connectivity
    */
@@ -310,17 +373,57 @@ export class HealthService {
     const timeout = 3000;
 
     try {
-      await withTimeout(
-        this.cacheClient.ping(),
+      const [, memoryMetrics] = await withTimeout(
+        Promise.all([
+          this.cacheClient.ping(),
+          this.getRedisMemoryMetrics(),
+        ]),
         timeout,
-        "Redis timeout",
+        "Redis health check timeout",
       );
 
       const responseTime = Date.now() - startTime;
+      let message = "Redis connection healthy";
+
+      if (memoryMetrics) {
+        message = `Redis connection healthy (memory: ${memoryMetrics.memoryUsagePercent}%, maxmemory: ${memoryMetrics.maxMemoryBytes} bytes, maxmemory-policy: ${memoryMetrics.maxmemoryPolicy}, evicted_keys: ${memoryMetrics.evictedKeys})`;
+
+        if (memoryMetrics.maxMemoryBytes > 0 && memoryMetrics.memoryUsagePercent >= 80) {
+          message = `Redis memory usage at ${memoryMetrics.memoryUsagePercent}% exceeds 80% threshold (${memoryMetrics.usedMemoryBytes}/${memoryMetrics.maxMemoryBytes} bytes)`;
+          await this.alerts.dispatch("redis_memory_high", message, {
+            usedMemoryBytes: memoryMetrics.usedMemoryBytes,
+            maxMemoryBytes: memoryMetrics.maxMemoryBytes,
+            memoryUsagePercent: memoryMetrics.memoryUsagePercent,
+            evictedKeys: memoryMetrics.evictedKeys,
+            maxmemoryPolicy: memoryMetrics.maxmemoryPolicy,
+          });
+        }
+
+        if (memoryMetrics.evictedKeys > 0) {
+          const evictionMessage = `Redis has evicted ${memoryMetrics.evictedKeys} keys`;
+          await this.alerts.dispatch("redis_evictions", evictionMessage, {
+            evictedKeys: memoryMetrics.evictedKeys,
+            usedMemoryBytes: memoryMetrics.usedMemoryBytes,
+            maxMemoryBytes: memoryMetrics.maxMemoryBytes,
+            memoryUsagePercent: memoryMetrics.memoryUsagePercent,
+          });
+          message += `; ${evictionMessage}`;
+        }
+
+        if (!memoryMetrics.maxmemoryPolicy || memoryMetrics.maxmemoryPolicy === "unknown") {
+          message += "; maxmemory-policy not configured";
+        }
+
+        if (memoryMetrics.maxMemoryBytes <= 0) {
+          message += "; maxmemory not configured";
+        }
+      }
+
       return {
         status: "up",
-        message: "Redis connection healthy",
+        message,
         responseTime,
+        details: memoryMetrics ? { ...memoryMetrics } : undefined,
       };
     } catch (error) {
       const responseTime = Date.now() - startTime;
@@ -540,6 +643,7 @@ export class HealthService {
       status = "unhealthy";
     } else if (
       redisCheck.status === "down"
+      || Number(redisCheck.details?.memoryUsagePercent ?? 0) >= 80
       || ipfsCheck.status === "down"
       || databaseCheck.responseTime > 150
       || indexerCheck.responseTime > 150
@@ -753,6 +857,28 @@ export class HealthService {
       configuration: toDependency("Application Configuration", configCheck, true, 50),
       encryptionKey: toDependency("Encryption Key Management", encryptionCheck, true, 50),
     };
+
+    const redisMemoryUsagePercent = Number(redisCheck.details?.memoryUsagePercent ?? 0);
+    const redisEvictedKeys = Number(redisCheck.details?.evictedKeys ?? 0);
+
+    if (redisMemoryUsagePercent >= 80) {
+      dependencies.redis.status = "degraded";
+      dependencies.redis.message += `; Redis memory usage at ${redisMemoryUsagePercent}% exceeds 80% threshold`;
+    }
+
+    if (redisEvictedKeys > 0) {
+      if (dependencies.redis.status === "healthy") {
+        dependencies.redis.status = "degraded";
+      }
+      dependencies.redis.message += `; ${redisEvictedKeys} keys evicted`;
+    }
+
+    if (redisMemoryUsagePercent >= 80 || redisEvictedKeys > 0) {
+      dependencies.redis.details = {
+        memoryUsagePercent: redisMemoryUsagePercent,
+        evictedKeys: redisEvictedKeys,
+      };
+    }
 
     const depList = Object.values(dependencies);
     const totalDependencies = depList.length;
