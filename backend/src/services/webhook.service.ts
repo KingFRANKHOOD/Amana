@@ -24,6 +24,7 @@ export class WebhookService {
   private readonly maxAttempts: number;
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
+  private readonly requestTimeoutMs = 10000;
 
   constructor() {
     this.webhookUrl = env.WEBHOOK_URL;
@@ -94,14 +95,22 @@ export class WebhookService {
           ? crypto.createHmac("sha256", target.secret).update(body).digest("hex")
           : undefined;
 
-        const response = await fetch(target.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(signature ? { "X-Webhook-Signature": signature } : {}),
-          },
-          body,
-        });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+        let response: Response;
+        try {
+          response = await fetch(target.url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(signature ? { "X-Webhook-Signature": signature } : {}),
+            },
+            body,
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
 
         if (response.ok) {
           appLogger.debug(
