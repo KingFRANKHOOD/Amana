@@ -78,20 +78,6 @@ const TradeDataContext = createContext<TradeDataContextType>({
   clearDraft: () => {},
 });
 
-function loadDraft(): TradeData {
-  if (typeof window === "undefined") return defaults;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<TradeData>;
-      return { ...defaults, ...parsed };
-    }
-  } catch {
-    // corrupted storage — ignore
-  }
-  return defaults;
-}
-
 export function TradeProvider({ children }: { children: React.ReactNode }) {
   const [step, setStep] = useState(1);
   const draft = useDraftForm<TradeData>(STORAGE_NAMESPACE, TradeDataSchema);
