@@ -33,19 +33,13 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: REDIS_PASSWORD
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 999
-            runAsGroup: 999
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: data
-              mountPath: /data
+            # REDISCLI_AUTH lets redis-cli authenticate without -a flag,
+            # keeping the password out of process listings and pod describe output.
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: REDIS_PASSWORD
           resources:
             requests:
               cpu: 50m
@@ -57,8 +51,6 @@ spec:
             exec:
               command:
                 - redis-cli
-                - -a
-                - $(REDIS_PASSWORD)
                 - ping
             initialDelaySeconds: 15
             periodSeconds: 10
@@ -66,8 +58,6 @@ spec:
             exec:
               command:
                 - redis-cli
-                - -a
-                - $(REDIS_PASSWORD)
                 - ping
             initialDelaySeconds: 10
             periodSeconds: 10
