@@ -4,8 +4,17 @@ import axios from "axios";
 import { env } from "../config/env";
 import { appLogger } from "../middleware/logger";
 import { encrypt } from "../lib/crypto";
+import { authMiddleware } from "../middleware/auth.middleware";
+import { createIpRateLimiter } from "../lib/rateLimit";
 
 const FRIENDBOT_URL = "https://friendbot.stellar.org";
+const STELLAR_ACCOUNT_SECRET_DOMAIN = "stellar-account-secret";
+
+const accountCreateRateLimiter = createIpRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many account creation attempts, try again later.",
+});
 
 async function fundViaFriendbot(publicKey: string): Promise<void> {
   await axios.get(FRIENDBOT_URL, { params: { addr: publicKey }, timeout: 15_000 });
@@ -26,13 +35,13 @@ export function createStellarAccountCreateRouter(): Router {
    * Returns:
    *   { publicKey, encryptedSecretKey, funded }
    */
-  router.post("/", async (req: Request, res: Response) => {
+  router.post("/", authMiddleware, accountCreateRateLimiter, async (req: Request, res: Response) => {
     const fund = req.body?.fund === true;
     const isTestnet = env.STELLAR_NETWORK === "testnet";
 
     const keypair = Keypair.random();
     const publicKey = keypair.publicKey();
-    const encryptedSecretKey = encrypt(keypair.secret());
+    const encryptedSecretKey = encrypt(keypair.secret(), STELLAR_ACCOUNT_SECRET_DOMAIN);
 
     let funded = false;
 
