@@ -3,6 +3,9 @@ import { env } from "../config/env";
 import { appLogger } from "../middleware/logger";
 import { prisma } from "../lib/db";
 import { TradeStatus } from "@prisma/client";
+import { EncryptionService } from "./encryption.service";
+
+const WEBHOOK_SECRET_CONTEXT = "webhook-secret";
 
 interface WebhookPayload {
   event: string;
@@ -24,8 +27,10 @@ export class WebhookService {
   private readonly maxAttempts: number;
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
+  private readonly encryptionService: EncryptionService;
 
   constructor() {
+    this.encryptionService = new EncryptionService();
     this.webhookUrl = env.WEBHOOK_URL;
     this.webhookSecret = env.WEBHOOK_SECRET;
     this.maxAttempts = env.WEBHOOK_MAX_ATTEMPTS;
@@ -49,7 +54,7 @@ export class WebhookService {
 
     const deliveryTargets: DeliveryTarget[] = activeSubscriptions.map((subscription) => ({
       url: subscription.url,
-      secret: subscription.secretHash,
+      secret: this.decryptSubscriptionSecret(subscription.secretHash),
       subscriptionId: subscription.id,
     }));
 
@@ -78,6 +83,16 @@ export class WebhookService {
     await Promise.allSettled(
       deliveryTargets.map((target) => this.sendWebhookWithRetry(target, body, tradeId, status)),
     );
+  }
+
+  private decryptSubscriptionSecret(secretHash: string | null | undefined): string | undefined {
+    if (!secretHash) return undefined;
+    try {
+      return this.encryptionService.decrypt(secretHash, WEBHOOK_SECRET_CONTEXT);
+    } catch (error) {
+      appLogger.warn({ error }, "Failed to decrypt webhook subscription secret");
+      return undefined;
+    }
   }
 
   private async sendWebhookWithRetry(
