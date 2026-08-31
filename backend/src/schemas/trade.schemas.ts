@@ -43,8 +43,8 @@ export const createTradeSchema = z.object({
     z.string().regex(/^\d+(\.\d{1,7})?$/, "Invalid amount format"),
     z.number().positive("Amount must be positive").transform(String),
   ]),
-  buyerLossBps: z.number().int().min(0, "buyerLossBps must be >= 0").max(10000, "buyerLossBps must be <= 10000").optional(),
-  sellerLossBps: z.number().int().min(0, "sellerLossBps must be >= 0").max(10000, "sellerLossBps must be <= 10000").optional(),
+  buyerLossBps: z.number().int().min(0, "buyerLossBps must be >= 0").max(10000, "buyerLossBps must be <= 10000").default(5000),
+  sellerLossBps: z.number().int().min(0, "sellerLossBps must be >= 0").max(10000, "sellerLossBps must be <= 10000").default(5000),
   description: z.string().optional(),
 }).superRefine((data: Record<string, unknown>, ctx: any) => {
   const buyer = (data.buyerLossBps as number) ?? 5000;

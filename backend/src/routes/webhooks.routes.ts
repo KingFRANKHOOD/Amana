@@ -78,13 +78,26 @@ async function validateWebhookUrl(url: string): Promise<boolean> {
   }
 }
 
+const ALLOWED_WEBHOOK_EVENTS = [
+  'trade.pending_signature',
+  'trade.created',
+  'trade.funded',
+  'trade.delivered',
+  'trade.completed',
+  'trade.disputed',
+  'trade.cancelled',
+] as const;
+
 // Zod schemas for validation
 const createWebhookSchema = z.object({
   url: z.string().url('Invalid URL format').refine(
     validateWebhookUrl,
     'Webhook URL must be publicly accessible and cannot resolve to internal services',
   ),
-  events: z.array(z.string()).min(1, 'At least one event is required'),
+  events: z
+    .array(z.enum(ALLOWED_WEBHOOK_EVENTS))
+    .min(1, 'At least one event is required')
+    .max(20, 'At most 20 events are allowed'),
   secret: z.string().optional(),
 });
 
@@ -92,11 +105,14 @@ const webhookIdParamSchema = z.object({
   id: z.string().regex(/^\d+$/, 'Invalid webhook ID').transform(Number),
 });
 
-// Encrypts the secret reversibly (AES-256-GCM) so it can be recovered to sign
-// outgoing webhook payloads. A one-way hash cannot be used here because the
-// subscriber never re-sends the secret for us to compare against.
-function encryptSecret(secret: string): string {
-  return encryptionService.encrypt(secret, WEBHOOK_SECRET_CONTEXT);
+const listWebhooksQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+// Helper function to hash secret using SHA-256
+function hashSecret(secret: string): string {
+  return crypto.createHash('sha256').update(secret).digest('hex');
 }
 
 // Helper function to generate a random secret
@@ -177,38 +193,50 @@ router.post(
 );
 
 // GET /webhooks - List all webhooks for the authenticated user
-router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const walletAddress = req.user?.walletAddress;
+router.get(
+  '/',
+  authMiddleware,
+  validateRequest({ query: listWebhooksQuerySchema }),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
 
-    if (!walletAddress) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      if (!walletAddress) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const userId = await getUserIdFromWallet(walletAddress);
+      if (!userId) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const { page, limit } = req.query as unknown as { page: number; limit: number };
+
+      const [webhooks, total] = await Promise.all([
+        prisma.webhookSubscription.findMany({
+          where: { userId },
+          select: {
+            id: true,
+            url: true,
+            events: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        prisma.webhookSubscription.count({ where: { userId } }),
+      ]);
+
+      res.status(200).json({ webhooks, pagination: { page, limit, total } });
+    } catch (error) {
+      console.error('Error listing webhooks:', error);
+      res.status(500).json({ error: 'Failed to list webhooks' });
     }
-
-    const userId = await getUserIdFromWallet(walletAddress);
-    if (!userId) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const webhooks = await prisma.webhookSubscription.findMany({
-      where: { userId },
-      select: {
-        id: true,
-        url: true,
-        events: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    res.status(200).json({ webhooks });
-  } catch (error) {
-    console.error('Error listing webhooks:', error);
-    res.status(500).json({ error: 'Failed to list webhooks' });
   }
-});
+);
 
 // DELETE /webhooks/:id - Delete a webhook by ID
 router.delete(

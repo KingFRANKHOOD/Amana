@@ -25,6 +25,31 @@ function getZodLikeIssues(error: unknown): ZodLikeIssue[] | null {
   return null;
 }
 
+function sanitizeString(value: string): string {
+  return value.trim();
+}
+
+function sanitizeValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return sanitizeString(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeValue);
+  }
+  if (value !== null && typeof value === "object") {
+    return sanitizeObject(value as Record<string, unknown>);
+  }
+  return value;
+}
+
+function sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+  for (const key of Object.keys(obj)) {
+    sanitized[key] = sanitizeValue(obj[key]);
+  }
+  return sanitized;
+}
+
 export const validateRequest = (schema: {
   body?: ParseAsyncSchema;
   query?: ParseAsyncSchema;
