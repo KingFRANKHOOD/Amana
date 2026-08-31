@@ -38,6 +38,14 @@ export interface PoolMetrics {
   timeoutTotal: number;
 }
 
+export interface RedisMemoryMetrics {
+  usedMemoryBytes: number;
+  maxMemoryBytes: number;
+  maxmemoryPolicy?: string;
+}
+
+export const REDIS_MEMORY_ALERT_THRESHOLD = 0.8;
+
 let submissionCounter: Counter | undefined;
 let submissionDuration: Histogram | undefined;
 let rpcDuration: Histogram | undefined;
@@ -50,6 +58,13 @@ let evidenceBatchDuration: Histogram | undefined;
 let evidenceBatchRetries: Counter | undefined;
 let evidenceRecordsChecked: Counter | undefined;
 let customRecorder: StellarMetricsRecorder | null = null;
+let redisMemoryUsedBytes: Gauge | undefined;
+let redisMemoryMaxBytes: Gauge | undefined;
+let redisMemoryUsageRatio: Gauge | undefined;
+let redisMemoryAlert: Gauge | undefined;
+let redisEvictedKeysTotal: Counter | undefined;
+let redisMaxmemoryPolicy: Gauge | undefined;
+let redisUp: Gauge | undefined;
 
 function getMeter() {
   return metrics.getMeter(METER_NAME);
@@ -194,6 +209,79 @@ function getEvidenceRecordsChecked(): Counter {
   return evidenceRecordsChecked;
 }
 
+function getRedisMemoryUsedBytes(): Gauge {
+  if (!redisMemoryUsedBytes) {
+    redisMemoryUsedBytes = getMeter().createGauge("redis_memory_used_bytes", {
+      description: "Current Redis memory usage in bytes",
+      unit: "By",
+    });
+  }
+  return redisMemoryUsedBytes;
+}
+
+function getRedisMemoryMaxBytes(): Gauge {
+  if (!redisMemoryMaxBytes) {
+    redisMemoryMaxBytes = getMeter().createGauge("redis_memory_max_bytes", {
+      description: "Configured Redis maxmemory limit in bytes",
+      unit: "By",
+    });
+  }
+  return redisMemoryMaxBytes;
+}
+
+function getRedisMemoryUsageRatio(): Gauge {
+  if (!redisMemoryUsageRatio) {
+    redisMemoryUsageRatio = getMeter().createGauge("redis_memory_usage_ratio", {
+      description: "Redis memory usage as a fraction of maxmemory",
+      unit: "1",
+    });
+  }
+  return redisMemoryUsageRatio;
+}
+
+function getRedisMemoryAlert(): Gauge {
+  if (!redisMemoryAlert) {
+    redisMemoryAlert = getMeter().createGauge("redis_memory_alert", {
+      description: "1 when Redis memory usage exceeds the 80% alert threshold, 0 otherwise",
+      unit: "1",
+    });
+  }
+  return redisMemoryAlert;
+}
+
+function getRedisEvictedKeysTotal(): Counter {
+  if (!redisEvictedKeysTotal) {
+    redisEvictedKeysTotal = getMeter().createCounter(
+      "redis_evicted_keys_total",
+      {
+        description: "Total number of keys evicted by Redis maxmemory policy",
+        unit: "1",
+      },
+    );
+  }
+  return redisEvictedKeysTotal;
+}
+
+function getRedisMaxmemoryPolicy(): Gauge {
+  if (!redisMaxmemoryPolicy) {
+    redisMaxmemoryPolicy = getMeter().createGauge("redis_maxmemory_policy", {
+      description: "Configured Redis maxmemory-policy",
+      unit: "1",
+    });
+  }
+  return redisMaxmemoryPolicy;
+}
+
+function getRedisUp(): Gauge {
+  if (!redisUp) {
+    redisUp = getMeter().createGauge("redis_up", {
+      description: "1 if Redis is reachable, 0 otherwise",
+      unit: "1",
+    });
+  }
+  return redisUp;
+}
+
 export interface EvidenceBatchMetric {
   recordCount: number;
   durationMs: number;
@@ -249,6 +337,31 @@ export function recordPoolMetrics(metrics: PoolMetrics): void {
 
 export function recordPoolTimeout(): void {
   getPgPoolTimeoutTotal().add(1);
+}
+
+export function recordRedisMemoryMetrics(metrics: RedisMemoryMetrics): void {
+  getRedisMemoryUsedBytes().record(metrics.usedMemoryBytes);
+  getRedisMemoryMaxBytes().record(metrics.maxMemoryBytes);
+
+  const ratio =
+    metrics.maxMemoryBytes > 0
+      ? metrics.usedMemoryBytes / metrics.maxMemoryBytes
+      : 0;
+  getRedisMemoryUsageRatio().record(ratio);
+  getRedisMemoryAlert().record(
+    ratio >= REDIS_MEMORY_ALERT_THRESHOLD ? 1 : 0,
+  );
+  getRedisMaxmemoryPolicy().record(1, {
+    policy: metrics.maxmemoryPolicy ?? "unknown",
+  });
+}
+
+export function recordRedisEvictions(delta: number): void {
+  getRedisEvictedKeysTotal().add(delta);
+}
+
+export function recordRedisHealth(healthy: boolean): void {
+  getRedisUp().record(healthy ? 1 : 0);
 }
 
 export function recordDuplicateEventAttempt(source: string, eventType: string): void {
@@ -313,4 +426,11 @@ export function __resetMetricsForTests(): void {
   evidenceBatchDuration = undefined;
   evidenceBatchRetries = undefined;
   evidenceRecordsChecked = undefined;
+  redisMemoryUsedBytes = undefined;
+  redisMemoryMaxBytes = undefined;
+  redisMemoryUsageRatio = undefined;
+  redisMemoryAlert = undefined;
+  redisEvictedKeysTotal = undefined;
+  redisMaxmemoryPolicy = undefined;
+  redisUp = undefined;
 }
