@@ -7,7 +7,11 @@ export type AlertType =
   | "redis_connection_failure"
   | "cache_unavailable"
   | "pg_pool_saturation"
-  | "slow_endpoint_detected";
+  | "slow_endpoint_detected"
+  | "stellar_connection_failure"
+  | "stellar_rpc_unavailable"
+  | "stellar_rpc_failover"
+  | "stellar_tx_rate_drop";
 
 export type AlertSeverity = "critical" | "warning";
 
@@ -120,6 +124,55 @@ export class AlertService {
       thresholdMs,
       ...details,
     }, "warning");
+  }
+
+  async dispatchStellarConnectionFailure(
+    endpoint: string,
+    errorMessage: string,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    const message = `Stellar connectivity failure: Unable to connect to endpoint ${endpoint} (${errorMessage})`;
+    await this.dispatch("stellar_connection_failure", message, {
+      endpoint,
+      errorMessage,
+      environment: env.NODE_ENV,
+      network: env.STELLAR_NETWORK,
+      ...details,
+    }, "critical");
+  }
+
+  async dispatchStellarRpcFailover(
+    fromEndpoint: string,
+    toEndpoint: string,
+    reason: string,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    const message = `Stellar RPC failover triggered: Switched from ${fromEndpoint} to ${toEndpoint} (${reason})`;
+    await this.dispatch("stellar_rpc_failover", message, {
+      fromEndpoint,
+      toEndpoint,
+      reason,
+      environment: env.NODE_ENV,
+      network: env.STELLAR_NETWORK,
+      ...details,
+    }, "warning");
+  }
+
+  async dispatchStellarTxRateDrop(
+    successRate: number,
+    failureRate: number,
+    totalSubmissions: number,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    const message = `Stellar transaction success rate dropped to ${(successRate * 100).toFixed(1)}% (failures: ${(failureRate * 100).toFixed(1)}% over ${totalSubmissions} submissions)`;
+    await this.dispatch("stellar_tx_rate_drop", message, {
+      successRate,
+      failureRate,
+      totalSubmissions,
+      environment: env.NODE_ENV,
+      network: env.STELLAR_NETWORK,
+      ...details,
+    }, "critical");
   }
 
   isConfigured(): boolean {

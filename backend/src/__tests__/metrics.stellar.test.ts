@@ -142,7 +142,7 @@ describe("Stellar metrics (#521)", () => {
           outcome: "success",
         }),
       ]);
-      expect(recorder.submissions[0].durationMs).toBeGreaterThanOrEqual(0);
+      expect(recorder.submissions[0]?.durationMs).toBeGreaterThanOrEqual(0);
     });
 
     it("records contract_panic metrics when the contract reverts", async () => {

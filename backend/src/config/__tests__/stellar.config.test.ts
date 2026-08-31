@@ -103,4 +103,104 @@ describe('Stellar Configuration', () => {
     expect(config.networkType).toBe('testnet');
     expect(config.networkPassphrase).toBe(Networks.TESTNET);
   });
+
+  it('should initialize primary and fallback RPC endpoints from env', () => {
+    process.env.STELLAR_RPC_URL = 'https://primary-rpc.stellar.org';
+    process.env.STELLAR_RPC_FALLBACK_URLS = 'https://fallback-1.stellar.org, https://fallback-2.stellar.org';
+
+    const config = require('../stellar');
+    const manager = config.stellarRpcManager;
+
+    expect(manager.getPrimaryRpcUrl()).toBe('https://primary-rpc.stellar.org');
+    expect(manager.getActiveRpcUrl()).toBe('https://primary-rpc.stellar.org');
+    expect(manager.getFallbackRpcUrls()).toEqual([
+      'https://fallback-1.stellar.org',
+      'https://fallback-2.stellar.org',
+    ]);
+  });
+
+  it('should automatically failover to fallback RPC node when primary fails', async () => {
+    process.env.STELLAR_RPC_URL = 'https://primary-rpc.stellar.org';
+    process.env.STELLAR_RPC_FALLBACK_URLS = 'https://fallback-1.stellar.org';
+
+    const config = require('../stellar');
+    const manager = config.stellarRpcManager;
+
+    let failoverEvent: { from: string; to: string; reason: string } | null = null;
+    manager.onFailover((from: string, to: string, reason: string) => {
+      failoverEvent = { from, to, reason };
+    });
+
+    const result = await manager.executeRpcWithFallback(async (_client: any, url: string) => {
+      if (url === 'https://primary-rpc.stellar.org') {
+        throw new Error('ETIMEDOUT: connection timed out');
+      }
+      return { success: true, answeredBy: url };
+    });
+
+    expect(result).toEqual({ success: true, answeredBy: 'https://fallback-1.stellar.org' });
+    expect(manager.getActiveRpcUrl()).toBe('https://fallback-1.stellar.org');
+    expect(failoverEvent).toEqual(
+      expect.objectContaining({
+        from: 'https://primary-rpc.stellar.org',
+        to: 'https://fallback-1.stellar.org',
+      }),
+    );
+  });
+
+  it('should perform network health check and report healthy status', async () => {
+    process.env.STELLAR_RPC_URL = 'https://primary-rpc.stellar.org';
+
+    const config = require('../stellar');
+    const manager = config.stellarRpcManager;
+
+    // Mock getLatestLedger on RPC client
+    const activeClient = manager.getActiveRpcClient();
+    activeClient.getLatestLedger = jest.fn().mockResolvedValue({ sequence: 12345 });
+
+    const health = await manager.checkNetworkHealth();
+
+    expect(health.status).toBe('healthy');
+    expect(health.network).toBe('testnet');
+    expect(health.activeRpcUrl).toBe('https://primary-rpc.stellar.org');
+    expect(health.nodes).toHaveLength(1);
+    expect(health.nodes[0]?.status).toBe('healthy');
+    expect(health.nodes[0]?.latestLedger).toBe(12345);
+  });
+
+  it('should report degraded status when operating on fallback node', async () => {
+    process.env.STELLAR_RPC_URL = 'https://primary-rpc.stellar.org';
+    process.env.STELLAR_RPC_FALLBACK_URLS = 'https://fallback-1.stellar.org';
+
+    const config = require('../stellar');
+    const manager = config.stellarRpcManager;
+
+    // Fail primary node check, succeed fallback
+    const rpcNodes = (manager as any).rpcNodes;
+    rpcNodes[0].client.getLatestLedger = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    rpcNodes[1].client.getLatestLedger = jest.fn().mockResolvedValue({ sequence: 99999 });
+
+    const health = await manager.checkNetworkHealth();
+
+    expect(health.status).toBe('degraded');
+    expect(health.nodes[0]?.status).toBe('unhealthy');
+    expect(health.nodes[1]?.status).toBe('healthy');
+  });
+
+  it('should report unhealthy status when all RPC nodes fail', async () => {
+    process.env.STELLAR_RPC_URL = 'https://primary-rpc.stellar.org';
+    process.env.STELLAR_RPC_FALLBACK_URLS = 'https://fallback-1.stellar.org';
+
+    const config = require('../stellar');
+    const manager = config.stellarRpcManager;
+
+    const rpcNodes = (manager as any).rpcNodes;
+    rpcNodes[0].client.getLatestLedger = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    rpcNodes[1].client.getLatestLedger = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const health = await manager.checkNetworkHealth();
+
+    expect(health.status).toBe('unhealthy');
+    expect(health.nodes.every((n: any) => n.status === 'unhealthy')).toBe(true);
+  });
 });
