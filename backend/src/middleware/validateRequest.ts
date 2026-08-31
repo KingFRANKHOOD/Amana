@@ -26,13 +26,7 @@ function getZodLikeIssues(error: unknown): ZodLikeIssue[] | null {
 }
 
 function sanitizeString(value: string): string {
-  return value
-    .trim()
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;");
+  return value.trim();
 }
 
 function sanitizeValue(value: unknown): unknown {
