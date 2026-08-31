@@ -127,4 +127,109 @@ describe('useDeepLink', () => {
       params: { tradeId: 'trade-101' },
     });
   });
+
+  it('should navigate to TradeDetail when authenticated', () => {
+    (authStore.useAuthStore as unknown as jest.Mock).mockReturnValue({
+      token: 'test-token',
+    });
+
+    const { result } = renderHook(() => useDeepLink());
+    const navigation = { navigate: jest.fn() };
+
+    act(() => {
+      result.current.handleDeepLink({
+        screen: 'TradeDetail',
+        params: { tradeId: 'trade-123' },
+      });
+    });
+
+    act(() => {
+      result.current.navigateToDeepLink(navigation as any);
+    });
+
+    expect(navigation.navigate).toHaveBeenCalledWith('TradeDetail', { tradeId: 'trade-123' });
+  });
+
+  it('should navigate to DisputeDetail', () => {
+    (authStore.useAuthStore as unknown as jest.Mock).mockReturnValue({
+      token: 'test-token',
+    });
+
+    const { result } = renderHook(() => useDeepLink());
+    const navigation = { navigate: jest.fn() };
+
+    act(() => {
+      result.current.handleDeepLink({
+        screen: 'DisputeDetail',
+        params: { id: 'dispute-1' },
+      });
+    });
+
+    act(() => {
+      result.current.navigateToDeepLink(navigation as any);
+    });
+
+    expect(navigation.navigate).toHaveBeenCalledWith('DisputeDetail', { id: 'dispute-1' });
+  });
+
+  it('should navigate to EvidenceCapture', () => {
+    (authStore.useAuthStore as unknown as jest.Mock).mockReturnValue({
+      token: 'test-token',
+    });
+
+    const { result } = renderHook(() => useDeepLink());
+    const navigation = { navigate: jest.fn() };
+
+    act(() => {
+      result.current.handleDeepLink({
+        screen: 'EvidenceCapture',
+        params: { tradeId: 'trade-101' },
+      });
+    });
+
+    act(() => {
+      result.current.navigateToDeepLink(navigation as any);
+    });
+
+    expect(navigation.navigate).toHaveBeenCalledWith('EvidenceCapture', { tradeId: 'trade-101' });
+  });
+
+  it('should navigate to TradeList screen without params', () => {
+    (authStore.useAuthStore as unknown as jest.Mock).mockReturnValue({
+      token: 'test-token',
+    });
+
+    const { result } = renderHook(() => useDeepLink());
+    const navigation = { navigate: jest.fn() };
+
+    act(() => {
+      result.current.handleDeepLink({ screen: 'TradeList' });
+    });
+
+    act(() => {
+      result.current.navigateToDeepLink(navigation as any);
+    });
+
+    expect(navigation.navigate).toHaveBeenCalledWith('TradeList');
+  });
+
+  it('should not navigate when unauthenticated', () => {
+    (authStore.useAuthStore as unknown as jest.Mock).mockReturnValue({
+      token: null,
+    });
+
+    const { result } = renderHook(() => useDeepLink());
+    const navigation = { navigate: jest.fn() };
+
+    act(() => {
+      result.current.handleDeepLink({ screen: 'TradeDetail', params: { tradeId: 't' } });
+    });
+
+    act(() => {
+      result.current.navigateToDeepLink(navigation as any);
+    });
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(result.current.pendingDeepLink).toEqual({ screen: 'TradeDetail', params: { tradeId: 't' } });
+  });
 });
