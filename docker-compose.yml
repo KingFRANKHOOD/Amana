@@ -33,6 +33,15 @@ x-redis-healthcheck: &redis-healthcheck
   retries: 5
   start_period: 5s
 
+# #1048 — the backend image (node:20-alpine) doesn't ship curl; wget is part
+# of busybox and is present by default, so it's used here instead.
+x-backend-healthcheck: &backend-healthcheck
+  test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/health"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
 services:
 
   # ── Development ─────────────────────────────────────────────────────────────
@@ -65,6 +74,68 @@ services:
       resources:
         limits:
           memory: 512M
+    profiles: [dev]
+
+  # #1048 — containerized backend for the dev profile. Local development
+  # can still run `cd backend && npm run dev` directly (unaffected by this
+  # service); this is for anyone who wants the whole stack — app included —
+  # under `docker compose --profile dev up -d`, and for exercising the
+  # healthcheck/restart behavior itself.
+  backend:
+    build:
+      context: ./backend
+      target: production
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-amana}
+      REDIS_URL: redis://redis:6379/0
+      # Required by backend/src/config/env.ts's zod schema -- these have no
+      # schema default, so the app refuses to start without them. Values
+      # come from the project-root .env (see .env.staging.example for the
+      # shape); ${VAR} here is Compose's own file substitution, not a
+      # passthrough of the whole .env into the container.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-min-32-characters-long!!}
+      AMANA_ESCROW_CONTRACT_ID: ${AMANA_ESCROW_CONTRACT_ID:-CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+      USDC_CONTRACT_ID: ${USDC_CONTRACT_ID:-CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB}
+      # Checked ad-hoc by EncryptionService, not part of the zod schema above.
+      TRADE_NOTES_ENCRYPTION_KEY: ${TRADE_NOTES_ENCRYPTION_KEY:-ZGV2LW9ubHktMzItYnl0ZS1lbmNyeXB0aW9uLWtleSEh}
+      # Required by a separate startup check (envValidator.js), distinct
+      # from the zod schema above.
+      STELLAR_NETWORK: ${STELLAR_NETWORK:-testnet}
+      # NODE_ENV=production (set in the image) makes the app refuse a
+      # permissive/default CORS policy without this being explicit.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck: *backend-healthcheck
+    restart: unless-stopped
+    labels:
+      # Picked up by the autoheal sidecar below — restart_unless_stopped
+      # alone only restarts on process exit, not on a failing healthcheck
+      # while the process is still running (Docker Compose has no native
+      # "restart on unhealthy" trigger outside Swarm/Kubernetes).
+      autoheal: "true"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    profiles: [dev]
+
+  # #1048 — watches sibling containers' health status via the Docker socket
+  # and restarts any container labeled autoheal=true once it's reported
+  # "unhealthy" for AUTOHEAL_INTERVAL seconds, closing the gap noted above.
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 10
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     profiles: [dev]
 
   # ── Staging ─────────────────────────────────────────────────────────────────
