@@ -401,6 +401,11 @@ export class MetricsService {
     this.dataArchivalRecordsCounter.add(count, { entity_type: entityType });
   }
 
+  getStellarTransactionStats(): import("../lib/metrics").StellarSubmissionStats {
+    const { getTransactionSubmissionStats } = require("../lib/metrics");
+    return getTransactionSubmissionStats();
+  }
+
   getMeterProvider(): MeterProvider {
     return this.meterProvider;
   }

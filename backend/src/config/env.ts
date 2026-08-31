@@ -11,6 +11,10 @@ function normalizeEnvInput(raw: Record<string, string | undefined>): Record<stri
     normalized.STELLAR_RPC_URL = normalized.SOROBAN_RPC_URL;
   }
 
+  if (!normalized.STELLAR_RPC_FALLBACK_URLS && normalized.SOROBAN_RPC_FALLBACK_URLS) {
+    normalized.STELLAR_RPC_FALLBACK_URLS = normalized.SOROBAN_RPC_FALLBACK_URLS;
+  }
+
   if (normalized.STELLAR_NETWORK) {
     normalized.STELLAR_NETWORK = normalized.STELLAR_NETWORK.toLowerCase();
   }
@@ -40,6 +44,12 @@ export const envSchema = z.object({
   STELLAR_NETWORK_PASSPHRASE: z.string().optional(),
   STELLAR_RPC_URL: z.string().optional(),
   SOROBAN_RPC_URL: z.string().optional(),
+  STELLAR_RPC_FALLBACK_URLS: z.string().optional(),
+  SOROBAN_RPC_FALLBACK_URLS: z.string().optional(),
+  STELLAR_HORIZON_FALLBACK_URLS: z.string().optional(),
+  STELLAR_HEALTH_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  STELLAR_HEALTH_CHECK_INTERVAL_MS: z.coerce.number().int().positive().default(30000),
+  STELLAR_TX_FAILURE_RATE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.2),
   /** @deprecated Use AMANA_ESCROW_CONTRACT_ID */
   CONTRACT_ID: z.string().min(1).optional(),
   AMANA_ESCROW_CONTRACT_ID: z.string().min(1),

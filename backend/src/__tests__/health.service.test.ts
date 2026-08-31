@@ -3,6 +3,19 @@ jest.mock("../config/stellar", () => ({
     loadAccount: jest.fn().mockResolvedValue({}),
   },
   sorobanRpcClient: {},
+  stellarRpcManager: {
+    checkNetworkHealth: jest.fn().mockResolvedValue({
+      status: "healthy",
+      message: "All Stellar RPC nodes healthy",
+      network: "testnet",
+      activeRpcUrl: "https://soroban-testnet.stellar.org",
+      nodes: [{ url: "https://soroban-testnet.stellar.org", status: "healthy", latencyMs: 50, isPrimary: true, isActive: true, lastChecked: new Date().toISOString(), consecutiveFailures: 0 }],
+      horizonNodes: [],
+    }),
+    getActiveRpcUrl: jest.fn().mockReturnValue("https://soroban-testnet.stellar.org"),
+    getPrimaryRpcUrl: jest.fn().mockReturnValue("https://soroban-testnet.stellar.org"),
+    getFallbackRpcUrls: jest.fn().mockReturnValue([]),
+  },
 }));
 
 jest.mock("../config/ipfs", () => ({
@@ -142,6 +155,14 @@ describe("HealthService", () => {
         });
 
         it("should return degraded status when response times are high", async () => {
+            // Ensure config check passes so degraded status from high latency can surface
+            const originalEnv = { ...process.env };
+            process.env.DATABASE_URL = "postgresql://test";
+            process.env.JWT_SECRET = "test-secret-long-enough-for-jwt";
+            process.env.AMANA_ESCROW_CONTRACT_ID = "CTEST000000000000000000000000000000000000000000000000001";
+            process.env.USDC_CONTRACT_ID = "CUSDC000000000000000000000000000000000000000000000000002";
+            process.env.TRADE_NOTES_ENCRYPTION_KEY = "a".repeat(32);
+
             mockPrisma.$queryRaw.mockImplementation(
                 () =>
                     new Promise((resolve) =>
@@ -155,6 +176,9 @@ describe("HealthService", () => {
             });
 
             const result = await healthService.performHealthCheck();
+
+            // Restore env
+            process.env = originalEnv;
 
             expect(result.status).toBe("degraded");
             expect(result.checks.database.responseTime).toBeGreaterThan(150);
