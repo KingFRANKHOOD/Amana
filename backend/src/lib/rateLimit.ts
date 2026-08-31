@@ -4,6 +4,10 @@ import { RateLimitPreset } from '../config/rateLimit';
 import { ErrorCode } from '../errors/errorCodes';
 import { AuthRequest } from '../services/auth.service';
 import { appLogger } from '../middleware/logger';
+import { env } from '../config/env';
+
+// A single IPv4/IPv6 address, optionally with a zone id (e.g. fe80::1%eth0).
+const IP_ADDRESS_PATTERN = /^[a-fA-F0-9:.]+(%[a-zA-Z0-9]+)?$/;
 
 type KeyGenerator = (req: Request) => string;
 
@@ -56,12 +60,18 @@ function trackRateLimitBreach(key: string, req: Request): void {
 }
 
 function resolveClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0]!.trim();
+  // X-Forwarded-For is only trustworthy when we sit behind a known proxy
+  // (e.g. a load balancer) that overwrites/sets it itself. Otherwise any
+  // client can spoof it to rotate their rate-limit key.
+  if (env.TRUST_PROXY) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const candidate = typeof forwarded === 'string' ? forwarded.split(',')[0]!.trim() : '';
+    if (candidate && IP_ADDRESS_PATTERN.test(candidate)) {
+      return candidate;
+    }
   }
 
-  return req.ip || req.socket?.remoteAddress || 'unknown';
+  return req.socket?.remoteAddress || req.ip || 'unknown';
 }
 
 function resolveWalletAddress(req: Request): string | undefined {
