@@ -73,8 +73,8 @@ importers:
         version: 5.0.14(@types/react@18.3.31)(react@18.3.1)
     devDependencies:
       '@eslint/js':
-        specifier: ^8.57.1
-        version: 8.57.1
+        specifier: ^9.39.5
+        version: 9.39.5
       '@expo/config-plugins':
         specifier: ^8.0.8
         version: 8.0.11
@@ -914,6 +914,10 @@ packages:
   '@eslint/js@8.57.1':
     resolution: {integrity: sha512-d9zaMRSTIKDLhctzH12MtXvJKSSUhaHcjV+2Z+GK+EEY7XKpP5yR4x+N3TAcHTcu963nIr+TMcCb4DBCYX1z6Q==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
+
+  '@eslint/js@9.39.5':
+    resolution: {integrity: sha512-QywQuszQh77pIXCsq998c8hbhSTI/azTty1Z6N53dmAudKHhy573j3yvRLsX2BSp8YpLtoCEG8E9DJe+8zUh4A==}
+    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
@@ -6254,6 +6258,8 @@ snapshots:
       - supports-color
 
   '@eslint/js@8.57.1': {}
+
+  '@eslint/js@9.39.5': {}
 
   '@expo/bunyan@4.0.1':
     dependencies:
