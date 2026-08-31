@@ -5,6 +5,8 @@ import { appLogger } from "../middleware/logger";
 export type AlertType =
   | "db_connection_failure"
   | "redis_connection_failure"
+  | "redis_memory_high"
+  | "redis_evictions"
   | "cache_unavailable"
   | "pg_pool_saturation"
   | "slow_endpoint_detected";
@@ -18,6 +20,9 @@ export interface AlertPayload {
   message: string;
   details?: Record<string, unknown>;
 }
+
+const REDIS_MEMORY_ALERT_THRESHOLD_PERCENT = 80;
+const REDIS_MAXMEMORY_POLICY = "allkeys-lru";
 
 export class AlertService {
   private readonly alertWebhookUrl: string | undefined;
@@ -120,6 +125,115 @@ export class AlertService {
       thresholdMs,
       ...details,
     }, "warning");
+  }
+
+  async dispatchRedisMemoryHigh(
+    usedMemoryBytes: number,
+    maxMemoryBytes: number,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    const usagePercent = Math.round((usedMemoryBytes / maxMemoryBytes) * 100);
+    const message = `Redis memory usage is high: ${usagePercent}% used (${usedMemoryBytes}/${maxMemoryBytes} bytes)`;
+    await this.dispatch("redis_memory_high", message, {
+      usedMemoryBytes,
+      maxMemoryBytes,
+      usagePercent,
+      ...details,
+    }, "warning");
+  }
+
+  async dispatchRedisEvictions(
+    evictedKeys: number,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    const message = `Redis evictions detected: ${evictedKeys} keys evicted`;
+    await this.dispatch("redis_evictions", message, {
+      evictedKeys,
+      ...details,
+    }, "critical");
+  }
+
+  private parseInfoValue(info: string, key: string): number | string | null {
+    const pattern = new RegExp(`${key}:([^\\r]+)`, "m");
+    const match = info.match(pattern);
+    if (!match) return null;
+    const value = match[1].trim();
+    const numeric = Number(value);
+    return Number.isNaN(numeric) ? value : numeric;
+  }
+
+  private async getRedisConfig(redis: any, parameter: string): Promise<string | null> {
+    try {
+      const result = await redis.config("GET", parameter);
+      return result?.[1] ?? null;
+    } catch (error) {
+      appLogger.error({ error, parameter }, "Failed to read Redis config");
+      return null;
+    }
+  }
+
+  private async setRedisConfig(redis: any, parameter: string, value: string): Promise<boolean> {
+    try {
+      await redis.config("SET", parameter, value);
+      appLogger.info({ parameter, value }, "Redis config updated");
+      return true;
+    } catch (error) {
+      appLogger.error({ error, parameter, value }, "Failed to update Redis config");
+      return false;
+    }
+  }
+
+  async monitorRedis(redis: any): Promise<void> {
+    try {
+      const memoryInfo = await redis.info("memory");
+      const statsInfo = await redis.info("stats");
+      const usedMemory = Number(this.parseInfoValue(memoryInfo, "used_memory") ?? 0);
+      const maxMemory = Number(this.parseInfoValue(memoryInfo, "maxmemory") ?? 0);
+      const maxMemoryPolicy = await this.getRedisConfig(redis, "maxmemory-policy");
+      const evictedKeys = Number(this.parseInfoValue(statsInfo, "evicted_keys") ?? 0);
+
+      if (maxMemoryPolicy && maxMemoryPolicy !== REDIS_MAXMEMORY_POLICY) {
+        appLogger.warn({ maxMemoryPolicy, expected: REDIS_MAXMEMORY_POLICY }, "Redis maxmemory-policy differs from recommended configuration");
+        // Attempt to apply recommended configuration
+        await this.setRedisConfig(redis, "maxmemory-policy", REDIS_MAXMEMORY_POLICY);
+      }
+
+      if (usedMemory > 0 && maxMemory > 0) {
+        const usagePercent = (usedMemory / maxMemory) * 100;
+        if (usagePercent >= REDIS_MEMORY_ALERT_THRESHOLD_PERCENT) {
+          await this.dispatchRedisMemoryHigh(usedMemory, maxMemory, {
+            maxMemoryPolicy,
+            evictedKeys,
+          });
+        }
+      } else {
+        appLogger.debug(
+          { usedMemory, maxMemory },
+          "Redis maxmemory is not configured; monitoring used_memory absolute growth",
+        );
+      }
+
+      if (evictedKeys > 0) {
+        await this.dispatchRedisEvictions(evictedKeys, {
+          usedMemory,
+          maxMemory,
+          maxMemoryPolicy,
+        });
+      }
+    } catch (error) {
+      appLogger.error({ error }, "Failed to monitor Redis");
+    }
+  }
+
+  async getRedisHealth(redis: any): Promise<{ healthy: boolean; latencyMs?: number; error?: string }> {
+    const start = Date.now();
+    try {
+      await redis.ping();
+      return { healthy: true, latencyMs: Date.now() - start };
+    } catch (error) {
+      appLogger.error({ error }, "Redis health check failed");
+      return { healthy: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   isConfigured(): boolean {
