@@ -536,7 +536,8 @@ jobs:
     needs: changes
     if: >
       needs.changes.outputs.frontend == 'true' ||
-      needs.changes.outputs.backend == 'true'
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.mobile == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -552,6 +553,7 @@ jobs:
           cache-dependency-path: |
             frontend/pnpm-lock.yaml
             backend/pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -561,9 +563,17 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: backend
 
+      - name: Install mobile dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: mobile
+
       - name: Generate consumer pacts
         run: pnpm test:pact
         working-directory: frontend
+
+      - name: Generate mobile consumer pacts
+        run: pnpm test:pact
+        working-directory: mobile
 
       - name: Verify backend provider
         env:
