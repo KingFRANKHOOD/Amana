@@ -7,6 +7,10 @@ import { prisma } from '../lib/db';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validateRequest';
 import { appLogger } from '../middleware/logger';
+import { EncryptionService } from '../services/encryption.service';
+
+const encryptionService = new EncryptionService();
+const WEBHOOK_SECRET_CONTEXT = 'webhook-secret';
 
 const router = Router();
 
@@ -88,9 +92,11 @@ const webhookIdParamSchema = z.object({
   id: z.string().regex(/^\d+$/, 'Invalid webhook ID').transform(Number),
 });
 
-// Helper function to hash secret using SHA-256
-function hashSecret(secret: string): string {
-  return crypto.createHash('sha256').update(secret).digest('hex');
+// Encrypts the secret reversibly (AES-256-GCM) so it can be recovered to sign
+// outgoing webhook payloads. A one-way hash cannot be used here because the
+// subscriber never re-sends the secret for us to compare against.
+function encryptSecret(secret: string): string {
+  return encryptionService.encrypt(secret, WEBHOOK_SECRET_CONTEXT);
 }
 
 // Helper function to generate a random secret
@@ -128,7 +134,7 @@ router.post(
 
       // Generate secret if not provided
       const webhookSecret = secret || generateSecret();
-      const secretHash = hashSecret(webhookSecret);
+      const secretHash = encryptSecret(webhookSecret);
 
       // Create webhook subscription
       const webhook = await prisma.webhookSubscription.create({

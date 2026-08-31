@@ -25,37 +25,6 @@ function getZodLikeIssues(error: unknown): ZodLikeIssue[] | null {
   return null;
 }
 
-function sanitizeString(value: string): string {
-  return value
-    .trim()
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;");
-}
-
-function sanitizeValue(value: unknown): unknown {
-  if (typeof value === "string") {
-    return sanitizeString(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map(sanitizeValue);
-  }
-  if (value !== null && typeof value === "object") {
-    return sanitizeObject(value as Record<string, unknown>);
-  }
-  return value;
-}
-
-function sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {};
-  for (const key of Object.keys(obj)) {
-    sanitized[key] = sanitizeValue(obj[key]);
-  }
-  return sanitized;
-}
-
 export const validateRequest = (schema: {
   body?: ParseAsyncSchema;
   query?: ParseAsyncSchema;
@@ -64,20 +33,18 @@ export const validateRequest = (schema: {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       if (schema.body) {
-        const parsed = await schema.body.parseAsync(req.body);
-        req.body = sanitizeValue(parsed);
+        req.body = await schema.body.parseAsync(req.body);
       }
       if (schema.query) {
         const parsed = await schema.query.parseAsync(req.query);
         Object.defineProperty(req, 'query', {
-          value: sanitizeValue(parsed),
+          value: parsed,
           writable: true,
           configurable: true,
         });
       }
       if (schema.params) {
-        const parsed = await schema.params.parseAsync(req.params);
-        req.params = sanitizeValue(parsed) as any;
+        req.params = (await schema.params.parseAsync(req.params)) as any;
       }
       next();
     } catch (error) {
