@@ -6,7 +6,8 @@ export type AlertType =
   | "db_connection_failure"
   | "redis_connection_failure"
   | "cache_unavailable"
-  | "pg_pool_saturation";
+  | "pg_pool_saturation"
+  | "slow_endpoint_detected";
 
 export type AlertSeverity = "critical" | "warning";
 
@@ -100,6 +101,23 @@ export class AlertService {
       activeConnections,
       maxConnections,
       poolUsagePercent: percentage,
+      ...details,
+    }, "warning");
+  }
+
+  async dispatchSlowEndpoint(
+    endpoint: string,
+    method: string,
+    durationMs: number,
+    thresholdMs: number = 2000,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    const message = `Slow API endpoint detected: ${method} ${endpoint} took ${durationMs.toFixed(2)}ms (threshold: ${thresholdMs}ms)`;
+    await this.dispatch("slow_endpoint_detected", message, {
+      endpoint,
+      method,
+      durationMs,
+      thresholdMs,
       ...details,
     }, "warning");
   }

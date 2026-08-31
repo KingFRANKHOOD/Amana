@@ -165,28 +165,58 @@ dispute_resolution_duration_ms_sum{dispute_type="non_delivery"} 320000
 dispute_resolution_duration_ms_count{dispute_type="non_delivery"} 8
 ```
 
-## HTTP Request Metrics
+## HTTP Request & API Response Time Metrics
 
 ### `http_request_duration_ms` (Histogram)
 
-**Description**: HTTP request processing time in milliseconds.
+**Description**: HTTP request processing time in milliseconds across all endpoints, methods, and status codes.
 
 **Type**: Histogram
 
 **Unit**: milliseconds
 
-**Buckets**: [10, 50, 100, 500, 1000, 5000, 10000] ms
+**Buckets**: `[5, 10, 25, 50, 100, 250, 500, 1000, 2000, 5000, 10000]` ms
 
-**Labels** (optional):
-- `method`: HTTP method (GET, POST, etc.)
-- `endpoint`: Request endpoint path
-- `status`: HTTP response status code
+**Labels**:
+- `method`: HTTP method (e.g., `GET`, `POST`, `PUT`, `DELETE`)
+- `route`: Normalized request endpoint path (e.g., `/api/v1/trades/:id`, `/health`)
+- `status_code`: Numeric HTTP response status code (e.g., `200`, `400`, `500`)
+- `status_group`: Status code group (e.g., `2xx`, `4xx`, `5xx`)
 
-**Example**:
-```
-http_request_duration_ms_bucket{le="100",method="GET",endpoint="/trades",status="200"} 150
-http_request_duration_ms_bucket{le="+Inf",method="GET",endpoint="/trades",status="200"} 155
-```
+**Percentile Calculation Examples (PromQL)**:
+- **p50 (Median Latency)**:
+  ```promql
+  histogram_quantile(0.50, sum by (le) (rate(http_request_duration_ms_bucket[5m])))
+  ```
+- **p95 Latency**:
+  ```promql
+  histogram_quantile(0.95, sum by (le) (rate(http_request_duration_ms_bucket[5m])))
+  ```
+- **p99 Latency (Tail Latency)**:
+  ```promql
+  histogram_quantile(0.99, sum by (le) (rate(http_request_duration_ms_bucket[5m])))
+  ```
+- **p95 Latency per Endpoint**:
+  ```promql
+  histogram_quantile(0.95, sum by (le, route, method) (rate(http_request_duration_ms_bucket[5m])))
+  ```
+
+### `http_slow_requests_total` (Counter)
+
+**Description**: Total number of slow API requests exceeding the SLA threshold (>2000ms).
+
+**Type**: Counter
+
+**Unit**: 1
+
+**Labels**:
+- `method`: HTTP method
+- `route`: Normalized route path
+- `status_code`: HTTP response status code
+
+**Alert Threshold**:
+- Dispatches alert webhook via `AlertService` when duration > 2000ms.
+- Triggers Kubernetes Prometheus alert rule `APISlowEndpointWarning` when p95 exceeds 2s over 5m.
 
 ## Error Metrics
 
