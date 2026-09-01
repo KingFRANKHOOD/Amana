@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { HealthService } from "../services/health.service";
 import { appLogger } from "../middleware/logger";
+import { getRedisHealth } from "../lib/redis";
 
 export function createHealthRouter(): Router {
     const router = Router();
@@ -9,15 +10,24 @@ export function createHealthRouter(): Router {
     router.get("/", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const healthCheck = await healthService.performHealthCheck();
+            const redisHealth = await getRedisHealth();
+
+            const response: any = {
+                ...healthCheck,
+                redis: redisHealth,
+            };
+            if (redisHealth.status === "down" && response.status !== "unhealthy") {
+                response.status = "unhealthy";
+            }
 
             appLogger.info(
-                { status: healthCheck.status, checks: healthCheck.checks },
+                { status: response.status, checks: response.checks },
                 "Health check performed"
             );
 
-            const statusCode = healthCheck.status === "unhealthy" ? 503 : 200;
+            const statusCode = response.status === "unhealthy" ? 503 : 200;
 
-            res.status(statusCode).json(healthCheck);
+            res.status(statusCode).json(response);
         } catch (error) {
             appLogger.error({ error }, "Health check failed");
             res.status(503).json({
@@ -36,8 +46,18 @@ export function createHealthRouter(): Router {
     router.get("/aggregate", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const aggregated = await healthService.performAggregatedHealthCheck();
-            const statusCode = aggregated.status === "unhealthy" ? 503 : 200;
-            res.status(statusCode).json(aggregated);
+            const redisHealth = await getRedisHealth();
+
+            const response: any = {
+                ...aggregated,
+                redis: redisHealth,
+            };
+            if (redisHealth.status === "down" && response.status !== "unhealthy") {
+                response.status = "unhealthy";
+                response.systemHealthScore = Math.min(response.systemHealthScore, 50);
+            }
+            const statusCode = response.status === "unhealthy" ? 503 : 200;
+            res.status(statusCode).json(response);
         } catch (error) {
             appLogger.error({ error }, "Aggregated health check failed");
             res.status(503).json({
@@ -52,13 +72,21 @@ export function createHealthRouter(): Router {
     router.get("/summary", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const aggregated = await healthService.performAggregatedHealthCheck();
-            const statusCode = aggregated.status === "unhealthy" ? 503 : 200;
-            res.status(statusCode).json({
+            const redisHealth = await getRedisHealth();
+
+            const response: any = {
                 status: aggregated.status,
                 systemHealthScore: aggregated.systemHealthScore,
                 summary: aggregated.summary,
                 timestamp: aggregated.timestamp,
-            });
+                redis: redisHealth,
+            };
+            if (redisHealth.status === "down" && response.status !== "unhealthy") {
+                response.status = "unhealthy";
+                response.systemHealthScore = Math.min(response.systemHealthScore, 50);
+            }
+            const statusCode = response.status === "unhealthy" ? 503 : 200;
+            res.status(statusCode).json(response);
         } catch (error) {
             appLogger.error({ error }, "Summary health check failed");
             res.status(503).json({
@@ -80,13 +108,16 @@ export function createHealthRouter(): Router {
     router.get("/ready", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const healthCheck = await healthService.performHealthCheck();
-            const isReady = healthCheck.status !== "unhealthy";
+            const redisHealth = await getRedisHealth();
+
+            const isReady = healthCheck.status !== "unhealthy" && redisHealth.status !== "down";
 
             const statusCode = isReady ? 200 : 503;
             res.status(statusCode).json({
                 status: isReady ? "ready" : "not_ready",
                 timestamp: new Date().toISOString(),
                 checks: healthCheck.checks,
+                redis: redisHealth,
             });
         } catch (error) {
             appLogger.error({ error }, "Readiness check failed");
@@ -101,12 +132,15 @@ export function createHealthRouter(): Router {
     router.get("/startup", async (_req: Request, res: Response, _next: NextFunction) => {
         try {
             const startupCheck = await healthService.performStartupCheck();
+            const redisHealth = await getRedisHealth();
 
-            const statusCode = startupCheck.status === "ready" ? 200 : 503;
+            const status = startupCheck.status === "ready" && redisHealth.status !== "down" ? "ready" : "not_ready";
+            const statusCode = status === "ready" ? 200 : 503;
             res.status(statusCode).json({
-                status: startupCheck.status,
+                status,
                 timestamp: startupCheck.timestamp,
                 checks: startupCheck.checks,
+                redis: redisHealth,
             });
         } catch (error) {
             appLogger.error({ error }, "Startup check failed");
