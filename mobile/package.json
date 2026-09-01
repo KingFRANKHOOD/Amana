@@ -27,7 +27,7 @@
     "expo-background-fetch": "~57.0.14",
     "expo-device": "^6.0.2",
     "expo-local-authentication": "~15.0.2",
-    "expo-network": "~7.0.5",
+    "expo-network": "~57.0.1",
     "expo-notifications": "^0.28.0",
     "expo-secure-store": "^13.0.2",
     "expo-sqlite": "~57.0.2",
