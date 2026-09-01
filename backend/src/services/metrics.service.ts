@@ -482,6 +482,11 @@ export class MetricsService {
     this.redisHealthGauge.record(healthy ? 1 : 0);
   }
 
+  getStellarTransactionStats(): import("../lib/metrics").StellarSubmissionStats {
+    const { getTransactionSubmissionStats } = require("../lib/metrics");
+    return getTransactionSubmissionStats();
+  }
+
   getMeterProvider(): MeterProvider {
     return this.meterProvider;
   }

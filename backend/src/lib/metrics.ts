@@ -17,6 +17,15 @@ export type StellarRpcMethod =
 
 export type StellarRpcOutcome = "success" | "error";
 
+export interface StellarSubmissionStats {
+  totalSubmissions: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  failureRate: number;
+  outcomeCounts: Record<StellarTransactionOutcome, number>;
+}
+
 export interface StellarMetricsRecorder {
   recordTransactionSubmission(
     operation: string,
@@ -29,6 +38,7 @@ export interface StellarMetricsRecorder {
     durationMs: number,
   ): void;
   recordDuplicateEventAttempt?(source: string, eventType: string): void;
+  recordRpcNodeHealth?(url: string, isHealthy: boolean, latencyMs: number): void;
 }
 
 export interface PoolMetrics {
@@ -46,8 +56,61 @@ export interface RedisMemoryMetrics {
 
 export const REDIS_MEMORY_ALERT_THRESHOLD = 0.8;
 
+class RollingTransactionTracker {
+  private window: Array<{ outcome: StellarTransactionOutcome; timestamp: number }> = [];
+  private readonly windowSize: number;
+
+  constructor(windowSize: number = 1000) {
+    this.windowSize = windowSize;
+  }
+
+  record(outcome: StellarTransactionOutcome): void {
+    if (this.window.length >= this.windowSize) {
+      this.window.shift();
+    }
+    this.window.push({ outcome, timestamp: Date.now() });
+  }
+
+  getStats(): StellarSubmissionStats {
+    const outcomeCounts: Record<StellarTransactionOutcome, number> = {
+      success: 0,
+      rpc_error: 0,
+      contract_panic: 0,
+      xdr_invalid: 0,
+      network_error: 0,
+    };
+
+    for (const item of this.window) {
+      outcomeCounts[item.outcome] = (outcomeCounts[item.outcome] || 0) + 1;
+    }
+
+    const totalSubmissions = this.window.length;
+    const successCount = outcomeCounts.success;
+    const failureCount = totalSubmissions - successCount;
+    const successRate = totalSubmissions > 0 ? successCount / totalSubmissions : 1.0;
+    const failureRate = totalSubmissions > 0 ? failureCount / totalSubmissions : 0.0;
+
+    return {
+      totalSubmissions,
+      successCount,
+      failureCount,
+      successRate,
+      failureRate,
+      outcomeCounts,
+    };
+  }
+
+  clear(): void {
+    this.window = [];
+  }
+}
+
+const rollingTxTracker = new RollingTransactionTracker(1000);
+
 let submissionCounter: Counter | undefined;
 let submissionDuration: Histogram | undefined;
+let submissionSuccessRateGauge: Gauge | undefined;
+let rpcNodeHealthGauge: Gauge | undefined;
 let rpcDuration: Histogram | undefined;
 let pgPoolActiveConnections: Gauge | undefined;
 let pgPoolIdleConnections: Gauge | undefined;
@@ -209,6 +272,32 @@ function getEvidenceRecordsChecked(): Counter {
   return evidenceRecordsChecked;
 }
 
+function getSubmissionSuccessRateGauge(): Gauge {
+  if (!submissionSuccessRateGauge) {
+    submissionSuccessRateGauge = getMeter().createGauge(
+      "stellar_transaction_success_rate",
+      {
+        description: "Rolling success rate of Stellar transaction submissions (0.0 to 1.0)",
+        unit: "1",
+      },
+    );
+  }
+  return submissionSuccessRateGauge;
+}
+
+function getRpcNodeHealthGauge(): Gauge {
+  if (!rpcNodeHealthGauge) {
+    rpcNodeHealthGauge = getMeter().createGauge(
+      "stellar_rpc_health_status",
+      {
+        description: "Stellar RPC node health status (1 = healthy, 0 = unhealthy)",
+        unit: "1",
+      },
+    );
+  }
+  return rpcNodeHealthGauge;
+}
+
 function getRedisMemoryUsedBytes(): Gauge {
   if (!redisMemoryUsedBytes) {
     redisMemoryUsedBytes = getMeter().createGauge("redis_memory_used_bytes", {
@@ -306,6 +395,9 @@ export function recordTransactionSubmission(
   outcome: StellarTransactionOutcome,
   durationMs: number,
 ): void {
+  rollingTxTracker.record(outcome);
+  const stats = rollingTxTracker.getStats();
+
   if (customRecorder) {
     customRecorder.recordTransactionSubmission(operation, outcome, durationMs);
     return;
@@ -314,6 +406,20 @@ export function recordTransactionSubmission(
   const labels = { operation, outcome };
   getSubmissionCounter().add(1, labels);
   getSubmissionDuration().record(durationMs, labels);
+  getSubmissionSuccessRateGauge().record(stats.successRate, { operation });
+}
+
+export function recordRpcNodeHealth(url: string, isHealthy: boolean, latencyMs: number): void {
+  if (customRecorder?.recordRpcNodeHealth) {
+    customRecorder.recordRpcNodeHealth(url, isHealthy, latencyMs);
+    return;
+  }
+
+  getRpcNodeHealthGauge().record(isHealthy ? 1 : 0, { rpc_url: url });
+}
+
+export function getTransactionSubmissionStats(): StellarSubmissionStats {
+  return rollingTxTracker.getStats();
 }
 
 export function recordRpcCall(
@@ -417,6 +523,8 @@ export function __resetMetricsForTests(): void {
   customRecorder = null;
   submissionCounter = undefined;
   submissionDuration = undefined;
+  submissionSuccessRateGauge = undefined;
+  rpcNodeHealthGauge = undefined;
   rpcDuration = undefined;
   pgPoolActiveConnections = undefined;
   pgPoolIdleConnections = undefined;
@@ -433,4 +541,5 @@ export function __resetMetricsForTests(): void {
   redisEvictedKeysTotal = undefined;
   redisMaxmemoryPolicy = undefined;
   redisUp = undefined;
+  rollingTxTracker.clear();
 }
