@@ -13,7 +13,8 @@ export type AlertType =
   | "stellar_connection_failure"
   | "stellar_rpc_unavailable"
   | "stellar_rpc_failover"
-  | "stellar_tx_rate_drop";
+  | "stellar_tx_rate_drop"
+  | "webhook_delivery_failure";
 
 export type AlertSeverity = "critical" | "warning";
 

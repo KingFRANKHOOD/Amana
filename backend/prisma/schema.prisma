@@ -461,6 +461,26 @@ model WebhookSubscription {
   @@index([isActive])
 }
 
+/// WebhookDeadLetter stores permanently failed webhook deliveries after all
+/// retry attempts have been exhausted. These records are retained for
+/// investigation and can be replayed via the admin API.
+model WebhookDeadLetter {
+  id              Int      @id @default(autoincrement())
+  webhookUrl      String   @db.VarChar(2048)
+  subscriptionId  Int?
+  secretHash      String?  @db.VarChar(64)
+  event           String   @db.VarChar(100)
+  tradeId         String   @db.VarChar(255)
+  status          String?  @db.VarChar(50)
+  payload         Json
+  lastError       String?  @db.Text
+  attempts        Int      @default(0)
+  deadLetteredAt  DateTime @default(now())
+
+  @@index([webhookUrl, deadLetteredAt])
+  @@index([tradeId])
+}
+
 /// InAppNotification represents an in-app notification for a user
 /// - type: Category of notification (e.g. "trade_update", "dispute", "system")
 /// - isRead: Whether the notification has been read

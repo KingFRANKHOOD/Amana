@@ -102,4 +102,19 @@ describe("AlertService", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("dispatches webhook delivery failure alert", async () => {
+    const service = new AlertService("https://alerts.example.com/hook", "secret", 1000);
+
+    await service.dispatch("webhook_delivery_failure", "Webhook failing", {
+      webhookUrl: "https://example.com/hook",
+      consecutiveFailures: 5,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = fetchMock.mock.calls[0][1].body as string;
+    const payload = JSON.parse(body);
+    expect(payload.type).toBe("webhook_delivery_failure");
+    expect(payload.details.webhookUrl).toBe("https://example.com/hook");
+  });
 });

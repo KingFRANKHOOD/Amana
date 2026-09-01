@@ -129,6 +129,7 @@ export const envSchema = z.object({
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
   WEBHOOK_RETRY_BASE_MS: z.coerce.number().int().positive().default(1000),
   WEBHOOK_RETRY_MAX_MS: z.coerce.number().int().positive().default(30000),
+  WEBHOOK_CONSECUTIVE_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(5),
   ADMIN_STATS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
   // API versioning
   LEGACY_API_SUNSET_DATE: z.string().default('Wed, 28 Oct 2026 00:00:00 GMT'),
