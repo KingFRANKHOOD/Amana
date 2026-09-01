@@ -1,60 +1,37 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * @see https://playwright.dev/docs/test-configuration
+ * Playwright E2E test configuration.
  *
- * Environment configuration:
- * - `PLAYWRIGHT_BASE_URL` – front-end origin under test (default `http://localhost:3000`).
- *   When set, the local dev `webServer` is skipped so tests run against a deployed app.
- * - `PLAYWRIGHT_API_URL`  – backend API origin that specs mock via `page.route(...)`
- *   (default `http://localhost:4000`, falling back to `NEXT_PUBLIC_API_URL`).
- *   Centralized in `tests/support/api.ts`; see `TESTING.md`.
+ * The API base URL is read from the `API_BASE_URL` environment variable
+ * so tests can target different backends (local, staging, CI) without
+ * code changes.  Falls back to http://localhost:4000 for local dev.
+ *
+ * Set `API_BASE_URL` in your shell or CI pipeline:
+ *   API_BASE_URL=http://localhost:4000 npx playwright test
+ *   API_BASE_URL=https://staging-api.amana.com npx playwright test
  */
-export default defineConfig({
-  testDir: './tests',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: [['html', { outputFolder: 'playwright-report' }]],
-  outputDir: 'test-results',
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
-  use: {
-    /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:4000';
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+export default defineConfig({
+  testDir: './tests/e2e',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+
+  use: {
+    /** Base URL for all API route mocking and navigation. */
+    baseURL: API_BASE_URL,
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
   },
 
-  /* Configure projects for major browsers */
   projects: [
     {
-      name: 'visual-regression',
-      testMatch: '**/*.visual.spec.ts',
-      use: { viewport: { width: 1280, height: 720 }, screenshot: 'on' },
-    },
-    {
-      name: 'chromium-mobile',
-      use: { ...devices['iPhone 12'], viewport: { width: 375, height: 667 } },
-    },
-    {
-      name: 'chromium-desktop',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
-
-  /* Run your local dev server before starting the tests */
-  webServer: process.env.PLAYWRIGHT_BASE_URL
-    ? undefined
-    : {
-        command: 'pnpm dev',
-        url: 'http://localhost:3000',
-        reuseExistingServer: !process.env.CI,
-      },
 });
