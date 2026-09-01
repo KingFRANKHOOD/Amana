@@ -150,8 +150,7 @@ Request
 
 ```
 Trade
-├── tradeId (PK)
-├── buyerAddress (FK: User)
+├── tradeId (PK)├── buyerAddress (FK: User)
 ├── sellerAddress (FK: User)
 ├── amountUsdc (Decimal)
 ├── status (CREATED|FUNDED|DELIVERED|COMPLETED|DISPUTED|CANCELLED)
@@ -188,6 +187,34 @@ TradeEvidence
 ├── createdAt
 └── ipfsExpiresAt
 ```
+
+### Route-building Layer (`routes-d/`)
+
+`routes-d/` is a standalone Stellar route-building service (`Node.js +
+Express + @stellar/stellar-sdk`). It is deliberately separate from the main
+backend because its only job is to construct **unsigned** Stellar transaction
+envelopes (XDR) against Horizon and to proxy read-only Horizon data. It has no
+database and no secrets.
+
+Clients (mobile and web) call `routes-d` to get a ready-to-sign envelope for a
+path payment, trustline change, etc.; the client signs it locally in their
+wallet and submits it to the Stellar network. Zod schemas validate every
+request body.
+
+Routers (`routes/`):
+
+| Router | Responsibility |
+|---|---|
+| `stellar.ledger.ts` | Latest ledger info (`GET /ledger/latest`) |
+| `stellar.payments.ts` | Payment history for an account (`GET /:address/payments`) |
+| `stellar.trustline.ts` | Build trustline add/remove envelopes (`POST/DELETE /trustline`) |
+| `stellar.payment.strictSend.ts` | Path payment (send fixed amount) envelopes (`POST /strict-send`) |
+| `stellar.payment.strictReceive.ts` | Path payment (receive fixed amount) envelopes (`POST /strict-receive`) |
+
+Configuration is via `STELLAR_NETWORK` (`testnet` default, or `mainnet`), which
+selects the Horizon endpoint and network passphrase. See
+[`routes-d/README.md`](../routes-d/README.md) and
+[ADR-009](./adr/ADR-009-route-building-service-separation.md) for details.
 
 ## Data Flow Diagrams
 

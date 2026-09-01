@@ -39,10 +39,10 @@ module.exports = {
   // Raise these as more tests are added (tracked in issue #1049).
   coverageThreshold: {
     global: {
-      branches: 1,
-      functions: 8,
-      lines: 8,
-      statements: 8,
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
     },
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
