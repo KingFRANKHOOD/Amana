@@ -29,7 +29,7 @@
     "expo-device": "^6.0.2",
     "expo-local-authentication": "~15.0.2",
     "expo-network": "~57.0.1",
-    "expo-notifications": "^0.28.0",
+    "expo-notifications": "^57.0.16",
     "expo-secure-store": "^13.0.2",
     "expo-sqlite": "~57.0.2",
     "expo-task-manager": "~12.0.6",
