@@ -47,8 +47,8 @@ importers:
         version: 5.0.15(@types/react@19.2.18)(react@19.2.8)
     devDependencies:
       '@pact-foundation/pact':
-        specifier: ^16.0.0
-        version: 16.5.0
+        specifier: ^17.1.3
+        version: 17.1.3
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.62.1
@@ -789,54 +789,54 @@ packages:
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
 
-  '@pact-foundation/pact-core-darwin-arm64@19.2.0':
-    resolution: {integrity: sha512-cQvvWfJKS7iMzkunzh/kdgmyVLhAxyr/BQ8fOnMco2M/1+GHR+sOXvhrR1tes+NAYd1xjE3fbg1K2Flno8aDBw==}
+  '@pact-foundation/pact-core-darwin-arm64@20.1.0':
+    resolution: {integrity: sha512-GsQ1vgrcmfGFVzmudvvXthPrd53tarSxrSOBl9TvUJsnhCF/qENYe5hTYWXiAtCpugB3g7V8/J+iOg5qrtPhOw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@pact-foundation/pact-core-darwin-x64@19.2.0':
-    resolution: {integrity: sha512-UltPXDZ+h1r3JqgIpEBP16bQzB90otd1QbcoeM3XakF9khCrYhW4y9llSuaosyqPFYwCk+mLaZTl/4iitJJaow==}
+  '@pact-foundation/pact-core-darwin-x64@20.1.0':
+    resolution: {integrity: sha512-ZQdwQJtSwNPCeMxIfl8XJPeizohPh7jquS6JBNw20EmSKg5eCVWIw3hdKuxZuIYGt/zze05ky8Z45nzn3qvHiQ==}
     cpu: [x64]
     os: [darwin]
 
-  '@pact-foundation/pact-core-linux-arm64-glibc@19.2.0':
-    resolution: {integrity: sha512-amiv4COurH1FRa7DSH3ks4UPQCb5J3x4GKrArf8UsTOkNhVGFUWVl83LOELj9Gtk67GwJ96iF7/fQps8I/iFIA==}
+  '@pact-foundation/pact-core-linux-arm64-glibc@20.1.0':
+    resolution: {integrity: sha512-Jy+zd2tEL5jAbOf2PcW/xvf1onJBea7IzuFZMIKs+Jh0dl0c+9M7eg8L13plzGU4T3xhOzMn5X8IXyajYt2iIQ==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@pact-foundation/pact-core-linux-arm64-musl@19.2.0':
-    resolution: {integrity: sha512-tGWF7dP72Ho1A1PApyUqUMRI/e+gfbPxfaXxwWMXNh8JLK2jQQnP4bWymGwHQ4vxL7wn8ayx8I5y6x1vk/2+rA==}
+  '@pact-foundation/pact-core-linux-arm64-musl@20.1.0':
+    resolution: {integrity: sha512-8yY9ckAj0Fx/wojtsdonf7GEdTEfdvD+yzllZlmwCbfSGqA7dsbThVtSAjt+myylce82YSqxzmgqPJJn5GSm3w==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@pact-foundation/pact-core-linux-x64-glibc@19.2.0':
-    resolution: {integrity: sha512-/ZNuWKuFJSBRZH09t7FXqKLy5koCaMIZ4RdbockLYlNo8uWF2ALfRCllj+SbXPLK+T+lVnBrs5s94X2cu4Rc7A==}
+  '@pact-foundation/pact-core-linux-x64-glibc@20.1.0':
+    resolution: {integrity: sha512-S4avgkfvM9fe2dtnAVUw8FRRs4Bjj4YMcrDcoGondf58mQtIAnsNuKVrmBjfz29qGTxb4amopTTlQNW6w8VIew==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@pact-foundation/pact-core-linux-x64-musl@19.2.0':
-    resolution: {integrity: sha512-n0m39CzVkq8J2alir1redm0rAdUVQzkKJqYBQdRmhEIa+QeGjUrJq+gmakUysoJxfSY4UthnJ9jS8SoyiZ+k6A==}
+  '@pact-foundation/pact-core-linux-x64-musl@20.1.0':
+    resolution: {integrity: sha512-o7qzQ4C4mBYpBCDmtGssGurCTFI/9vuqP1T8VavyeTbyeZThI9j2iWTpeNOmKlrI5+jnaWHYNeuwpqh6FFRurQ==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@pact-foundation/pact-core-windows-x64@19.2.0':
-    resolution: {integrity: sha512-WZSDBL1Sn8y5+YJTK+HDiS/Fn9th1M4QJW2dflQ8UFwoaIh6yb0TrJjtuWbDGIwNeD4Sv8CJ5jJOf1nyNjFLfg==}
+  '@pact-foundation/pact-core-windows-x64@20.1.0':
+    resolution: {integrity: sha512-EutN/FQy/Fa6y5k0+Kfqy9o6uLzcz9J4y6aq6x+AsBpsPIakBYYugCZzXt6WZ+W9jzgY0cNtwOGjkWZI/gUucA==}
     cpu: [x64]
     os: [win32]
 
-  '@pact-foundation/pact-core@19.2.0':
-    resolution: {integrity: sha512-7EB2e850hmBzGnwOYTRj4TCFCJQa9zaOy53bK+ybzEDx801olf0gVlYqMYHt1EsHUZzmtS5uDybpr9UMcZQxgg==}
-    engines: {node: '>=20'}
+  '@pact-foundation/pact-core@20.1.0':
+    resolution: {integrity: sha512-VPMV5X/gq5BTcQH7lbmmj5v4O1p+rG5iHemghrjNz+RFMHjISf657uIL5pZvhkOilHfGH2QuAvMgwRP16g2isw==}
+    engines: {node: '>=22'}
     cpu: [x64, ia32, arm64]
     os: [darwin, linux, win32]
 
-  '@pact-foundation/pact@16.5.0':
-    resolution: {integrity: sha512-9YgmU6fDJGQVYoAm2ez52dyKfQwFzW47GlrT8IAKuzjL6qZVZ9+ael6myeMbQqz7J5lzEGLoUi2PMkBFFgQxRw==}
-    engines: {node: '>=20'}
+  '@pact-foundation/pact@17.1.3':
+    resolution: {integrity: sha512-UUY/RkgWgQj1SZ+kT0ZjB3e47Gge5rnSfRhhk6SBnwPfQ3KQMIjWy3TUfRlPQgtEXTbDM5kojj71vsEcQzesnQ==}
+    engines: {node: '>=22'}
 
   '@parcel/watcher-android-arm64@2.6.0':
     resolution: {integrity: sha512-trgpLSCKRC/huFjXX/Smh+0sWe4+YtKfktIToiMl59ghz7z+qkH6kMvNnUbLyRs9N11t8l4svSCs1+5B3rOAhA==}
@@ -1100,6 +1100,9 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@scarf/scarf@1.4.0':
+    resolution: {integrity: sha512-xxeapPiUXdZAE3che6f3xogoJPeZgig6omHEy1rIY5WVsB3H2BHNnZH+gHG6x91SCWyQCzWGsuL2Hh3ClO5/qQ==}
 
   '@sinclair/typebox@0.34.52':
     resolution: {integrity: sha512-XiMQh7qqVlxZzcVD+kkGMNGMzcTrDMLWI7S4x7z1MkCkbDPrekpZXEUK0eZqZFMuHQg2a2DZOcDIh9o5v3Gonw==}
@@ -1540,10 +1543,6 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
-
-  agent-base@9.0.0:
-    resolution: {integrity: sha512-TQf59BsZnytt8GdJKLPfUZ54g/iaUL2OWDSFCCvMOhsHduDQxO8xC4PNeyIkVcA5KwL2phPSv0douC0fgWzmnA==}
-    engines: {node: '>= 20'}
 
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
@@ -2217,8 +2216,8 @@ packages:
     resolution: {integrity: sha512-7ms6T7SybUev/PQITciI0yLM2pOSFy5zpG8Ty7tQofcVaQUvrMXp6CBwqF6fThLCLOrfBtuHAtwq6Yu4XPCllg==}
     engines: {node: '>=12.17.0'}
 
-  fast-copy@4.1.0:
-    resolution: {integrity: sha512-f5oNUvGAmBPLP85im9czQ7fVWh3RfcIIIzyXrcXKmCiWoDn+CRmfsoQN3jmE5J+UEquj4Ugc1woTaxD0oa37Gg==}
+  fast-copy@4.1.1:
+    resolution: {integrity: sha512-A4QTJmuiztpGtr6AMeJts9R4hbj2ZBUwtOaKrG6rw2y7t6+IaJKjz5M3XDs8BUznxDH43FVc6A0y/gWlMl4UtA==}
 
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
@@ -2472,10 +2471,6 @@ packages:
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
-
-  https-proxy-agent@9.1.0:
-    resolution: {integrity: sha512-ag87y7cJJ9/3+GxFr8Oy4O5faDsGRGnBGsJj/YjOSsSx/5eadKLYTMPlzuR6obgoCDDm0abAAZitXXQkMOPSpA==}
-    engines: {node: '>= 20'}
 
   human-signals@2.1.0:
     resolution: {integrity: sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==}
@@ -3358,15 +3353,6 @@ packages:
   proxy-addr@2.0.7:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
-
-  proxy-agent-negotiate@1.1.0:
-    resolution: {integrity: sha512-N8IBcM3UgCVzz2L2Lqv8DVntDnnC8/hiV4nEDUPkqq72TPUgYWjQc+bdZlBPZK9LzPAvOY//gAt0S0DApoOXWQ==}
-    engines: {node: '>= 20'}
-    peerDependencies:
-      kerberos: ^2.0.0
-    peerDependenciesMeta:
-      kerberos:
-        optional: true
 
   proxy-from-env@2.1.0:
     resolution: {integrity: sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==}
@@ -4812,28 +4798,28 @@ snapshots:
 
   '@nolyfill/is-core-module@1.0.39': {}
 
-  '@pact-foundation/pact-core-darwin-arm64@19.2.0':
+  '@pact-foundation/pact-core-darwin-arm64@20.1.0':
     optional: true
 
-  '@pact-foundation/pact-core-darwin-x64@19.2.0':
+  '@pact-foundation/pact-core-darwin-x64@20.1.0':
     optional: true
 
-  '@pact-foundation/pact-core-linux-arm64-glibc@19.2.0':
+  '@pact-foundation/pact-core-linux-arm64-glibc@20.1.0':
     optional: true
 
-  '@pact-foundation/pact-core-linux-arm64-musl@19.2.0':
+  '@pact-foundation/pact-core-linux-arm64-musl@20.1.0':
     optional: true
 
-  '@pact-foundation/pact-core-linux-x64-glibc@19.2.0':
+  '@pact-foundation/pact-core-linux-x64-glibc@20.1.0':
     optional: true
 
-  '@pact-foundation/pact-core-linux-x64-musl@19.2.0':
+  '@pact-foundation/pact-core-linux-x64-musl@20.1.0':
     optional: true
 
-  '@pact-foundation/pact-core-windows-x64@19.2.0':
+  '@pact-foundation/pact-core-windows-x64@20.1.0':
     optional: true
 
-  '@pact-foundation/pact-core@19.2.0':
+  '@pact-foundation/pact-core@20.1.0':
     dependencies:
       check-types: 11.2.3
       detect-libc: 2.1.2
@@ -4842,17 +4828,18 @@ snapshots:
       pino-pretty: 13.1.3
       underscore: 1.13.8
     optionalDependencies:
-      '@pact-foundation/pact-core-darwin-arm64': 19.2.0
-      '@pact-foundation/pact-core-darwin-x64': 19.2.0
-      '@pact-foundation/pact-core-linux-arm64-glibc': 19.2.0
-      '@pact-foundation/pact-core-linux-arm64-musl': 19.2.0
-      '@pact-foundation/pact-core-linux-x64-glibc': 19.2.0
-      '@pact-foundation/pact-core-linux-x64-musl': 19.2.0
-      '@pact-foundation/pact-core-windows-x64': 19.2.0
+      '@pact-foundation/pact-core-darwin-arm64': 20.1.0
+      '@pact-foundation/pact-core-darwin-x64': 20.1.0
+      '@pact-foundation/pact-core-linux-arm64-glibc': 20.1.0
+      '@pact-foundation/pact-core-linux-arm64-musl': 20.1.0
+      '@pact-foundation/pact-core-linux-x64-glibc': 20.1.0
+      '@pact-foundation/pact-core-linux-x64-musl': 20.1.0
+      '@pact-foundation/pact-core-windows-x64': 20.1.0
 
-  '@pact-foundation/pact@16.5.0':
+  '@pact-foundation/pact@17.1.3':
     dependencies:
-      '@pact-foundation/pact-core': 19.2.0
+      '@pact-foundation/pact-core': 20.1.0
+      '@scarf/scarf': 1.4.0
       axios: 1.20.0
       body-parser: 2.3.0
       chalk: 4.1.2
@@ -4860,7 +4847,7 @@ snapshots:
       graphql: 16.14.2
       graphql-tag: 2.12.7(graphql@16.14.2)
       http-proxy: 1.18.1
-      https-proxy-agent: 9.1.0
+      https-proxy-agent: 7.0.6
       js-base64: 3.9.3
       lodash: 4.18.1
       ramda: 0.32.0
@@ -4869,7 +4856,6 @@ snapshots:
       stack-utils: 2.0.6
     transitivePeerDependencies:
       - debug
-      - kerberos
       - supports-color
 
   '@parcel/watcher-android-arm64@2.6.0':
@@ -5077,6 +5063,8 @@ snapshots:
       '@types/react': 19.2.18
 
   '@rtsao/scc@1.1.0': {}
+
+  '@scarf/scarf@1.4.0': {}
 
   '@sinclair/typebox@0.34.52': {}
 
@@ -5502,8 +5490,6 @@ snapshots:
       - supports-color
 
   agent-base@7.1.4: {}
-
-  agent-base@9.0.0: {}
 
   ajv@6.15.0:
     dependencies:
@@ -6356,7 +6342,7 @@ snapshots:
     dependencies:
       pure-rand: 8.4.2
 
-  fast-copy@4.1.0: {}
+  fast-copy@4.1.1: {}
 
   fast-deep-equal@3.1.3: {}
 
@@ -6622,15 +6608,6 @@ snapshots:
       agent-base: 7.1.4
       debug: 4.4.3
     transitivePeerDependencies:
-      - supports-color
-
-  https-proxy-agent@9.1.0:
-    dependencies:
-      agent-base: 9.0.0
-      debug: 4.4.3
-      proxy-agent-negotiate: 1.1.0
-    transitivePeerDependencies:
-      - kerberos
       - supports-color
 
   human-signals@2.1.0: {}
@@ -7612,7 +7589,7 @@ snapshots:
     dependencies:
       colorette: 2.0.20
       dateformat: 4.6.3
-      fast-copy: 4.1.0
+      fast-copy: 4.1.1
       fast-safe-stringify: 2.1.1
       help-me: 5.0.0
       joycon: 3.1.1
@@ -7696,8 +7673,6 @@ snapshots:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
-
-  proxy-agent-negotiate@1.1.0: {}
 
   proxy-from-env@2.1.0: {}
 
