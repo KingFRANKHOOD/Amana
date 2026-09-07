@@ -35,9 +35,11 @@ jobs:
       mobile: ${{ steps.filter.outputs.mobile }}
       contracts: ${{ steps.filter.outputs.contracts }}
       routes_d: ${{ steps.filter.outputs.routes_d }}
+      stack_matrix: ${{ steps.matrices.outputs.stack }}
+      trivy_matrix: ${{ steps.matrices.outputs.trivy }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Detect changed paths
         id: filter
@@ -63,21 +65,39 @@ jobs:
       - name: Check for unpinned GitHub Actions
         run: bash ./scripts/check-unpinned-actions.sh
 
+      # Job-level `if:` conditions cannot reference the `matrix` context (it
+      # is only resolved once a matrix job actually starts), so the set of
+      # stacks to run is computed here instead and consumed as a plain
+      # `needs.changes.outputs.*` value by the matrix jobs below.
+      - name: Build CI matrices
+        id: matrices
+        run: |
+          stack_json=$(jq -nc \
+            --arg frontend "${{ steps.filter.outputs.frontend }}" \
+            --arg backend "${{ steps.filter.outputs.backend }}" \
+            --arg mobile "${{ steps.filter.outputs.mobile }}" \
+            --arg contracts "${{ steps.filter.outputs.contracts }}" \
+            '[{k:"frontend",v:$frontend},{k:"backend",v:$backend},{k:"mobile",v:$mobile},{k:"contracts",v:$contracts}] | map(select(.v=="true") | .k)')
+          trivy_json=$(jq -nc \
+            --arg frontend "${{ steps.filter.outputs.frontend }}" \
+            --arg backend "${{ steps.filter.outputs.backend }}" \
+            --arg routes_d "${{ steps.filter.outputs.routes_d }}" \
+            --arg contracts "${{ steps.filter.outputs.contracts }}" \
+            '[{k:"frontend",v:$frontend},{k:"backend",v:$backend},{k:"routes-d",v:$routes_d},{k:"contracts",v:$contracts}] | map(select(.v=="true") | .k)')
+          echo "stack=$stack_json" >> "$GITHUB_OUTPUT"
+          echo "trivy=$trivy_json" >> "$GITHUB_OUTPUT"
+
   stack:
     name: ${{ matrix.stack }} CI
     runs-on: ubuntu-latest
     needs: changes
-    if: >
-      (matrix.stack == 'frontend' && needs.changes.outputs.frontend == 'true') ||
-      (matrix.stack == 'backend' && needs.changes.outputs.backend == 'true') ||
-      (matrix.stack == 'mobile' && needs.changes.outputs.mobile == 'true') ||
-      (matrix.stack == 'contracts' && needs.changes.outputs.contracts == 'true')
+    if: needs.changes.outputs.stack_matrix != '[]'
     strategy:
       matrix:
-        stack: [frontend, backend, mobile, contracts]
+        stack: ${{ fromJson(needs.changes.outputs.stack_matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
         if: matrix.stack != 'contracts'
@@ -106,7 +126,7 @@ jobs:
       - name: Cache cargo-audit binary
         if: matrix.stack == 'contracts'
         id: cache-cargo-audit
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-audit
           key: cargo-audit-${{ runner.os }}-v0.21
@@ -276,7 +296,7 @@ jobs:
     if: needs.changes.outputs.routes_d == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -333,7 +353,7 @@ jobs:
       needs.changes.outputs.backend == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -452,18 +472,14 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    if: >
-      (matrix.stack == 'frontend' && needs.changes.outputs.frontend == 'true') ||
-      (matrix.stack == 'backend' && needs.changes.outputs.backend == 'true') ||
-      (matrix.stack == 'routes-d' && needs.changes.outputs.routes_d == 'true') ||
-      (matrix.stack == 'contracts' && needs.changes.outputs.contracts == 'true')
+    if: needs.changes.outputs.trivy_matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
-        stack: [frontend, backend, routes-d, contracts]
+        stack: ${{ fromJson(needs.changes.outputs.trivy_matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -494,7 +510,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Trivy image scan (postgres:17-alpine)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -540,7 +556,7 @@ jobs:
       needs.changes.outputs.mobile == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
