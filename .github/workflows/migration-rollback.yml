@@ -50,18 +50,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: backend/pnpm-lock.yaml
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run migration rollback test suite
         run: |
@@ -79,18 +82,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: backend/pnpm-lock.yaml
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run destructive DDL scanner
         run: |
@@ -188,22 +194,25 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: backend/pnpm-lock.yaml
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run migration integrity tests
         working-directory: backend
-        run: npx jest --config jest.config.js --testPathPattern="migration-rollback" --no-coverage --forceExit
+        run: pnpm exec jest --config jest.config.js --testPathPatterns="migration-rollback" --no-coverage --forceExit
         env:
           DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/unused"
 
@@ -233,22 +242,25 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: backend/pnpm-lock.yaml
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Apply migrations first (to have a baseline)
         working-directory: backend
-        run: npx prisma migrate deploy
+        run: pnpm exec prisma migrate deploy
         env:
           DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/amana_dryrun_test"
 
@@ -300,7 +312,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate rollback SQL files
         run: |
