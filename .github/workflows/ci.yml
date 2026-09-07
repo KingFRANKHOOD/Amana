@@ -140,9 +140,9 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: ${{ matrix.stack }}
 
-      - name: Security audit (npm)
+      - name: Security audit (pnpm)
         if: matrix.stack == 'frontend' || matrix.stack == 'backend'
-        run: npm audit --audit-level=high
+        run: pnpm audit --audit-level=high
         working-directory: ${{ matrix.stack }}
 
       - name: Build
