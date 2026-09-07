@@ -212,7 +212,7 @@ jobs:
 
       - name: Run migration integrity tests
         working-directory: backend
-        run: pnpm exec jest --config jest.config.js --testPathPattern="migration-rollback" --no-coverage --forceExit
+        run: pnpm exec jest --config jest.config.js --testPathPatterns="migration-rollback" --no-coverage --forceExit
         env:
           DATABASE_URL: "postgresql://postgres:test_password@localhost:5432/unused"
 
