@@ -83,8 +83,8 @@ importers:
         specifier: ^8.0.8
         version: 8.0.11
       '@pact-foundation/pact':
-        specifier: ^16.5.0
-        version: 16.5.0
+        specifier: ^17.1.4
+        version: 17.1.4
       '@testing-library/react-native':
         specifier: ^12.4.3
         version: 12.9.0(jest@29.7.0(@types/node@26.4.1))(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))(react-test-renderer@18.3.1(react@18.3.1))(react@18.3.1)
@@ -1190,50 +1190,54 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@pact-foundation/pact-core-darwin-arm64@19.2.0':
-    resolution: {integrity: sha512-cQvvWfJKS7iMzkunzh/kdgmyVLhAxyr/BQ8fOnMco2M/1+GHR+sOXvhrR1tes+NAYd1xjE3fbg1K2Flno8aDBw==}
+  '@pact-foundation/pact-core-darwin-arm64@20.1.1':
+    resolution: {integrity: sha512-rw94IiIIBHhT+9cHbERRvLMKNS9Jp8V+5ZBql6Ltm7Q6nk5xpXIfASjHJOecysZGB7JtIJ5lWWmTaGlZ9Zkdtw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@pact-foundation/pact-core-darwin-x64@19.2.0':
-    resolution: {integrity: sha512-UltPXDZ+h1r3JqgIpEBP16bQzB90otd1QbcoeM3XakF9khCrYhW4y9llSuaosyqPFYwCk+mLaZTl/4iitJJaow==}
+  '@pact-foundation/pact-core-darwin-x64@20.1.1':
+    resolution: {integrity: sha512-YJCZ6aELa6spFBGZXhE55YbrqF++YwyneUGYyEL80AVv06iVaW3YcBTWo4A0JBrh47f3TkE1OKgdjyt3NbSjBg==}
     cpu: [x64]
     os: [darwin]
 
-  '@pact-foundation/pact-core-linux-arm64-glibc@19.2.0':
-    resolution: {integrity: sha512-amiv4COurH1FRa7DSH3ks4UPQCb5J3x4GKrArf8UsTOkNhVGFUWVl83LOELj9Gtk67GwJ96iF7/fQps8I/iFIA==}
+  '@pact-foundation/pact-core-linux-arm64-glibc@20.1.1':
+    resolution: {integrity: sha512-ye2pfYjPTcqFKU5E0GoTzUPx4tP8zP8N5HrN1CP+J0/0E4fE6sUrwOfb3zLgVjWB0woJl9FPGZyWU9Yp55HWhw==}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
-  '@pact-foundation/pact-core-linux-arm64-musl@19.2.0':
-    resolution: {integrity: sha512-tGWF7dP72Ho1A1PApyUqUMRI/e+gfbPxfaXxwWMXNh8JLK2jQQnP4bWymGwHQ4vxL7wn8ayx8I5y6x1vk/2+rA==}
+  '@pact-foundation/pact-core-linux-arm64-musl@20.1.1':
+    resolution: {integrity: sha512-R0cDYLe2chsI50Lio00VASsBMz61J/dukV6FclZecMW1LIbnikBfwlXI9y6kVfe69gBw8KoC1C8T0DVHp/PDxw==}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
-  '@pact-foundation/pact-core-linux-x64-glibc@19.2.0':
-    resolution: {integrity: sha512-/ZNuWKuFJSBRZH09t7FXqKLy5koCaMIZ4RdbockLYlNo8uWF2ALfRCllj+SbXPLK+T+lVnBrs5s94X2cu4Rc7A==}
+  '@pact-foundation/pact-core-linux-x64-glibc@20.1.1':
+    resolution: {integrity: sha512-xhWXFGQSmwuBza8FA058bcZCyXRnRgT+sMdjKO/TfhfqA8tUNIVCh+SRP2nW1W+Il0p5aU0JUwfA5vVr56b+Og==}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
-  '@pact-foundation/pact-core-linux-x64-musl@19.2.0':
-    resolution: {integrity: sha512-n0m39CzVkq8J2alir1redm0rAdUVQzkKJqYBQdRmhEIa+QeGjUrJq+gmakUysoJxfSY4UthnJ9jS8SoyiZ+k6A==}
+  '@pact-foundation/pact-core-linux-x64-musl@20.1.1':
+    resolution: {integrity: sha512-xIiDZCpF8tqRqaUDswmwchxLpfAb6s27zihjLb+z/ti1W+I+SYIh3IyEDEXPY4QZB4vLLPHhD/3+XWJO8LgsDw==}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
-  '@pact-foundation/pact-core-windows-x64@19.2.0':
-    resolution: {integrity: sha512-WZSDBL1Sn8y5+YJTK+HDiS/Fn9th1M4QJW2dflQ8UFwoaIh6yb0TrJjtuWbDGIwNeD4Sv8CJ5jJOf1nyNjFLfg==}
+  '@pact-foundation/pact-core-windows-x64@20.1.1':
+    resolution: {integrity: sha512-Ys13bJdbwd2WMu+xI9ay+g1yF1hJR6RMcJ7r5wMH+bmPg+IyFyTCt4i+PQlriMGoeW8DMNL/EA7G6qAqgnVcfQ==}
     cpu: [x64]
     os: [win32]
 
-  '@pact-foundation/pact-core@19.2.0':
-    resolution: {integrity: sha512-7EB2e850hmBzGnwOYTRj4TCFCJQa9zaOy53bK+ybzEDx801olf0gVlYqMYHt1EsHUZzmtS5uDybpr9UMcZQxgg==}
-    engines: {node: '>=20'}
+  '@pact-foundation/pact-core@20.1.1':
+    resolution: {integrity: sha512-po5J/G8EG6s/7ZAm+bbDoVssSsCFzFc2bZc4mA8355x33YNhPd9RNB+2vR55HK/97HHSzQTMpKope5KDC+6QpQ==}
+    engines: {node: '>=22'}
     cpu: [x64, ia32, arm64]
     os: [darwin, linux, win32]
 
-  '@pact-foundation/pact@16.5.0':
-    resolution: {integrity: sha512-9YgmU6fDJGQVYoAm2ez52dyKfQwFzW47GlrT8IAKuzjL6qZVZ9+ael6myeMbQqz7J5lzEGLoUi2PMkBFFgQxRw==}
-    engines: {node: '>=20'}
+  '@pact-foundation/pact@17.1.4':
+    resolution: {integrity: sha512-HrMX+QA/B2Afto6yuQDeMDtTHLv2wtiqdmCIcodlzIlnYrCUg9HT1tFlOtFkjKZ3gsnnc52eeb+9Nm7IZGCW/w==}
+    engines: {node: '>=22'}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -1369,6 +1373,9 @@ packages:
       react-native-safe-area-context: '>= 3.0.0'
       react-native-screens: '>= 3.0.0'
 
+  '@scarf/scarf@1.4.0':
+    resolution: {integrity: sha512-xxeapPiUXdZAE3che6f3xogoJPeZgig6omHEy1rIY5WVsB3H2BHNnZH+gHG6x91SCWyQCzWGsuL2Hh3ClO5/qQ==}
+
   '@sinclair/typebox@0.27.12':
     resolution: {integrity: sha512-hhyNJ+nbR6ZR7pToHvllEFun9TL0sbL+tk/ON75lo+Xas054uez98qRbsuNt7MBCyZKK4+8Yli/OAGZhmfBZ/g==}
 
@@ -1447,6 +1454,9 @@ packages:
 
   '@types/node@26.4.1':
     resolution: {integrity: sha512-k97ENvZWtvA6yqz5/FS6a7duDgOPEeOQOc2iKS/nY6mX6qJUKtLnWzQS+Xj6tXweyj6ZcTAK2Qecetnvi9nCLA==}
+
+  '@types/node@26.5.1':
+    resolution: {integrity: sha512-CzNm2FezW4VR/LjG6yUdiEgLE/rAQ9Slj5gCu/C2VrdcW7I0ahNZ8DRbHT7zOZ6r3ONgd/bsQIeSaoDGrd1C6g==}
 
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
@@ -1645,8 +1655,8 @@ packages:
     engines: {node: '>=18.18'}
     hasBin: true
 
-  ajv-formats@2.1.1:
-    resolution: {integrity: sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA==}
+  ajv-formats@3.0.1:
+    resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
     peerDependencies:
       ajv: ^8.0.0
     peerDependenciesMeta:
@@ -3527,24 +3537,28 @@ packages:
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-arm64-musl@1.33.0:
     resolution: {integrity: sha512-yiO5ROMuYQgXbC60yjZU5CYSFZGKXL0HFATXt9mHJn1+zW55oCtMI9NfcVhYLMFDL7gV7oBPon/EmMMGg2OvtQ==}
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-linux-x64-gnu@1.33.0:
     resolution: {integrity: sha512-ar+Ju7LmcN0Jo4FpL4hpFybwNG9/3A/Br5KW2n2jyODg3MEZXaDYADdemoNS+BDNfMgKvylJLj4S5tyRActuAg==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-x64-musl@1.33.0:
     resolution: {integrity: sha512-RYiYbkokw0trfKqqzfF55lginwEPrD3OJDfTuJzFs1MK6iFnDenaz1fqLLtX4ITG3OktJQXOeTaw1awrBAlZPw==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-win32-arm64-msvc@1.33.0:
     resolution: {integrity: sha512-1K+MPfLSFVpphzpdbfkhlWk6wBrTObBzS2T6db10PNOZgR9GoVsAWzwNyuhUYYbTp23j+4RrncfujZ4uAzXvwA==}
@@ -3806,8 +3820,8 @@ packages:
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
 
-  minimizer-webpack-plugin@5.10.0:
-    resolution: {integrity: sha512-2//60T4S0X1Ug/dqLDOgDaGlZsN1Lv8hf8oB0NOV/KIHSaXlPwXBBIbim79dE2Z7NEs52ES8YHoSv6Lmsk+XNg==}
+  minimizer-webpack-plugin@5.10.1:
+    resolution: {integrity: sha512-+dsZEyTcy1lkq41lxdiOqvb26gXbYGgwY+30w37f9PqUVkuEBejBLDotsHOTjuga9xJyGLW2DqzKDUyJ4W/PMQ==}
     engines: {node: '>= 10.13.0'}
     peerDependencies:
       '@minify-html/node': '*'
@@ -4490,8 +4504,8 @@ packages:
   scheduler@0.24.0-canary-efb381bbf-20230505:
     resolution: {integrity: sha512-ABvovCDe/k9IluqSh4/ISoq8tIJnW8euVAWYt5j/bg6dRnqwQwiGO1F/V4AyK96NGF/FB04FhOUDuWj8IKfABA==}
 
-  schema-utils@4.3.3:
-    resolution: {integrity: sha512-eflK8wEtyOE6+hsaRVPxvUKYCpRgzLqDTb8krvAsRIwOGlHoSgYLgBXoubGgLd2fT41/OUYdb48v4k4WWHQurA==}
+  schema-utils@4.4.0:
+    resolution: {integrity: sha512-ZzWFVzFgyRHi/T2Ecxm37lL6J9+hZO0P9L7LCuLxAbC6XWxkvxcaQBCXhQxMGn/Tdt9nD7zIBk0ELwhMQ3UEDg==}
     engines: {node: '>= 10.13.0'}
 
   secure-json-parse@4.1.0:
@@ -4946,6 +4960,9 @@ packages:
 
   undici-types@8.3.0:
     resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
+
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
   unicode-canonical-property-names-ecmascript@2.0.1:
     resolution: {integrity: sha512-dA8WbNeb2a6oQzAQ55YlT5vQAWGV9WXOsi3SskE3bcCdM0P4SDd+24zS/OCacdRq5BkdsRj9q3Pg6YyQoxIGqg==}
@@ -6824,28 +6841,28 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.3
 
-  '@pact-foundation/pact-core-darwin-arm64@19.2.0':
+  '@pact-foundation/pact-core-darwin-arm64@20.1.1':
     optional: true
 
-  '@pact-foundation/pact-core-darwin-x64@19.2.0':
+  '@pact-foundation/pact-core-darwin-x64@20.1.1':
     optional: true
 
-  '@pact-foundation/pact-core-linux-arm64-glibc@19.2.0':
+  '@pact-foundation/pact-core-linux-arm64-glibc@20.1.1':
     optional: true
 
-  '@pact-foundation/pact-core-linux-arm64-musl@19.2.0':
+  '@pact-foundation/pact-core-linux-arm64-musl@20.1.1':
     optional: true
 
-  '@pact-foundation/pact-core-linux-x64-glibc@19.2.0':
+  '@pact-foundation/pact-core-linux-x64-glibc@20.1.1':
     optional: true
 
-  '@pact-foundation/pact-core-linux-x64-musl@19.2.0':
+  '@pact-foundation/pact-core-linux-x64-musl@20.1.1':
     optional: true
 
-  '@pact-foundation/pact-core-windows-x64@19.2.0':
+  '@pact-foundation/pact-core-windows-x64@20.1.1':
     optional: true
 
-  '@pact-foundation/pact-core@19.2.0':
+  '@pact-foundation/pact-core@20.1.1':
     dependencies:
       check-types: 11.2.3
       detect-libc: 2.1.2
@@ -6854,17 +6871,18 @@ snapshots:
       pino-pretty: 13.1.3
       underscore: 1.13.8
     optionalDependencies:
-      '@pact-foundation/pact-core-darwin-arm64': 19.2.0
-      '@pact-foundation/pact-core-darwin-x64': 19.2.0
-      '@pact-foundation/pact-core-linux-arm64-glibc': 19.2.0
-      '@pact-foundation/pact-core-linux-arm64-musl': 19.2.0
-      '@pact-foundation/pact-core-linux-x64-glibc': 19.2.0
-      '@pact-foundation/pact-core-linux-x64-musl': 19.2.0
-      '@pact-foundation/pact-core-windows-x64': 19.2.0
+      '@pact-foundation/pact-core-darwin-arm64': 20.1.1
+      '@pact-foundation/pact-core-darwin-x64': 20.1.1
+      '@pact-foundation/pact-core-linux-arm64-glibc': 20.1.1
+      '@pact-foundation/pact-core-linux-arm64-musl': 20.1.1
+      '@pact-foundation/pact-core-linux-x64-glibc': 20.1.1
+      '@pact-foundation/pact-core-linux-x64-musl': 20.1.1
+      '@pact-foundation/pact-core-windows-x64': 20.1.1
 
-  '@pact-foundation/pact@16.5.0':
+  '@pact-foundation/pact@17.1.4':
     dependencies:
-      '@pact-foundation/pact-core': 19.2.0
+      '@pact-foundation/pact-core': 20.1.1
+      '@scarf/scarf': 1.4.0
       axios: 1.20.0
       body-parser: 2.3.0
       chalk: 4.1.2
@@ -7118,6 +7136,8 @@ snapshots:
       react-native-screens: 4.27.0(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
       warn-once: 0.1.1
 
+  '@scarf/scarf@1.4.0': {}
+
   '@sinclair/typebox@0.27.12': {}
 
   '@sinonjs/commons@3.0.1':
@@ -7223,6 +7243,10 @@ snapshots:
   '@types/node@26.4.1':
     dependencies:
       undici-types: 8.3.0
+
+  '@types/node@26.5.1':
+    dependencies:
+      undici-types: 8.9.0
 
   '@types/prop-types@15.7.15': {}
 
@@ -7480,7 +7504,7 @@ snapshots:
 
   agent-cli-detector@0.1.7: {}
 
-  ajv-formats@2.1.1(ajv@8.20.0):
+  ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
       ajv: 8.20.0
 
@@ -9701,7 +9725,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 26.4.1
+      '@types/node': 26.5.1
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -10347,11 +10371,11 @@ snapshots:
 
   minimist@1.2.8: {}
 
-  minimizer-webpack-plugin@5.10.0(webpack@5.110.3):
+  minimizer-webpack-plugin@5.10.1(webpack@5.110.3):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
-      schema-utils: 4.3.3
+      schema-utils: 4.4.0
       terser: 5.51.2
       webpack: 5.110.3
 
@@ -11033,11 +11057,11 @@ snapshots:
     dependencies:
       loose-envify: 1.4.0
 
-  schema-utils@4.3.3:
+  schema-utils@4.4.0:
     dependencies:
       '@types/json-schema': 7.0.15
       ajv: 8.20.0
-      ajv-formats: 2.1.1(ajv@8.20.0)
+      ajv-formats: 3.0.1(ajv@8.20.0)
       ajv-keywords: 5.1.0(ajv@8.20.0)
 
   secure-json-parse@4.1.0: {}
@@ -11537,6 +11561,8 @@ snapshots:
 
   undici-types@8.3.0: {}
 
+  undici-types@8.9.0: {}
+
   unicode-canonical-property-names-ecmascript@2.0.1: {}
 
   unicode-match-property-ecmascript@2.0.0:
@@ -11630,9 +11656,9 @@ snapshots:
       events: 3.3.0
       graceful-fs: 4.2.11
       mime-db: 1.54.0
-      minimizer-webpack-plugin: 5.10.0(webpack@5.110.3)
+      minimizer-webpack-plugin: 5.10.1(webpack@5.110.3)
       neo-async: 2.6.2
-      schema-utils: 4.3.3
+      schema-utils: 4.4.0
       tapable: 2.3.3
       watchpack: 2.5.2
       webpack-sources: 3.5.1
