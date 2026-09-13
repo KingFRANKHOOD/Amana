@@ -46,7 +46,7 @@
     "ioredis": "5.10.1",
     "json2csv": "6.0.0-alpha.2",
     "jsonwebtoken": "9.0.3",
-    "multer": "2.2.0",
+    "multer": "2.3.0",
     "pino": "10.3.1",
     "pino-http": "11.0.0",
     "pino-pretty": "13.1.3",
