@@ -253,7 +253,7 @@ pub fn initialize(env: Env, admin: Address, ...) {
 - [Event Flow](./event-flow.md) - On-chain event processing
 - [Migration Rollback Playbook](./migration-rollback-playbook.md) - Database migration safety
 - [Contract README](../contracts/amana_escrow/README.md) - Contract-specific guidance
-- [CI Configuration](.github/workflows/ci.yml) - GitHub Actions pipeline
+- [CI Configuration](../.github/workflows/ci.yml) - GitHub Actions pipeline
 
 ## Summary
 

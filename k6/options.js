@@ -1,4 +1,4 @@
-export const BASE_URL = __ENV.BASE_URL || 'http://localhost:3001';
+export const BASE_URL = __ENV.BASE_URL || 'http://localhost:4000';
 export const STELLAR_RPC_URL = __ENV.STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org';
 
 export const smokeOptions = {

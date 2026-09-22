@@ -27,7 +27,7 @@ export default function WalletConnectScreen({ navigation }: Props) {
         'Enter Wallet Address',
         'Paste your Stellar wallet public key (G…)',
         async (address) => {
-          if (!address?.startsWith('G') || address.length < 56) {
+          if (!address?.startsWith('G') || address.length !== 56) {
             Alert.alert('Invalid address', 'Please enter a valid Stellar public key.');
             setConnecting(false);
             return;

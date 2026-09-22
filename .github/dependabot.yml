@@ -47,3 +47,11 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "chore(routes-d)"
+
+  - package-ecosystem: "cargo"
+    directory: "/contracts/amana_escrow"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(contracts)"

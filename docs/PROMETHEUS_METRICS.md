@@ -503,6 +503,6 @@ A sample Grafana dashboard configuration for monitoring Amana KPIs:
 
 ## Related Documentation
 
-- [Distributed Tracing Guide](./DISTRIBUTED_TRACING_GUIDE.md)
+- [Distributed Tracing Guide](../backend/DISTRIBUTED_TRACING_GUIDE.md)
 - [Architecture Documentation](./architecture.md)
 - [API Documentation](./api/openapi.yaml)

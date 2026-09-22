@@ -60,7 +60,7 @@ Amana/
 |------|---------|
 | [README.md](../README.md) | Project overview and quick start |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Contribution guidelines and conventions |
-| [DISTRIBUTED_TRACING_GUIDE.md](./DISTRIBUTED_TRACING_GUIDE.md) | OpenTelemetry and observability setup |
+| [DISTRIBUTED_TRACING_GUIDE.md](../backend/DISTRIBUTED_TRACING_GUIDE.md) | OpenTelemetry and observability setup |
 | [PROMETHEUS_METRICS.md](./PROMETHEUS_METRICS.md) | Application metrics and monitoring |
 | [architecture.md](./architecture.md) | System design and component interactions |
 | [sequence-diagrams.md](./sequence-diagrams.md) | Trade lifecycle and workflow sequences |
@@ -419,17 +419,17 @@ Recommended extensions:
 
 ### IDE Configuration
 
-Most settings are already configured in [.vscode/settings.json](../.vscode/settings.json):
+Recommended workspace settings:
 - Tab size: 2 spaces
 - Automatic formatting on save
 - Strict TypeScript checking
 
 ### Environment Variables During Development
 
-Create `.env.local` files to override development defaults:
+The backend only loads `backend/.env` (not `.env.local`); the frontend uses Next.js's built-in `.env.local` support. Override development defaults accordingly:
 
 ```bash
-# backend/.env.local
+# backend/.env
 NODE_ENV=development
 DEBUG=amana:*
 
@@ -595,7 +595,7 @@ docker-compose logs -f
 
 - **Docs**: Check [docs/](.)
 - **Issues**: Search existing GitHub issues
-- **Discord**: Join our community server (link in README)
+- **Discord**: Join our community server
 - **Code Review**: Ask in PR comments
 
 ---

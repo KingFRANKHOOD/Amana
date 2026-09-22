@@ -89,7 +89,7 @@ function Step1Details({
   const qty = parseFloat(data.quantity);
   const price = parseFloat(data.pricePerUnit);
   const totalValue = !isNaN(qty) && !isNaN(price) ? `NGN ${(qty * price).toLocaleString()}` : '—';
-  const isAddressValid = data.sellerAddress.startsWith('G') && data.sellerAddress.length >= 56;
+  const isAddressValid = data.sellerAddress.startsWith('G') && data.sellerAddress.length === 56;
   const valid = data.commodity !== '' && qty > 0 && price > 0 && isAddressValid;
 
   return (
