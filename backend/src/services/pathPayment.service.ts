@@ -4,6 +4,30 @@ import { retryAsync } from "../lib/retry";
 import { appLogger } from "../middleware/logger";
 import { USDC_ISSUER_MAINNET, USDC_ISSUER_TESTNET } from "../config/stellar";
 import { CircuitBreaker, CircuitBreakerOpenError } from "../lib/circuitBreaker";
+import { AppError } from "../errors/appError";
+import { ErrorCode } from "../errors/errorCodes";
+
+function isHorizonInfraError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as any;
+  const status = e?.response?.status ?? e?.status;
+  if (typeof status === "number" && [429, 500, 502, 503, 504].includes(status)) return true;
+  const msg = String(e?.message ?? e ?? "").toLowerCase();
+  if (
+    msg.includes("timeout") ||
+    msg.includes("etimedout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("enotfound") ||
+    msg.includes("network") ||
+    msg.includes("horizon") ||
+    msg.includes("unavailable") ||
+    msg.includes("connect")
+  )
+    return true;
+  // Malformed upstream responses or unhandled TypeErrors should be treated as internal 500
+  // Only explicit infra patterns above qualify for 503.
+  return false;
+}
 
 export class PathPaymentService {
   private stellarService: StellarService;
@@ -65,11 +89,37 @@ export class PathPaymentService {
       }));
     } catch (error) {
       if (error instanceof CircuitBreakerOpenError) {
-        appLogger.warn({ error }, "Path payment circuit breaker open");
-        throw new Error("Payment service temporarily unavailable");
+        appLogger.warn(
+          { error: error.message, circuit: this.circuitBreaker.currentState },
+          "Path payment circuit breaker open",
+        );
+        throw new AppError(
+          ErrorCode.SERVICE_UNAVAILABLE,
+          "Payment service temporarily unavailable",
+          503,
+          { circuitState: this.circuitBreaker.currentState, originalError: error.message },
+        );
       }
-      appLogger.error({ error }, "Path payment quote error");
-      throw new Error("Failed to fetch path payment quotes");
+
+      // Distinguish infrastructure / Horizon failures (503) from internal bugs (500)
+      const isInfraError = isHorizonInfraError(error);
+      const statusCode = isInfraError ? 503 : 500;
+      const code = isInfraError ? ErrorCode.INFRA_ERROR : ErrorCode.INTERNAL_ERROR;
+
+      appLogger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          details: error,
+          statusCode,
+          code,
+        },
+        "Path payment quote error",
+      );
+
+      throw new AppError(code, "Failed to fetch path payment quotes", statusCode, {
+        originalError: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

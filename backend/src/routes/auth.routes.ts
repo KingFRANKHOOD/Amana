@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { NextFunction, Response, Router } from 'express';
 import { z } from 'zod';
 import { StrKey } from '@stellar/stellar-sdk';
 import { AuthService } from '../services/auth.service';
@@ -6,6 +6,8 @@ import { authMiddleware } from '../middleware/auth.middleware';
 import { AuthRequest } from '../services/auth.service';
 import { RATE_LIMIT_CONFIG } from '../config/rateLimit';
 import { createIpRateLimiter } from '../lib/rateLimit';
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import {
   REFRESH_TOKEN_COOKIE,
   clearAuthCookies,
@@ -24,26 +26,13 @@ const challengeSchema = z.object({
   }),
 });
 
-function isZodError(err: unknown): err is { errors: unknown[] } {
-  return err instanceof z.ZodError;
-}
-
-function handleAuthError(err: unknown, isVerify: boolean) {
-  if (isZodError(err)) {
-    return { status: 400, error: err.errors };
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return { status: isVerify ? 401 : 400, error: message };
-}
-
-router.post('/challenge', authLimiter, async (req, res) => {
+router.post('/challenge', authLimiter, async (req, res, next: NextFunction) => {
   try {
     const { walletAddress } = challengeSchema.parse(req.body);
     const challenge = await AuthService.generateChallenge(walletAddress);
     res.json({ challenge });
   } catch (err: unknown) {
-    const { status, error } = handleAuthError(err, false);
-    res.status(status).json({ error });
+    next(err);
   }
 });
 
@@ -54,7 +43,7 @@ const verifySchema = z.object({
   signedChallenge: z.string(),
 });
 
-router.post('/verify', authLimiter, async (req, res) => {
+router.post('/verify', authLimiter, async (req, res, next: NextFunction) => {
   try {
     const { walletAddress, signedChallenge } = verifySchema.parse(req.body);
     const accessToken = await AuthService.verifySignatureAndIssueJWT(walletAddress, signedChallenge);
@@ -62,12 +51,11 @@ router.post('/verify', authLimiter, async (req, res) => {
     setAuthCookies(res, session);
     res.json({ authenticated: true });
   } catch (err: unknown) {
-    const { status, error } = handleAuthError(err, true);
-    res.status(status).json({ error });
+    next(err);
   }
 });
 
-router.post('/logout', authMiddleware, async (req: AuthRequest, res) => {
+router.post('/logout', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const jti = req.user?.jti;
     const exp = req.user?.exp;
@@ -77,31 +65,44 @@ router.post('/logout', authMiddleware, async (req: AuthRequest, res) => {
     await AuthService.revokeRefreshToken(getCookie(req, REFRESH_TOKEN_COOKIE));
     clearAuthCookies(res);
     res.json({ message: 'Logged out successfully' });
-  } catch (_err: unknown) { // eslint-disable-line @typescript-eslint/no-unused-vars
+  } catch (err: unknown) {
     clearAuthCookies(res);
-    res.status(500).json({ error: 'Logout failed' });
+    if (err instanceof Error && (err as any).name === 'AppError') {
+      next(err);
+      return;
+    }
+    next(new AppError(ErrorCode.INTERNAL_ERROR, 'Logout failed', 500));
   }
 });
 
-router.post('/refresh', refreshLimiter, async (req, res) => {
+router.post('/refresh', refreshLimiter, async (req, res, next: NextFunction) => {
   try {
     const refreshToken = getCookie(req, REFRESH_TOKEN_COOKIE);
     if (!refreshToken) {
       clearAuthCookies(res);
-      return res.status(401).json({ error: 'Missing refresh token cookie' });
+      throw new AppError(ErrorCode.AUTH_ERROR, 'Missing refresh token cookie', 401);
     }
     const session = await AuthService.rotateRefreshToken(refreshToken);
     setAuthCookies(res, session);
     res.json({ authenticated: true });
   } catch (err: unknown) {
     clearAuthCookies(res);
-    const msg = err instanceof Error ? err.message : String(err);
-    res.status(401).json({ error: msg });
+    next(err);
   }
 });
 
-router.get('/validate', authMiddleware, (req: AuthRequest, res) => {
-  res.json({ valid: true, user: req.user });
+router.get('/validate', authMiddleware, (req: AuthRequest, res: Response) => {
+  // Return only a bounded public profile — never expose internal JWT claims (jti, sub, exp, etc.)
+  const walletAddress =
+    req.user?.walletAddress?.toLowerCase() ?? req.user?.sub?.toLowerCase() ?? null;
+  if (!walletAddress) {
+    res.status(401).json({
+      code: ErrorCode.AUTH_ERROR,
+      message: 'Unauthorized',
+    });
+    return;
+  }
+  res.json({ valid: true, user: { walletAddress } });
 });
 
 export { router as authRoutes };

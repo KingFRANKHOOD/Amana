@@ -57,7 +57,35 @@ type TradeDatabase = Pick<
   PrismaClient,
   "trade" | "dispute" | "disputeCategory" | "auditLog" | "$queryRaw"
 > &
-  Partial<Pick<PrismaClient, "$transaction" | "userWatchlist">>;
+  Partial<Pick<PrismaClient, "$transaction" | "userWatchlist" | "user">>;
+
+/**
+ * Ensure Prisma User rows exist for the given wallet addresses so Trade FKs
+ * (buyerAddress/sellerAddress -> User.walletAddress) never fail for fresh
+ * Supabase-only users. Best-effort: logs and continues if the user model is
+ * not available on the injected mock prisma (tests) — production prisma always
+ * has the model.
+ */
+async function ensureUserRows(
+  prismaOrTx: any,
+  addresses: string[],
+): Promise<void> {
+  const unique = Array.from(new Set(addresses.map((a) => a.toLowerCase()).filter(Boolean)));
+  for (const walletAddress of unique) {
+    try {
+      const userModel = prismaOrTx?.user;
+      if (!userModel?.upsert) continue;
+      await userModel.upsert({
+        where: { walletAddress },
+        update: {},
+        create: { walletAddress, displayName: walletAddress },
+      });
+    } catch (e: any) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue;
+      appLogger.warn({ error: e, walletAddress }, "Failed to ensure Prisma user for trade FK");
+    }
+  }
+}
 
 export class TradeAccessDeniedError extends Error {
   constructor() {
@@ -117,6 +145,10 @@ export class TradeService {
         });
 
         const createTradeAndAuditLog = async (tx: TradeDatabase): Promise<Trade> => {
+          // Ensure FK targets exist before creating the Trade row. Handles fresh
+          // users who exist only in Supabase so far.
+          await ensureUserRows(tx as any, [input.buyerAddress, input.sellerAddress]);
+
           const trade = await tx.trade.create({
             data: {
               ...input,
@@ -135,6 +167,10 @@ export class TradeService {
 
           return trade;
         };
+
+        // Best-effort ensure outside transaction as well for non-transaction path
+        // and for mocked prisma instances that lack `user` on the tx.
+        await ensureUserRows(this.prisma as any, [input.buyerAddress, input.sellerAddress]);
 
         try {
           if (this.prisma.$transaction) {
