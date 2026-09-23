@@ -1,6 +1,7 @@
 import { getSupabaseClient } from "../../lib/supabase";
 import { findOrCreateUser, updateUser, getPublicProfile } from "../user.service";
-import { AppError, ErrorCode } from "../../errors/errorCodes";
+import { ErrorCode } from '../../errors/errorCodes';
+import { AppError } from '../../errors/appError';
 import { Keypair } from "@stellar/stellar-sdk";
 
 const mockSafeParse = jest.fn();

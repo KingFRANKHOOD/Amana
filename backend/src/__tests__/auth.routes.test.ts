@@ -10,7 +10,8 @@ import express from "express";
 import { Keypair } from "@stellar/stellar-sdk";
 import { authRoutes } from "../routes/auth.routes";
 import { AuthService } from "../services/auth.service";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 // auth.service.ts creates its own ioredis instance — mock at the ioredis level
 jest.mock("ioredis", () =>

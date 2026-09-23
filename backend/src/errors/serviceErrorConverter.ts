@@ -1,5 +1,8 @@
-import { AppError, ErrorCode, StructuredErrorContext } from './errorCodes';
+import { ErrorCode } from './errorCodes';
+import { AppError } from './appError';
 import { appLogger } from '../middleware/logger';
+
+export type StructuredErrorContext = Record<string, unknown>;
 
 /**
  * External service error types that need conversion

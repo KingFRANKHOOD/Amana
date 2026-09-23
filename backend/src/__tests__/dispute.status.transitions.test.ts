@@ -1,6 +1,7 @@
 import { PrismaClient, DisputeStatus } from "@prisma/client";
 import { DisputeService } from "../services/dispute.service";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 const MEDIATOR = "GA_MEDIATOR_VALID";
 

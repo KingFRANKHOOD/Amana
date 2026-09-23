@@ -1,6 +1,7 @@
 import { PrismaClient, Goal, Vault } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 interface GoalAnalytics {
     goalId: string;

@@ -1,7 +1,8 @@
 import { Response, Router } from "express";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 import { TrustScoreService } from "../services/trustScore.service";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { prisma } from "../lib/db";
 
 const trustScoreService = new TrustScoreService(prisma);

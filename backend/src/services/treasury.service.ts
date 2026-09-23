@@ -3,7 +3,8 @@ import { TOKEN_CONFIG } from "../config/token";
 import { env } from "../config/env";
 import { appLogger } from "../middleware/logger";
 import { isMediatorAddress } from "../lib/accessControl";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 export class TreasuryService {
   private stellarService: StellarService;

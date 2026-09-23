@@ -13,7 +13,8 @@ import {
   DisputeTradeStatusError,
   DisputeCategoryValidationError,
 } from "../services/trade.service";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { getMediatorAllowlist } from "../lib/accessControl";
 import { logErrorWithContext, logBusinessEvent } from "../lib/logging";
 import { tradeStatusEvents } from "../services/tradeStatusEvents";

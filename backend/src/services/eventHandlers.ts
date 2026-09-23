@@ -15,7 +15,8 @@ type TradeCreatePayload = {
 };
 
 const VALID_PREDECESSORS: Partial<Record<EventType, TradeStatus[]>> = {
-  [EventType.TradeFunded]: [TradeStatus.CREATED],
+  [EventType.TradeCreated]: [TradeStatus.PENDING_SIGNATURE],
+  [EventType.TradeFunded]: [TradeStatus.CREATED, TradeStatus.PENDING_SIGNATURE],
   [EventType.DeliveryConfirmed]: [TradeStatus.FUNDED],
   [EventType.FundsReleased]: [TradeStatus.DELIVERED],
   [EventType.DisputeInitiated]: [TradeStatus.FUNDED, TradeStatus.DELIVERED],

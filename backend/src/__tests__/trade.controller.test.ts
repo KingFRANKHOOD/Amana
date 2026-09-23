@@ -6,7 +6,7 @@ import { tradeRoutes } from "../routes/trade.routes";
 import { TradeAccessDeniedError, DisputeTradeStatusError } from "../services/trade.service";
 import { AuthService } from "../services/auth.service";
 import { errorHandler } from "../middleware/errorHandler";
-import { ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
 
 jest.mock("../services/trade.service", () => {
   mockTradeService = { createPendingTrade: jest.fn(), listUserTrades: jest.fn(), getTradeById: jest.fn(), getUserStats: jest.fn(), initiateDispute: jest.fn() };
