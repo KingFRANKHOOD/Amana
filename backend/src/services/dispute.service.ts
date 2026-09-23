@@ -4,6 +4,7 @@ import { AppError } from '../errors/appError';
 import { getAdminAllowlistLowercase, isMediatorAddress } from "../lib/accessControl";
 import { TracingHelper } from "../config/tracing";
 import { auditLogService } from "./auditLog.service";
+import { appLogger } from "../middleware/logger";
 import {
   COMPLETED_DISPUTE_STATUSES,
   applyDisputeStatusTransition,
@@ -164,31 +165,63 @@ export class DisputeService {
 
     const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
 
-    const completed = await this.prisma.dispute.findMany({
-      where: {
-        status: { in: COMPLETED_DISPUTE_STATUSES },
-        resolvedAt: { lte: cutoff },
-        reason: { not: "" },
-      },
-      select: { id: true, tradeId: true },
-    });
+    const BATCH_SIZE = 500;
+    let purgedCount = 0;
+    const tradeIds: string[] = [];
+    let batchIndex = 0;
 
-    if (completed.length === 0) {
-      return { purgedCount: 0, tradeIds: [] };
+    while (true) {
+      let batch: Array<{ id: number; tradeId: string }>;
+      try {
+        batch = await this.prisma.dispute.findMany({
+          where: {
+            status: { in: COMPLETED_DISPUTE_STATUSES },
+            resolvedAt: { lte: cutoff },
+            reason: { not: "" },
+          },
+          select: { id: true, tradeId: true },
+          take: BATCH_SIZE,
+          orderBy: { id: "asc" },
+        });
+      } catch (error) {
+        appLogger.error({ error, batchIndex }, "Failed to fetch dispute purge batch");
+        throw new AppError(ErrorCode.INFRA_ERROR, "Failed to fetch disputes for purge", 503);
+      }
+
+      if (batch.length === 0) {
+        break;
+      }
+
+      const ids = batch.map((d) => d.id);
+      const batchTradeIds = batch.map((d) => d.tradeId);
+
+      try {
+        await this.prisma.dispute.updateMany({
+          where: { id: { in: ids } },
+          data: { reason: "" },
+        });
+      } catch (error) {
+        appLogger.error({ error, batchIndex, batchSize: batch.length }, "Failed to purge dispute batch");
+        throw new AppError(ErrorCode.INFRA_ERROR, "Failed to purge dispute data", 503);
+      }
+
+      purgedCount += batch.length;
+      tradeIds.push(...batchTradeIds);
+      batchIndex += 1;
+
+      appLogger.info(
+        { batchIndex, batchSize: batch.length, purgedCount },
+        "Purged dispute batch",
+      );
+
+      if (batch.length < BATCH_SIZE) {
+        break;
+      }
     }
 
-    const ids = completed.map((d: { id: number; tradeId: string }) => d.id);
-
-    await this.prisma.dispute.updateMany({
-      where: { id: { in: ids } },
-      data: { reason: "" },
-    });
-
     return {
-      purgedCount: completed.length,
-      tradeIds: completed.map(
-        (d: { id: number; tradeId: string }) => d.tradeId,
-      ),
+      purgedCount,
+      tradeIds,
     };
   }
 

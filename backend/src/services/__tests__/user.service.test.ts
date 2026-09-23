@@ -11,6 +11,25 @@ jest.mock("../../lib/supabase", () => ({
   getSupabaseClient: jest.fn(),
 }));
 
+// Mock Prisma for FK ensure (avoid real DB in unit tests)
+jest.mock("../../lib/db", () => ({
+  prisma: {
+    user: {
+      upsert: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+  },
+}));
+
+// Mock cache to avoid Redis timeouts
+jest.mock("../../lib/cache", () => ({
+  cacheService: {
+    getOrSet: jest.fn((key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+    invalidateOne: jest.fn().mockResolvedValue(undefined),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
 // Mock the validators module — path relative to user.service.ts location
 jest.mock("../../validators/user.validators", () => ({
   updateProfileSchema: {

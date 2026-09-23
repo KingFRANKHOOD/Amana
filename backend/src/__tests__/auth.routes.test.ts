@@ -12,6 +12,7 @@ import { authRoutes } from "../routes/auth.routes";
 import { AuthService } from "../services/auth.service";
 import { ErrorCode } from '../errors/errorCodes';
 import { AppError } from '../errors/appError';
+import { errorHandler } from "../middleware/errorHandler";
 
 // auth.service.ts creates its own ioredis instance — mock at the ioredis level
 jest.mock("ioredis", () =>
@@ -35,6 +36,7 @@ describe("Auth Routes", () => {
     app = express();
     app.use(express.json());
     app.use("/auth", authRoutes);
+    app.use(errorHandler);
   });
 
   beforeEach(() => {
@@ -65,7 +67,8 @@ describe("Auth Routes", () => {
         .send({ walletAddress: "invalid" });
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toBeDefined();
+      expect(response.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(response.body.message).toBeDefined();
     });
   });
 
@@ -108,7 +111,8 @@ describe("Auth Routes", () => {
         });
 
       expect(response.status).toBe(401);
-      expect(response.body.error).toBe("Invalid signature");
+      expect(response.body.code).toBe(ErrorCode.AUTH_ERROR);
+      expect(response.body.message).toBe("Invalid signature");
     });
 
     it("should return 400 for malformed payload (missing signedChallenge)", async () => {
@@ -117,6 +121,7 @@ describe("Auth Routes", () => {
         .send({ walletAddress: mockWallet }); // Missing signedChallenge
 
       expect(response.status).toBe(400);
+      expect(response.body.code).toBe(ErrorCode.VALIDATION_ERROR);
     });
   });
 
@@ -152,13 +157,15 @@ describe("Auth Routes", () => {
         .set("Cookie", "amana_refresh=very-old-refresh");
 
       expect(response.status).toBe(401);
-      expect(response.body.error).toBe("Token too old to refresh");
+      expect(response.body.code).toBe(ErrorCode.AUTH_ERROR);
+      expect(response.body.message).toBe("Token too old to refresh");
     });
 
     it("should return 401 if authorization header is missing", async () => {
       const response = await request(app).post("/auth/refresh");
       expect(response.status).toBe(401);
-      expect(response.body.error).toContain("Missing refresh token cookie");
+      expect(response.body.code).toBe(ErrorCode.AUTH_ERROR);
+      expect(response.body.message).toContain("Missing refresh token cookie");
     });
   });
 
@@ -204,6 +211,34 @@ describe("Auth Routes", () => {
       expect(response.status).toBe(200);
       expect(response.body.valid).toBe(true);
       expect(response.body.user.walletAddress).toBe(mockWallet.toLowerCase());
+      // Bounded public profile — must not expose jti, sub, iat, exp
+      expect(response.body.user.jti).toBeUndefined();
+      expect(response.body.user.sub).toBeUndefined();
+      expect(response.body.user.iat).toBeUndefined();
+      expect(response.body.user.exp).toBeUndefined();
+      expect(Object.keys(response.body.user)).toEqual(["walletAddress"]);
+    });
+
+    it("should return bounded profile with only walletAddress (no jti leakage)", async () => {
+      (AuthService.validateToken as jest.Mock).mockResolvedValue({
+        sub: mockWallet.toLowerCase(),
+        walletAddress: mockWallet.toLowerCase(),
+        jti: "secret-jti-should-not-leak",
+        iat: 123456,
+        exp: 999999,
+        iss: "amana",
+        aud: "amana-api",
+      });
+      (AuthService.isTokenRevoked as jest.Mock).mockResolvedValue(false);
+
+      const response = await request(app)
+        .get("/auth/validate")
+        .set("Authorization", "Bearer valid.jwt.token");
+
+      expect(response.status).toBe(200);
+      expect(response.body.user).toEqual({ walletAddress: mockWallet.toLowerCase() });
+      expect(JSON.stringify(response.body)).not.toContain("secret-jti-should-not-leak");
+      expect(JSON.stringify(response.body)).not.toContain("123456");
     });
 
     it("should return 401 if token is invalid", async () => {
