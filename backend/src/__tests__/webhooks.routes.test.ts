@@ -20,6 +20,7 @@ jest.mock("../lib/db", () => ({
       findMany: jest.fn(),
       findUnique: jest.fn(),
       delete: jest.fn(),
+      count: jest.fn(),
     },
     webhookDeadLetter: {
       create: jest.fn(),
@@ -33,6 +34,13 @@ jest.mock("../jobs/queue", () => ({
   exportQueue: { add: jest.fn() },
   webhookQueue: { add: jest.fn() },
   trustScoreQueue: { add: jest.fn() },
+}));
+jest.mock("dns/promises", () => ({
+  __esModule: true,
+  lookup: jest.fn().mockResolvedValue([{ address: "93.184.216.34", family: 4 }]),
+}));
+jest.mock("../services/feature-flags.service", () => ({
+  featureFlagService: { isEnabled: jest.fn().mockResolvedValue(false) },
 }));
 
 describe("Webhooks Routes", () => {
@@ -222,6 +230,7 @@ describe("Webhooks Routes", () => {
           updatedAt: new Date(),
         },
       ]);
+      (prisma.webhookSubscription.count as jest.Mock).mockResolvedValue(2);
 
       const response = await request(app)
         .get("/webhooks")
@@ -229,6 +238,7 @@ describe("Webhooks Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.webhooks).toHaveLength(2);
+      expect(response.body.pagination).toEqual(expect.objectContaining({ page: 1, limit: 20, total: 2 }));
       expect(prisma.webhookSubscription.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { userId: mockUserId },

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { env } from "../config/env";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;

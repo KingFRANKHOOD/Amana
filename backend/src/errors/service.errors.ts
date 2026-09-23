@@ -1,4 +1,4 @@
-import { AppError } from "./errorCodes";
+import { AppError } from './appError';
 
 export interface ClassifiedServiceErrorOptions {
   code: string;

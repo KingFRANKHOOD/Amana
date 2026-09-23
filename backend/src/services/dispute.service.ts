@@ -1,6 +1,7 @@
 import { PrismaClient, DisputeStatus } from "@prisma/client";
-import { AppError, ErrorCode } from "../errors/errorCodes";
-import { isMediatorAddress } from "../lib/accessControl";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
+import { getAdminAllowlistLowercase, isMediatorAddress } from "../lib/accessControl";
 import { TracingHelper } from "../config/tracing";
 import { auditLogService } from "./auditLog.service";
 import {
@@ -115,13 +116,27 @@ export class DisputeService {
     };
   }
 
-  async getDisputeByTradeId(tradeId: string): Promise<DisputeResponse | null> {
+  async getDisputeByTradeId(tradeId: string, callerAddress: string): Promise<DisputeResponse | null> {
+    if (!callerAddress || !callerAddress.trim()) {
+      throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized: Missing caller", 401);
+    }
+
     const dispute = await this.prisma.dispute.findFirst({
       where: { tradeId },
       include: disputeInclude,
     });
 
     if (!dispute) return null;
+
+    const caller = callerAddress.toLowerCase();
+    const isBuyer = dispute.trade.buyerAddress.toLowerCase() === caller;
+    const isSeller = dispute.trade.sellerAddress.toLowerCase() === caller;
+    const isMediator = isMediatorAddress(caller);
+    const isAdmin = getAdminAllowlistLowercase().has(caller);
+
+    if (!isBuyer && !isSeller && !isMediator && !isAdmin) {
+      throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized: Not a party to this trade", 403);
+    }
 
     return toDisputeResponse(dispute);
   }

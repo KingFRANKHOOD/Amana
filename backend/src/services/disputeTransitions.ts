@@ -1,5 +1,6 @@
 import { DisputeStatus, Prisma } from "@prisma/client";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 /** Terminal dispute statuses — disputes in these states are considered complete. */
 export const COMPLETED_DISPUTE_STATUSES: DisputeStatus[] = [

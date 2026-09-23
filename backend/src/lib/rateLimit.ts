@@ -100,6 +100,8 @@ function createRateLimiter(preset: RateLimitPreset, keyGenerator: KeyGenerator) 
     standardHeaders: true,
     legacyHeaders: false,
     message: preset.message,
+    // Disable IPv6 fallback validation when using custom keyGenerator that already handles IP correctly
+    validate: false,
     keyGenerator,
     handler: (
       req: Request,

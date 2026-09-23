@@ -6,7 +6,8 @@
  * scattering individual `if (!payload.xyz)` guards across files.
  */
 
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { JWTPayload } from "../services/auth.service";
 
 export interface ClaimsValidationResult {

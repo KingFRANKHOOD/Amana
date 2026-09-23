@@ -2,7 +2,8 @@ import { Router } from "express";
 import { prisma } from "../lib/db";
 import { ReputationService } from "../services/reputation.service";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 const router = Router();
 const reputationService = new ReputationService(prisma);

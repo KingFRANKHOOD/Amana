@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import crypto from "crypto";
 import { Parser } from "json2csv";
+import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { AuthRequest } from "../services/auth.service";
 import {
@@ -11,12 +12,24 @@ import {
 } from "../services/auditTrail.service";
 import { appLogger } from "../middleware/logger";
 import { getAuditSigningConfig } from "../config/auditSigning";
+import { validateRequest } from "../middleware/validateRequest";
+
+const auditTradeIdParamSchema = z.object({
+    id: z
+        .string()
+        .min(1, "Trade ID is required")
+        .max(255, "Trade ID is too long")
+        .regex(
+            /^[A-Za-z0-9_-]+$/,
+            "Trade ID contains invalid characters",
+        ),
+});
 
 export function createAuditTrailRouter(auditService = new AuditTrailService()) {
     const router = Router({ mergeParams: true });
 
     // GET /trades/:id/history
-    router.get("/:id/history", authMiddleware, async (req: AuthRequest, res: Response) => {
+    router.get("/:id/history", authMiddleware, validateRequest({ params: auditTradeIdParamSchema }), async (req: AuthRequest, res: Response) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -81,7 +94,7 @@ export function createAuditTrailRouter(auditService = new AuditTrailService()) {
     });
 
     // GET /trades/:id/history/verify?signature=<base64>
-    router.get("/:id/history/verify", authMiddleware, async (req: AuthRequest, res: Response) => {
+    router.get("/:id/history/verify", authMiddleware, validateRequest({ params: auditTradeIdParamSchema }), async (req: AuthRequest, res: Response) => {
         const callerAddress = req.user?.walletAddress;
         const signature = req.query.signature as string | undefined;
         if (!callerAddress) {

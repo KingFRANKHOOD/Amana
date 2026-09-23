@@ -5,7 +5,7 @@ import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 import { validateRequest } from "../middleware/validateRequest";
 import { Router } from "express";
 import { z } from "zod";
-import { AppError } from "../errors/errorCodes";
+import { AppError } from '../errors/appError';
 import { isMediatorAddress } from "../lib/accessControl";
 import { Parser } from "json2csv";
 

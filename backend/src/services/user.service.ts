@@ -1,6 +1,7 @@
 import { getSupabaseClient } from "../lib/supabase";
 import { UpdateProfileInput, updateProfileSchema } from "../validators/user.validators";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { StrKey } from "@stellar/stellar-sdk";
 import { cacheService } from "../lib/cache";
 
