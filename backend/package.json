@@ -18,7 +18,7 @@
   "license": "ISC",
   "description": "Amana backend service",
   "dependencies": {
-    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/api": "1.9.1",
     "@opentelemetry/auto-instrumentations-node": "0.46.1",
     "@opentelemetry/exporter-jaeger": "1.25.1",
     "@opentelemetry/exporter-prometheus": "0.52.1",
