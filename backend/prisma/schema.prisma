@@ -29,6 +29,11 @@ enum DisputeStatus {
   CLOSED
 }
 
+enum DisputeOutcome {
+  WON
+  LOST
+}
+
 enum GoalStatus {
   ACTIVE
   COMPLETED
@@ -190,6 +195,9 @@ model Dispute {
   version      Int              @default(0)
   resolvedAt   DateTime?
   categoryId   Int?
+  /// Outcome from the initiator's perspective when status is RESOLVED/CLOSED.
+  /// Only disputes with outcome = LOST penalize the initiator's trust score.
+  outcome      DisputeOutcome?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -202,6 +210,7 @@ model Dispute {
   @@index([initiator])
   @@index([status])
   @@index([categoryId])
+  @@index([outcome])
 }
 
 /// DeliveryManifest — submitted by the seller before shipping.

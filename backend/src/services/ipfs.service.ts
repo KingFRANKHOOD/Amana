@@ -222,8 +222,10 @@ export class IPFSService {
         const safeTtl = Math.min(3600, Math.max(1, ttlSeconds));
         const expiresAt = new Date(Date.now() + safeTtl * 1000);
         const expires = Math.floor(expiresAt.getTime() / 1000);
-        const secret = process.env.IPFS_URL_SIGNING_SECRET ?? env.IPFS_URL_SIGNING_SECRET ??
-            process.env.JWT_SECRET ?? env.JWT_SECRET;
+        const secret = process.env.IPFS_URL_SIGNING_SECRET ?? env.IPFS_URL_SIGNING_SECRET;
+        if (!secret) {
+            throw new ServiceUnavailableError("IPFS URL signing secret not configured");
+        }
         const signature = crypto
             .createHmac("sha256", secret)
             .update(`${cid}:${expires}`)
