@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import request from "supertest";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { tradeRoutes } from "../routes/trade.routes";
-import { TradeAccessDeniedError, DisputeTradeStatusError } from "../services/trade.service";
+import { TradeAccessDeniedError, DisputeTradeStatusError, TradeNotFoundError } from "../services/trade.service";
 import { AuthService } from "../services/auth.service";
 import { errorHandler } from "../middleware/errorHandler";
 import { ErrorCode } from '../errors/errorCodes';
@@ -11,9 +11,10 @@ import { ErrorCode } from '../errors/errorCodes';
 jest.mock("../services/trade.service", () => {
   mockTradeService = { createPendingTrade: jest.fn(), listUserTrades: jest.fn(), getTradeById: jest.fn(), getUserStats: jest.fn(), initiateDispute: jest.fn() };
   class MockTradeAccessDenied extends Error { constructor() { super("Forbidden"); this.name = "TradeAccessDeniedError"; } }
+  class MockTradeNotFound extends Error { constructor() { super("Trade not found"); this.name = "TradeNotFoundError"; } }
   class MockDisputeStatusError extends Error { status = 400; constructor() { super("Dispute status error"); this.name = "DisputeTradeStatusError"; } }
   class MockDisputeCategoryError extends Error { status = 400; constructor(cat: any) { super(`Invalid dispute category: ${cat}`); this.name = "DisputeCategoryValidationError"; } }
-  return { TradeService: jest.fn(() => mockTradeService), TradeAccessDeniedError: MockTradeAccessDenied, DisputeTradeStatusError: MockDisputeStatusError, DisputeCategoryValidationError: MockDisputeCategoryError };
+  return { TradeService: jest.fn(() => mockTradeService), TradeAccessDeniedError: MockTradeAccessDenied, TradeNotFoundError: MockTradeNotFound, DisputeTradeStatusError: MockDisputeStatusError, DisputeCategoryValidationError: MockDisputeCategoryError };
 });
 
 const app = express();
@@ -552,7 +553,7 @@ describe("TradeController", () => {
 
         it("returns 404 structured error if trade not found", async () => {
             (mockTradeService.initiateDispute as jest.Mock).mockRejectedValue(
-                new Error("Trade not found"),
+                new TradeNotFoundError(),
             );
 
             const res = await request(app)

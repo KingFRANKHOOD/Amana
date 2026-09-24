@@ -225,4 +225,45 @@ describe("Trade Routes", () => {
     expect(res.body.code).toBe(ErrorCode.TRADE_BUILD_FAILED);
     expect(TradeService.prototype.createPendingTrade).not.toHaveBeenCalled();
   });
+
+  describe("POST /trades/:id/rotate-key", () => {
+    it("returns 400 when keyVersion is missing", async () => {
+      const res = await request(app)
+        .post("/trades/4294967297/rotate-key")
+        .set("Authorization", `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+    });
+
+    it("returns 400 when keyVersion is invalid", async () => {
+      const res = await request(app)
+        .post("/trades/4294967297/rotate-key")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ keyVersion: "v3" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+    });
+
+    it("returns 200 with valid keyVersion", async () => {
+      (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
+        tradeId: "4294967297",
+        buyerAddress: buyerAddress,
+        sellerAddress: sellerAddress,
+        amountUsdc: "125.1234567",
+        status: "DELIVERED",
+      });
+
+      const res = await request(app)
+        .post("/trades/4294967297/rotate-key")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ keyVersion: "v2" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.keyVersion).toBe("v2");
+    });
+  });
 });
