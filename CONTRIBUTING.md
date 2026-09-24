@@ -156,6 +156,33 @@ All contributions must include test coverage verifying the new behavior or bug f
 
 ---
 
+## Bounties & Contributor Payments
+
+Amana runs its contributor bounties through the GitHub issue tracker. Each
+bounty issue states the reward and the payout asset up front, and payouts are
+settled on-chain to the contributor's Stellar address once the linked pull
+request is reviewed and merged.
+
+### Where to find payment proof
+
+We do not publish a separate list of transaction hashes in this document,
+because every payout is already publicly verifiable on-chain and traceable
+from the issue that funded it:
+
+1. Open the bounty issue you are interested in and read its payout details.
+2. Follow the linked pull request and its merge commit to confirm the work was
+   accepted.
+3. Look up the payout transaction on a Stellar block explorer (for example
+   [stellar.expert](https://stellar.expert)) using the transaction hash or the
+   recipient address referenced in the issue or PR discussion.
+
+If a specific bounty's payout history is unclear, ask directly on that issue
+and a maintainer will point you to the corresponding transaction. Please do
+not treat any hash, address, or link you cannot independently verify on-chain
+as proof of payment.
+
+---
+
 ## Pull Request Process
 
 1. **Verify Local Build & Tests**: Ensure all linting checks and test suites pass locally before pushing.
