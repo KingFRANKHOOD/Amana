@@ -24,6 +24,7 @@ const deliveryWindowSchema = z.object({
 
 const tradeManifestBodySchema = z.object({
   driverName: z.string().trim().min(1),
+  driverIdNumber: z.string().trim().min(1),
   phone: z.string().trim().min(5),
   licensePlate: z.string().trim().min(1),
   vehicleType: z.string().trim().min(1),
@@ -107,7 +108,7 @@ export function createTradeManifestRouter(
         tradeId,
         callerAddress: walletAddress,
         driverName: parsed.data.driverName,
-        driverIdNumber: parsed.data.phone,
+        driverIdNumber: parsed.data.driverIdNumber,
         vehicleRegistration: parsed.data.licensePlate,
         routeDescription,
         expectedDeliveryAt: parsed.data.estimatedDeliveryWindow.to,
