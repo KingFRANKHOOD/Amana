@@ -170,7 +170,7 @@ Amana includes comprehensive distributed tracing with OpenTelemetry for end-to-e
 
 ### Documentation
 
-See [DISTRIBUTED_TRACING_GUIDE.md](./DISTRIBUTED_TRACING_GUIDE.md) for detailed setup and usage instructions.
+See [DISTRIBUTED_TRACING_GUIDE.md](./backend/DISTRIBUTED_TRACING_GUIDE.md) for detailed setup and usage instructions.
 
 **Logging & Observability**:
 - **[Logging Standards](./docs/LOGGING_STANDARDS.md)** — Comprehensive logging standards across all stacks (backend Pino, frontend TracedHttpClient, mobile, contracts, background jobs, log levels, PII redaction, Loki queries, and retention)
