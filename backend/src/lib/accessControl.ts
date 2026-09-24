@@ -46,3 +46,16 @@ export function isMediatorAddress(address: string): boolean {
 export function isAdminAddress(address: string): boolean {
   return getAdminAllowlistLowercase().has(normalizeAddress(address));
 }
+
+/**
+ * Test helper: clears any cached allowlist state.
+ *
+ * The allowlist is intentionally read fresh from the environment on every
+ * call (no module-level cache), so there is nothing to reset in production.
+ * This helper exists so tests that mutate `process.env.ADMIN_STELLAR_PUBKEYS`
+ * can explicitly signal a reset point and so callers migrating off the old
+ * `trade.service.ts` cache keep a stable, no-op API.
+ */
+export function resetAdminPubkeys(): void {
+  // No cache to clear — kept as a test helper for API compatibility.
+}
