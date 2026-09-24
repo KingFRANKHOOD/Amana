@@ -85,3 +85,9 @@ export const initiateDisputeSchema = z
       });
     }
   });
+
+export const rotateKeySchema = z.object({
+  keyVersion: z.enum(["v1", "v2"], {
+    errorMap: () => ({ message: "keyVersion must be one of: v1, v2" }),
+  }),
+});

@@ -12,6 +12,7 @@ import {
   TradeService,
   DisputeTradeStatusError,
   DisputeCategoryValidationError,
+  TradeNotFoundError,
 } from "../services/trade.service";
 import { ErrorCode } from '../errors/errorCodes';
 import { AppError } from '../errors/appError';
@@ -377,7 +378,7 @@ export class TradeController {
           new AppError(ErrorCode.DISPUTE_INVALID_CATEGORY, error.message, 400),
         );
       }
-      if (error instanceof Error && error.message === "Trade not found") {
+      if (error instanceof TradeNotFoundError) {
         return next(new AppError(ErrorCode.TRADE_NOT_FOUND, "Trade not found", 404));
       }
 

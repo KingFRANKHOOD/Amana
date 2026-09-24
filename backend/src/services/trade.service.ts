@@ -94,6 +94,13 @@ export class TradeAccessDeniedError extends Error {
   }
 }
 
+export class TradeNotFoundError extends Error {
+  constructor() {
+    super("Trade not found");
+    this.name = "TradeNotFoundError";
+  }
+}
+
 export class DisputeTradeStatusError extends HttpError {
   status = 400;
   constructor(status: string) {
@@ -399,7 +406,7 @@ export class TradeService {
       async (span) => {
         const trade = await this.getTradeById(id, callerAddress);
         if (!trade) {
-          throw new Error("Trade not found");
+          throw new TradeNotFoundError();
         }
 
         // Access check is already done by getTradeById, but let's be explicit
@@ -473,7 +480,7 @@ export class TradeService {
       });
 
       if (!current) {
-        throw new Error("Trade not found");
+        throw new TradeNotFoundError();
       }
 
       if (
