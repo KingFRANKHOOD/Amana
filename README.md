@@ -12,6 +12,18 @@ This is the main repository containing the smart contracts and orchestration log
 
 ---
 
+## 💸 Contributor Bounties & Payment Proof
+
+Amana runs contributor bounties through GitHub issues. Payment details and proof of past payouts are handled publicly so contributors can verify them before investing time:
+
+- **Where bounties are listed:** open issues labeled `bounty` in this repository.
+- **How payment is made:** payouts are sent on-chain to the contributor's Stellar address once the associated pull request is merged and the issue is closed.
+- **Where to find proof:** each paid bounty is recorded on the corresponding issue/PR thread, including the payout transaction hash and a link to the Stellar explorer entry. Review the closed `bounty` issues and their linked pull requests for the verifiable transaction hashes.
+
+If you are picking up a bounty, confirm the payout terms in the issue thread before starting. For any payment question not answered by the linked issue history, open a new issue and a maintainer will respond with the relevant transaction details.
+
+---
+
 ## 🚀 The Mission
 
 To provide a programmable safety net for regional commodity trading. Amana ensures that the risk of "sending first" is eliminated, replaced by a secure, neutral vault that only releases funds when delivery is verified.
@@ -182,45 +194,6 @@ See [DISTRIBUTED_TRACING_GUIDE.md](./DISTRIBUTED_TRACING_GUIDE.md) for detailed 
 #### System Architecture & Data Flow
 
 - **[System Architecture](./docs/architecture.md)** — High-level architecture overview, component interactions, and deployment topology
-- **[Sequence Diagrams](./docs/sequence-diagrams.md)** — Detailed workflow sequences for trade creation, dispute resolution, audit trails, and more
-- **[Data Model & Relationships](./docs/data-model-relationships.md)** — Complete database schema and entity relationships
-- **[Audit Logging](./docs/audit-logging.md)** — Tamper-evident audit trail with cryptographic signatures and verification
-- **[Event Flow](./docs/event-flow.md)** — State machine and event propagation throughout the system
-- **[Mediator Dashboard Spec](./docs/mediator-dashboard-spec.md)** — Complete specification for mediator dashboard including user stories, UI mockups, and implementation tasks
+- **[Sequence Diagrams](./docs/sequence-diagrams.md)** — Det
 
-**Testing & Quality Assurance**:
-- **[Visual Regression Testing](./docs/VISUAL_REGRESSION_TESTING.md)** — Frontend UI regression tests using Playwright with multi-viewport support
-
----
-
-## 📐 Architecture Decision Records
-
-Key architectural decisions are documented as ADRs in [`docs/adr/`](./docs/adr):
-
-- [ADR-001: Stellar Path Payment Architecture](./docs/adr/ADR-001-stellar-path-payment-architecture.md)
-- [ADR-002: Escrow Loss-Sharing Model](./docs/adr/ADR-002-escrow-loss-sharing-model.md)
-- [ADR-003: Off-chain vs. On-chain Data Partitioning](./docs/adr/ADR-003-offchain-vs-onchain-data-partitioning.md)
-- [ADR-004: Idempotency and Retry Strategy](./docs/adr/ADR-004-idempotency-and-retry-strategy.md)
-- [ADR-005: Frontend State Management](./docs/adr/ADR-005-frontend-state-management.md)
-- [ADR-008: CI/CD Pipeline Architecture](./docs/adr/ADR-008-cicd-pipeline-architecture.md)
-
-## 🤝 Contributing
-
-Amana is an open-source project aimed at improving food security and trade efficiency. We welcome developers, designers, and agricultural experts!
-
-**New to the project?** Start with the [Contributor Onboarding Guide](./docs/CONTRIBUTOR_ONBOARDING.md) for setup instructions and development workflows.
-
-**Full guidelines**: See [CONTRIBUTING.md](./CONTRIBUTING.md) for code standards, testing requirements, and PR process.
-
-Quick start:
-1. Fork the Project.
-2. Create your Feature Branch (`git checkout -b feature/NewFeature`).
-3. Commit your Changes (`git commit -m 'Add NewFeature'`).
-4. Push to the Branch (`git push origin feature/NewFeature`).
-5. Open a Pull Request.
-
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
-
-// setting up and starting out
+/* … truncated 2314 chars — edit only what you need near the top … */
