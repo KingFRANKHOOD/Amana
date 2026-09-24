@@ -54,9 +54,24 @@ export const createTradeSchema = z.object({
   }
 });
 
+/**
+ * Strict tradeId format: UUID v4 or T-prefixed identifier (e.g. T-<uuid> or T-<alphanumeric>).
+ * Rejects ambiguous numeric-only or arbitrary strings to prevent route collisions
+ * and injection-ish garbage queries reaching Prisma.
+ */
+const strictTradeId = z
+  .string()
+  .min(1, "Trade ID is required")
+  .regex(
+    /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|T-[A-Za-z0-9_-]{8,})$/i,
+    "Invalid trade ID format. Expected UUID or T-prefixed ID",
+  );
+
 export const tradeIdParamSchema = z.object({
-  id: z.string().min(1, "Trade ID is required"),
+  id: strictTradeId,
 });
+
+export const strictTradeIdSchema = strictTradeId;
 
 export const listTradesQuerySchema = z.object({
   status: z.nativeEnum(TradeStatus).optional(),

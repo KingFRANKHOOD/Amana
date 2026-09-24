@@ -128,6 +128,7 @@ export class TrustScoreService {
         activityTrades,
         completedTrades,
         disputeAggregate,
+        lostDisputeAggregate,
         disputes,
         lastTrade,
         volumeRows,
@@ -156,6 +157,10 @@ export class TrustScoreService {
           where: { initiator: normalized },
           _count: { _all: true },
         }),
+        database.dispute.aggregate({
+          where: { initiator: normalized, status: { in: [DisputeStatus.RESOLVED, DisputeStatus.CLOSED] }, outcome: "LOST" },
+          _count: { _all: true },
+        }),
         database.dispute.findMany({
           where: { initiator: normalized },
           orderBy: { createdAt: "desc" },
@@ -181,6 +186,7 @@ export class TrustScoreService {
         activityTrades,
         completedTrades,
         disputeCount: disputeAggregate._count._all,
+        lostDisputeCount: lostDisputeAggregate._count._all,
         disputes,
         lastTrade,
         totalVolumeUsdc: Number(volumeRows[0]?.totalVolumeUsdc ?? 0),
@@ -195,10 +201,11 @@ export class TrustScoreService {
       activityTrades,
       completedTrades,
       disputeCount,
+      lostDisputeCount,
       disputes,
       lastTrade,
       totalVolumeUsdc,
-    } = queryResult;
+    } = queryResult as any;
 
     const successRate =
       totalTrades > 0
@@ -216,6 +223,7 @@ export class TrustScoreService {
       totalTrades,
       totalVolumeUsdc,
       disputeCount,
+      lostDisputeCount,
       activityTrades,
       normalized,
     );
@@ -261,6 +269,7 @@ export class TrustScoreService {
     totalTrades: number,
     totalVolumeUsdc: number,
     disputeCount: number,
+    lostDisputeCount: number,
     allTrades: { createdAt: Date; amountUsdc: string; status: TradeStatus }[],
     normalizedAddress: string,
   ): TrustScoreBreakdown {
@@ -272,7 +281,7 @@ export class TrustScoreService {
 
     const volumeBonus = this.calculateVolumeBonus(totalTrades, totalVolumeUsdc);
 
-    const disputePenalty = this.calculateDisputePenalty(disputeCount);
+    const disputePenalty = this.calculateDisputePenalty(disputeCount, lostDisputeCount);
 
     const activityDecay = this.calculateActivityDecay(
       allTrades,
@@ -335,10 +344,9 @@ export class TrustScoreService {
     return tradeCountBonus + volumeBonus;
   }
 
-  private calculateDisputePenalty(disputeCount: number): number {
-    if (disputeCount === 0) return 0;
-
-    return disputeCount * this.config.disputeInitiatedPenalty;
+  private calculateDisputePenalty(disputeCount: number, lostDisputeCount = 0): number {
+    if (disputeCount === 0 && lostDisputeCount === 0) return 0;
+    return disputeCount * this.config.disputeInitiatedPenalty + lostDisputeCount * this.config.disputeLostPenalty;
   }
 
   private calculateActivityDecay(
@@ -412,24 +420,26 @@ export class TrustScoreService {
     }
 
     for (const dispute of disputes.slice(0, 5)) {
-      const lost = dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED;
+      const isLost = (dispute as any).outcome === "LOST" && (dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED);
       const timestamp = dispute.createdAt.toISOString();
       const ageMs = now - dispute.createdAt.getTime();
       const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
-      const rawImpact = lost
+      const rawImpact = isLost
         ? -this.config.disputeLostPenalty
         : -this.config.disputeInitiatedPenalty;
       const decayedImpact = Math.round(rawImpact * decayFactor * 10) / 10;
 
       events.push({
         id: `dispute-${dispute.id}`,
-        event: lost
+        event: isLost
           ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved against you`
-          : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
+          : (dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED)
+            ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved in your favor`
+            : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
         impact: rawImpact,
         impactLabel: `${rawImpact}`,
         timestamp,
-        type: lost ? "dispute_lost" : "dispute_initiated",
+        type: isLost ? "dispute_lost" : "dispute_initiated",
         decayedImpact,
       });
     }

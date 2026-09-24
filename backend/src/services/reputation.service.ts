@@ -78,7 +78,7 @@ export class ReputationService {
           _count: { _all: true },
         }),
         database.dispute.aggregate({
-          where: { initiator: normalized, status: { in: ["RESOLVED", "CLOSED"] } },
+          where: { initiator: normalized, status: { in: ["RESOLVED", "CLOSED"] }, outcome: "LOST" },
           _count: { _all: true },
         }),
         database.dispute.findMany({
@@ -128,16 +128,21 @@ export class ReputationService {
     }
 
     for (const dispute of recentDisputes) {
-      const resolved = dispute.status === "RESOLVED" || dispute.status === "CLOSED";
+      const isLost = (dispute as any).outcome === "LOST" && (dispute.status === "RESOLVED" || dispute.status === "CLOSED");
+      const isResolvedTerminal = dispute.status === "RESOLVED" || dispute.status === "CLOSED";
+      const historyType = isLost ? "dispute_resolved" : "dispute_initiated";
+      const impact = isLost ? -10 : -2;
       history.push({
         id: `dispute-${dispute.id}`,
-        event: resolved
-          ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved`
-          : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
-        impact: resolved ? -10 : -2,
-        impactLabel: resolved ? "-10" : "-2",
+        event: isLost
+          ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved against you`
+          : isResolvedTerminal
+            ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved in your favor`
+            : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
+        impact,
+        impactLabel: `${impact}`,
         timestamp: dispute.createdAt.toISOString(),
-        type: resolved ? "dispute_resolved" : "dispute_initiated",
+        type: historyType as ReputationEvent["type"],
       });
     }
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { strictTradeIdSchema } from "./trade.schemas";
 
 export const addNoteSchema = z.object({
   content: z
@@ -8,5 +9,5 @@ export const addNoteSchema = z.object({
 });
 
 export const tradeIdParamSchema = z.object({
-  id: z.string().min(1, "Trade ID is required"),
+  id: strictTradeIdSchema,
 });

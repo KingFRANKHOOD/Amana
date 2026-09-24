@@ -209,11 +209,16 @@ export class EvidenceService {
                     responseType: "stream",
                     headers,
                     timeout: timeoutMs,
-                    validateStatus: (s) => s < 500,
+                    validateStatus: (s) => s >= 200 && s < 300,
                 });
                 this.onGatewaySuccess(url);
                 return response;
-            } catch (err) {
+            } catch (err: any) {
+                const status = err?.response?.status;
+                if (status === 401 || status === 403 || status === 404) {
+                    // Surface 4xx as distinct errors instead of generic gateway failure
+                    throw new HttpError(`IPFS gateway returned ${status}`, status);
+                }
                 lastError = err;
                 this.onGatewayFailure(url);
             }
