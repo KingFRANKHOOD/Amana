@@ -56,6 +56,25 @@ export class EncryptionService {
     return this.encrypt(plaintext, tradeId, newVersion);
   }
 
+  /**
+   * Encrypts a webhook signing secret for at-rest storage.
+   *
+   * Webhook secrets are not bound to a trade, so a stable, service-level
+   * scope identifier is used as the key-derivation context. This keeps the
+   * secret recoverable (unlike a one-way hash) so it can be used to sign
+   * outbound webhook deliveries.
+   */
+  encryptSecret(secret: string): string {
+    return this.encrypt(secret, WEBHOOK_SECRET_SCOPE);
+  }
+
+  /**
+   * Decrypts a webhook signing secret previously produced by encryptSecret.
+   */
+  decryptSecret(ciphertext: string): string {
+    return this.decrypt(ciphertext, WEBHOOK_SECRET_SCOPE);
+  }
+
   private deriveKey(tradeId: string, keyVersion: string): Buffer {
     const salt = this.saltFor(tradeId, keyVersion);
     return crypto.pbkdf2Sync(this.masterSecret, salt, 200_000, 32, "sha256");
@@ -89,3 +108,10 @@ export class EncryptionService {
     return /^v\d+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/i.test(value);
   }
 }
+
+/**
+ * Stable key-derivation scope for webhook signing secrets. Webhook secrets
+ * are not associated with a trade, so a fixed scope keeps encrypt/decrypt
+ * symmetric across requests.
+ */
+export const WEBHOOK_SECRET_SCOPE = "webhook-secret";

@@ -255,57 +255,6 @@ router.get(
         prisma.webhookSubscription.count({ where: { userId } }),
       ]);
 
-      res.status(200).json({ webhooks, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
-    } catch (error) {
-      console.error('Error listing webhooks:', error);
-      res.status(500).json({ error: 'Failed to list webhooks' });
-    }
-  }
-);
+      res.status(200).json({ webhooks, 
 
-// DELETE /webhooks/:id - Delete a webhook by ID
-router.delete(
-  '/:id',
-  authMiddleware,
-  validateRequest({ params: webhookIdParamSchema }),
-  async (req: AuthRequest, res: Response) => {
-    try {
-      const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
-      const walletAddress = req.user?.walletAddress;
-
-      if (!walletAddress) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      const userId = await getUserIdFromWallet(walletAddress);
-      if (!userId) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-
-      // Verify the webhook belongs to the user
-      const webhook = await prisma.webhookSubscription.findUnique({
-        where: { id },
-      });
-
-      if (!webhook) {
-        return res.status(404).json({ error: 'Webhook not found' });
-      }
-
-      if (webhook.userId !== userId) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-
-      // Delete the webhook
-      await prisma.webhookSubscription.delete({
-        where: { id },
-      });
-
-      res.status(200).json({ message: 'Webhook deleted successfully' });
-    } catch (error) {
-      console.error('Error deleting webhook:', error);
-      res.status(500).json({ error: 'Failed to delete webhook' });
-    }
-  }
-);
-
-export { router as webhooksRoutes };
+/* … truncated 1577 chars — edit only what you need near the top … */
