@@ -37,6 +37,34 @@ const config: Config = {
       statements: 80,
     },
   },
+  projects: [
+    {
+      displayName: 'unit',
+      testEnvironment: 'jsdom',
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+      testMatch: [
+        '**/__tests__/**/*.[jt]s?(x)',
+        '**/?(*.)+(spec|test).[jt]s?(x)',
+      ],
+      testPathIgnorePatterns: [
+        '<rootDir>/tests/e2e/',
+        '<rootDir>/tests/visual/',
+        '<rootDir>/tests/pact/',
+        '<rootDir>/node_modules/',
+      ],
+    },
+    {
+      displayName: 'pact',
+      testEnvironment: 'node',
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+      testMatch: ['<rootDir>/tests/pact/**/*.[jt]s?(x)'],
+    },
+  ],
 };
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
