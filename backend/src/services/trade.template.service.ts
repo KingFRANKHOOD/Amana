@@ -30,7 +30,9 @@ export class TradeTemplateService {
   async save(userAddress: string, input: TradeTemplateInput) {
     const normalizedUser = userAddress.toLowerCase();
     return this.prisma.tradeTemplate.upsert({
-      where: { userAddress_name: { userAddress: normalizedUser, name: input.name } },
+      where: {
+        userAddress_name: { userAddress: normalizedUser, name: input.name },
+      },
       create: {
         userAddress: normalizedUser,
         name: input.name,
@@ -48,11 +50,20 @@ export class TradeTemplateService {
     });
   }
 
-  async list(userAddress: string) {
-    return this.prisma.tradeTemplate.findMany({
-      where: { userAddress: userAddress.toLowerCase() },
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    });
+  async list(userAddress: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    const [templates, total] = await Promise.all([
+      this.prisma.tradeTemplate.findMany({
+        where: { userAddress: userAddress.toLowerCase() },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        skip,
+        take: limit,
+      }),
+      this.prisma.tradeTemplate.count({
+        where: { userAddress: userAddress.toLowerCase() },
+      }),
+    ]);
+    return { templates, total, page, limit };
   }
 
   async createTradeFromTemplate(templateId: number, userAddress: string) {
@@ -62,13 +73,14 @@ export class TradeTemplateService {
     });
     if (!template) throw new TradeTemplateNotFoundError();
 
-    const { tradeId, unsignedXdr } = await this.contractService.buildCreateTradeTx({
-      buyerAddress,
-      sellerAddress: template.sellerAddress,
-      amountUsdc: template.amountUsdc,
-      buyerLossBps: template.buyerLossBps,
-      sellerLossBps: template.sellerLossBps,
-    });
+    const { tradeId, unsignedXdr } =
+      await this.contractService.buildCreateTradeTx({
+        buyerAddress,
+        sellerAddress: template.sellerAddress,
+        amountUsdc: template.amountUsdc,
+        buyerLossBps: template.buyerLossBps,
+        sellerLossBps: template.sellerLossBps,
+      });
     await this.prisma.trade.create({
       data: {
         tradeId,
