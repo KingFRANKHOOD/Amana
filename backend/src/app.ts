@@ -180,77 +180,57 @@ export function createApp(
   // CSP violation report collection endpoint (helmet's reportUri above)
   app.use(createCspRouter());
 
-  // ── Build the versioned resource router (all API routes) ──────────────────
-  // This single router instance is mounted twice:
-  //   1. /api/v1  — canonical, gets X-API-Version: 1
-  //   2. /        — legacy unprefixed paths, gets Deprecation/Sunset headers
-  // Operational endpoints (/health, /metrics-info) are intentionally excluded.
-  function buildApiRouter(): express.Router {
-    const r = express.Router();
+  const r = express.Router();
 
-    r.use("/auth", authRoutes);
-    r.use("/wallet", walletRoutes);
-    r.use("/users", userRoutes);
-    r.use("/users", reputationRoutes);
-    r.use("/users", createTrustScoreRouter());
-    r.use(createNotificationPreferencesRouter());
-    r.use(createNotificationsRouter());
+  // API version negotiation headers
+  r.use(apiVersionHeader);
+  r.use(deprecationHeaders);
 
-    // These literal routes must precede the generic /trades/:id handler.
-    r.use("/trades", createTradeExportRouter());
-    r.use("/trades", createTradeTemplateRouter());
-    r.use("/trades", createTradeWatchlistRouter());
-    r.use("/trades", createTradeEvidenceRouter());
-    r.use("/trades", createEscrowReleaseRouter());
-    r.use("/trades", createEscrowScheduleRouter());
-    r.use("/trades", createTradeRouter());
-    r.use("/trades", createTradeNotesRouter());
-    r.use(createTradeEventsRouter());
-    r.use("/trades/:id/manifest", createTradeManifestRouter());
-    r.use("/trades/:id/manifest", createManifestRouter());
-    r.use(createEvidenceRouter());
-    r.use("/trades", createAuditTrailRouter());
+  r.use("/auth", authRoutes);
+  r.use("/wallet", walletRoutes);
+  r.use("/trades", createTradeRouter(deps));
+  r.use("/trades", createTradeTemplateRouter());
+  r.use("/trades", createTradeWatchlistRouter());
+  r.use("/trades", createTradeEvidenceRouter());
+  r.use("/trades", createTradeExportRouter());
+  r.use("/trades", createTradeNotesRouter());
+  r.use("/trades", createTradeEventsRouter());
+  r.use("/trades/:id/manifest", createTradeManifestRouter());
+  // NOTE: createManifestRouter() previously shared the exact same mount path as
+  // createTradeManifestRouter() above, so its GET/POST "/" handlers were fully
+  // shadowed and unreachable. It is now mounted on a distinct sub-path so its
+  // driverIdNumber-aware schema and buildSubmitManifestTx contract flow can run.
+  r.use("/trades/:id/manifest/submit", createManifestRouter());
+  r.use("/escrow", createEscrowReleaseRouter());
+  r.use("/escrow", createEscrowScheduleRouter());
+  r.use("/evidence", createEvidenceRouter());
+  r.use("/audit-trail", createAuditTrailRouter());
+  r.use("/goals", createGoalsRouter());
+  r.use("/notifications", createNotificationPreferencesRouter());
+  r.use("/notifications", createNotificationsRouter());
+  r.use("/disputes", disputeRoutes);
+  r.use("/dispute-categories", disputeCategoryRoutes);
+  r.use("/treasury", createTreasuryRouter());
+  r.use("/fees", createFeeAccountingRouter());
+  r.use("/users", userRoutes);
+  r.use("/reputation", reputationRoutes);
+  r.use("/stellar/fees", stellarFeesRoutes);
+  r.use("/stellar/tx", stellarTxStatusRoutes);
+  r.use("/stellar/assets", stellarAssetRoutes);
+  r.use("/stellar/accounts", stellarAccountBalanceRoutes);
+  r.use("/stellar/accounts", stellarAccountCreateRoutes);
+  r.use("/contracts", createContractStateRouter());
+  r.use("/admin/features", createAdminFeaturesRouter());
+  r.use("/admin/evidence-verification", createAdminEvidenceVerificationRouter());
+  r.use("/admin/retention", createAdminRetentionRouter());
+  r.use("/admin/webhooks", createAdminWebhooksRouter());
+  r.use("/audit-logs", createAuditLogRouter());
+  r.use("/trust-score", createTrustScoreRouter());
+  r.use("/webhooks", webhooksRoutes);
+  r.use("/events", createEventRouter());
 
-    r.use("/goals", createGoalsRouter());
-    r.use("/disputes", disputeRoutes);
-    r.use("/dispute-categories", disputeCategoryRoutes);
+  app.use("/api/v1", r);
 
-    r.use("/stellar/fees", stellarFeesRoutes);
-    r.use("/stellar/tx", stellarTxStatusRoutes);
-    r.use("/stellar/assets", stellarAssetRoutes);
-    r.use("/stellar/account", stellarAccountCreateRoutes);
-    r.use("/stellar/account", stellarAccountBalanceRoutes);
-    r.use("/contract", createContractStateRouter());
-
-    r.use("/treasury", createTreasuryRouter());
-    r.use(createAdminFeaturesRouter());
-    r.use(createAdminEvidenceVerificationRouter());
-    r.use(createAdminRetentionRouter());
-    r.use(createAdminWebhooksRouter());
-    r.use(createAuditLogRouter());
-    r.use("/webhooks", webhooksRoutes);
-
-    return r;
-  }
-
-  const apiRouter = buildApiRouter();
-
-  // Versioned mount — canonical path, advertises version
-  app.use("/api/v1", apiVersionHeader(1), apiRouter);
-
-  // Legacy mount — same router, marked deprecated
-  app.use("/", deprecationHeaders(env.LEGACY_API_SUNSET_DATE, "/api/v1"), apiRouter);
-
-  // Event indexer API — requires Prisma and EventIndexerService
-  if (deps?.prisma && deps?.eventIndexer) {
-    app.use("/api/v1", createEventRouter(deps.prisma, deps.eventIndexer));
-  }
-
-  // Platform fee accounting & reporting (admin-only)
-  app.use("/fees", createFeeAccountingRouter());
-
-  // Error handler registered last — Express 5 natively preserves middleware
-  // order so it catches errors from all routes and middleware registered above.
   app.use(errorHandler);
 
   return app;
