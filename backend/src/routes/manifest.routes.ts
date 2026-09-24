@@ -12,6 +12,8 @@ import {
     ManifestNotFoundError,
 } from "../services/manifest.service";
 import { ContractService } from "../services/contract.service";
+import { validateRequest } from "../middleware/validateRequest";
+import { strictTradeIdSchema } from "../schemas/trade.schemas";
 
 const manifestBodySchema = z.object({
     driverName: z.string().min(1),
@@ -28,7 +30,7 @@ export function createManifestRouter(
     const router = Router({ mergeParams: true });
 
     // GET /trades/:id/manifest
-    router.get("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+    router.get("/", authMiddleware, validateRequest({ params: z.object({ id: strictTradeIdSchema }) }), async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -58,7 +60,7 @@ export function createManifestRouter(
     });
 
     // POST /trades/:id/manifest
-    router.post("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+    router.post("/", authMiddleware, validateRequest({ params: z.object({ id: strictTradeIdSchema }) }), async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });

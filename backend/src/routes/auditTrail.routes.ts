@@ -1,7 +1,6 @@
 import { Router, Response } from "express";
 import crypto from "crypto";
 import { Parser } from "json2csv";
-import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { AuthRequest } from "../services/auth.service";
 import {
@@ -13,16 +12,10 @@ import {
 import { appLogger } from "../middleware/logger";
 import { getAuditSigningConfig } from "../config/auditSigning";
 import { validateRequest } from "../middleware/validateRequest";
+import { strictTradeIdSchema } from "../schemas/trade.schemas";
 
 const auditTradeIdParamSchema = z.object({
-    id: z
-        .string()
-        .min(1, "Trade ID is required")
-        .max(255, "Trade ID is too long")
-        .regex(
-            /^[A-Za-z0-9_-]+$/,
-            "Trade ID contains invalid characters",
-        ),
+    id: strictTradeIdSchema,
 });
 
 export function createAuditTrailRouter(auditService = new AuditTrailService()) {
