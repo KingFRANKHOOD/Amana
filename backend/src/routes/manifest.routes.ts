@@ -1,6 +1,8 @@
 import { NextFunction, Router, Response } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { validateRequest } from "../middleware/validateRequest";
+import { tradeIdParamSchema } from "../schemas/trade.notes.schemas";
 import { AuthRequest } from "../services/auth.service";
 import {
     ManifestService,
@@ -13,11 +15,13 @@ import {
 } from "../services/manifest.service";
 import { ContractService } from "../services/contract.service";
 
+const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
+
 const manifestBodySchema = z.object({
-    driverName: z.string().min(1),
-    driverIdNumber: z.string().min(1),
-    vehicleRegistration: z.string().min(1),
-    routeDescription: z.string().min(1),
+    driverName: z.string().trim().min(1).refine(noUnsafeHtml, "Driver name contains unsupported HTML or script content"),
+    driverIdNumber: z.string().trim().min(1).refine(noUnsafeHtml, "Driver ID contains unsupported HTML or script content"),
+    vehicleRegistration: z.string().trim().min(1).refine(noUnsafeHtml, "Vehicle registration contains unsupported HTML or script content"),
+    routeDescription: z.string().trim().min(1).refine(noUnsafeHtml, "Route description contains unsupported HTML or script content"),
     expectedDeliveryAt: z.string().datetime(),
 });
 
@@ -28,7 +32,7 @@ export function createManifestRouter(
     const router = Router({ mergeParams: true });
 
     // GET /trades/:id/manifest
-    router.get("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+    router.get("/", authMiddleware, validateRequest({ params: tradeIdParamSchema }), async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -58,7 +62,7 @@ export function createManifestRouter(
     });
 
     // POST /trades/:id/manifest
-    router.post("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+    router.post("/", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: manifestBodySchema }), async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });

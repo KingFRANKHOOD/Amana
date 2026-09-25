@@ -1,5 +1,24 @@
 import { Request, Response, NextFunction } from "express";
 
+const CONTROL_CHARS_PATTERN = /[\u0000-\u001F\u007F]+/g;
+
+function normalizeValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.replace(CONTROL_CHARS_PATTERN, " ").trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map(normalizeValue);
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = normalizeValue(entry);
+    }
+    return result;
+  }
+  return value;
+}
+
 type ParseAsyncSchema = {
   parseAsync: (input: unknown) => Promise<unknown>;
 };
@@ -58,10 +77,10 @@ export const validateRequest = (schema: {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       if (schema.body) {
-        req.body = await schema.body.parseAsync(req.body);
+        req.body = await schema.body.parseAsync(normalizeValue(req.body));
       }
       if (schema.query) {
-        const parsed = await schema.query.parseAsync(req.query);
+        const parsed = await schema.query.parseAsync(normalizeValue(req.query));
         Object.defineProperty(req, 'query', {
           value: parsed,
           writable: true,
@@ -69,7 +88,7 @@ export const validateRequest = (schema: {
         });
       }
       if (schema.params) {
-        req.params = (await schema.params.parseAsync(req.params)) as any;
+        req.params = (await schema.params.parseAsync(normalizeValue(req.params))) as any;
       }
       next();
     } catch (error) {

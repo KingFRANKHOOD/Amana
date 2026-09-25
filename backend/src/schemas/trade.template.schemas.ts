@@ -10,9 +10,11 @@ const amountUsdc = z.union([
   z.number().positive("Amount must be positive").transform(String),
 ]);
 
+const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
+
 export const createTradeTemplateSchema = z
   .object({
-    name: z.string().trim().min(1, "Template name is required").max(100),
+    name: z.string().trim().min(1, "Template name is required").max(100).refine(noUnsafeHtml, "Template name contains unsupported HTML or script content"),
     sellerAddress: stellarPublicKey,
     amountUsdc,
     buyerLossBps: z.number().int().min(0).max(10000).default(5000),

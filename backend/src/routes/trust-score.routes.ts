@@ -1,11 +1,19 @@
 import { Response, Router } from "express";
+import { z } from "zod";
+import { StrKey } from "@stellar/stellar-sdk";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
+import { validateRequest } from "../middleware/validateRequest";
 import { TrustScoreService } from "../services/trustScore.service";
 import { ErrorCode } from '../errors/errorCodes';
 import { AppError } from '../errors/appError';
 import { prisma } from "../lib/db";
 
 const trustScoreService = new TrustScoreService(prisma);
+const publicAddressSchema = z.object({
+  address: z.string().refine((value: string) => StrKey.isValidEd25519PublicKey(value), {
+    message: "Invalid Stellar public key",
+  }),
+});
 
 export function createTrustScoreRouter() {
   const router = Router();
@@ -29,6 +37,7 @@ export function createTrustScoreRouter() {
 
   router.get(
     "/:address/trust-score",
+    validateRequest({ params: publicAddressSchema }),
     async (req, res, next) => {
       try {
         const raw = req.params.address;

@@ -1,7 +1,13 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { horizonServer } from "../config/stellar";
 import { appLogger } from "../middleware/logger";
+import { validateRequest } from "../middleware/validateRequest";
+
+const transactionStatusParamsSchema = z.object({
+  hash: z.string().regex(/^[A-Fa-f0-9]{64}$/, "Invalid transaction hash"),
+});
 
 function parseResultCodes(resultXdr: string): { transaction: string; operations: string[] } {
   try {
@@ -28,7 +34,7 @@ function parseResultCodes(resultXdr: string): { transaction: string; operations:
 export function createStellarTxStatusRouter(): Router {
   const router = Router();
 
-  router.get("/:hash/status", async (req: Request, res: Response) => {
+  router.get("/:hash/status", validateRequest({ params: transactionStatusParamsSchema }), async (req: Request, res: Response) => {
     const hash = req.params.hash as string;
 
     if (!hash || hash.length !== 64) {
