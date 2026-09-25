@@ -18,16 +18,32 @@ export const createTradeTemplateSchema = z
     buyerLossBps: z.number().int().min(0).max(10000).default(5000),
     sellerLossBps: z.number().int().min(0).max(10000).default(5000),
   })
-  .superRefine((value: { buyerLossBps: number; sellerLossBps: number }, ctx: any) => {
-    if (value.buyerLossBps + value.sellerLossBps !== 10000) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["buyerLossBps"],
-        message: "sum of buyerLossBps and sellerLossBps must equal 10000",
-      });
-    }
-  });
+  .superRefine(
+    (value: { buyerLossBps: number; sellerLossBps: number }, ctx: any) => {
+      if (value.buyerLossBps + value.sellerLossBps !== 10000) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["buyerLossBps"],
+          message: "sum of buyerLossBps and sellerLossBps must equal 10000",
+        });
+      }
+    },
+  );
 
 export const templateIdParamSchema = z.object({
   templateId: z.coerce.number().int().positive(),
+});
+
+/** Maximum items that can be returned in a single page for list endpoints. */
+export const TEMPLATE_LIST_MAX_LIMIT = 100;
+
+export const listTemplatesQuerySchema = z.object({
+  page: z.preprocess(
+    (v) => (v === undefined || v === "" ? undefined : Number(v)),
+    z.number().int().min(1).default(1),
+  ),
+  limit: z.preprocess(
+    (v) => (v === undefined || v === "" ? undefined : Number(v)),
+    z.number().int().min(1).max(TEMPLATE_LIST_MAX_LIMIT).default(20),
+  ),
 });
