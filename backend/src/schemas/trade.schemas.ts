@@ -7,6 +7,8 @@ const stellarPublicKey = (fieldName: string) =>
     message: `Invalid Stellar public key for ${fieldName}`,
   });
 
+const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
+
 /**
  * Coerce a query-string parameter to a number while producing a clear,
  * actionable validation error for non-numeric input.
@@ -45,7 +47,7 @@ export const createTradeSchema = z.object({
   ]),
   buyerLossBps: z.number().int().min(0, "buyerLossBps must be >= 0").max(10000, "buyerLossBps must be <= 10000").default(5000),
   sellerLossBps: z.number().int().min(0, "sellerLossBps must be >= 0").max(10000, "sellerLossBps must be <= 10000").default(5000),
-  description: z.string().optional(),
+  description: z.string().trim().max(2000, "Description must be 2000 characters or fewer").optional().refine((value) => value === undefined || noUnsafeHtml(value), "Description contains unsupported HTML or script content"),
 }).superRefine((data: Record<string, unknown>, ctx: any) => {
   const buyer = (data.buyerLossBps as number) ?? 5000;
   const seller = (data.sellerLossBps as number) ?? 5000;
@@ -67,12 +69,13 @@ export const listTradesQuerySchema = z.object({
 
 export const initiateDisputeSchema = z
   .object({
-    reason: z.string().min(10, "Reason must be at least 10 characters"),
+    reason: z.string().trim().min(10, "Reason must be at least 10 characters").refine(noUnsafeHtml, "Reason contains unsupported HTML or script content"),
     category: z
       .string()
       .trim()
       .min(1, "Category string is required")
       .max(100, "Category must be 100 characters or fewer")
+      .refine((value) => noUnsafeHtml(value), "Category contains unsupported HTML or script content")
       .optional(),
     categoryId: z.number().int().positive("categoryId must be a positive integer").optional(),
   })

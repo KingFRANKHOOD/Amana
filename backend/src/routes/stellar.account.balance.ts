@@ -1,7 +1,15 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import { StrKey } from "@stellar/stellar-sdk";
 import { horizonServer } from "../config/stellar";
 import { appLogger } from "../middleware/logger";
+import { validateRequest } from "../middleware/validateRequest";
+
+const accountBalanceParamsSchema = z.object({
+  address: z.string().refine((value: string) => StrKey.isValidEd25519PublicKey(value), {
+    message: "Invalid Stellar account address",
+  }),
+});
 
 interface Balance {
   assetType: string;
@@ -36,7 +44,7 @@ export function createStellarAccountBalanceRouter(): Router {
   const router = Router();
 
   // GET /stellar/account/:address/balance
-  router.get("/:address/balance", async (req: Request, res: Response) => {
+  router.get("/:address/balance", validateRequest({ params: accountBalanceParamsSchema }), async (req: Request, res: Response) => {
     const address = req.params.address as string;
 
     if (!address || !StrKey.isValidEd25519PublicKey(address)) {
