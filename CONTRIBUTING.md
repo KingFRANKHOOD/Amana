@@ -156,6 +156,47 @@ All contributions must include test coverage verifying the new behavior or bug f
 
 ---
 
+## Bounties & Contributor Payments
+
+Amana runs contributor bounties through its GitHub issues. If you are
+considering picking up a bounty, here is how to verify that contributors are
+actually paid before you invest time.
+
+### Where to find proof of payment
+
+We do not maintain a separate, hand-curated list of payouts in this document,
+because any such list would quickly go stale and could not be independently
+verified. Instead, all payout evidence lives in public, verifiable places:
+
+1. **Closed bounty issues.** Browse the repository's closed issues and look for
+   issues labelled as bounties. When a bounty is paid out, the maintainer
+   comments on the issue with the payout reference (for example, a Stellar
+   transaction hash or a link to the transaction on a block explorer) and then
+   closes the issue. The issue thread itself is the canonical record.
+2. **Merged pull requests.** Paid bounties are tied to merged PRs. Open the PR
+   that closed the bounty issue and read the linked issue thread for the payout
+   comment.
+3. **On-chain transactions.** Amana's escrow and payout flows settle on
+   Stellar/Soroban. Any transaction hash shared in an issue thread can be
+   independently verified on a public Stellar block explorer (for example,
+   [stellar.expert](https://stellar.expert)) by searching for the hash.
+
+### How to verify a payout yourself
+
+1. Find a closed bounty issue in this repository.
+2. Locate the maintainer's payout comment containing a transaction hash or
+   explorer link.
+3. Paste the transaction hash into a public Stellar block explorer and confirm
+   the transfer, amount, and destination address.
+
+If you cannot find a payout reference on a closed bounty issue, please ask on
+that issue thread — maintainers will point you to the corresponding
+transaction. We deliberately avoid publishing wallet addresses or payment
+records in this file so that the evidence always remains independently
+verifiable on-chain rather than taken on trust.
+
+---
+
 ## Pull Request Process
 
 1. **Verify Local Build & Tests**: Ensure all linting checks and test suites pass locally before pushing.
