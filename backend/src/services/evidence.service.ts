@@ -7,347 +7,397 @@ import { getAdminAllowlistLowercase } from "../lib/accessControl";
 import { env } from "../config/env";
 
 export class EvidenceAccessDeniedError extends HttpError {
-    status = 403;
-    constructor() {
-        super("Access denied: you are not a party to this trade");
-        this.name = "EvidenceAccessDeniedError";
-    }
+  status = 403;
+  constructor() {
+    super("Access denied: you are not a party to this trade");
+    this.name = "EvidenceAccessDeniedError";
+  }
 }
 
 export class EvidenceTradeNotFoundError extends HttpError {
-    status = 404;
-    constructor() {
-        super("Trade not found");
-        this.name = "EvidenceTradeNotFoundError";
-    }
+  status = 404;
+  constructor() {
+    super("Trade not found");
+    this.name = "EvidenceTradeNotFoundError";
+  }
 }
 
 export class EvidenceValidationError extends HttpError {
-    status = 400;
-    constructor(message = "Invalid evidence file") {
-        super(message);
-        this.name = "EvidenceValidationError";
-    }
+  status = 400;
+  constructor(message = "Invalid evidence file") {
+    super(message);
+    this.name = "EvidenceValidationError";
+  }
 }
 
 export class EvidenceScanError extends HttpError {
-    status = 503;
-    constructor(message = "Evidence scan service unavailable") {
-        super(message);
-        this.name = "EvidenceScanError";
-    }
+  status = 503;
+  constructor(message = "Evidence scan service unavailable") {
+    super(message);
+    this.name = "EvidenceScanError";
+  }
 }
 
 export interface EvidenceScanResult {
-    clean: boolean;
-    reason?: string;
+  clean: boolean;
+  reason?: string;
 }
 
 export interface EvidenceScanner {
-    scan(file: Express.Multer.File): Promise<EvidenceScanResult>;
+  scan(file: Express.Multer.File): Promise<EvidenceScanResult>;
 }
 
 class NoopEvidenceScanner implements EvidenceScanner {
-    async scan(): Promise<EvidenceScanResult> {
-        return { clean: true };
-    }
+  async scan(): Promise<EvidenceScanResult> {
+    return { clean: true };
+  }
+}
+
+/**
+ * FailClosedEvidenceScanner is used in production/staging when
+ * EVIDENCE_SCAN_REQUIRED is true but no real scanner is injected.
+ * It rejects every file rather than silently passing them through.
+ */
+class FailClosedEvidenceScanner implements EvidenceScanner {
+  async scan(): Promise<EvidenceScanResult> {
+    throw new EvidenceScanError(
+      "Evidence scanning is required but no scanner is configured. " +
+        "Inject a real EvidenceScanner or set EVIDENCE_SCAN_REQUIRED=false for development.",
+    );
+  }
+}
+
+function buildDefaultScanner(): EvidenceScanner {
+  const nodeEnv = process.env.NODE_ENV ?? "development";
+  const required =
+    process.env.EVIDENCE_SCAN_REQUIRED !== undefined
+      ? process.env.EVIDENCE_SCAN_REQUIRED.toLowerCase() === "true"
+      : env.EVIDENCE_SCAN_REQUIRED;
+  // In production/staging the noop scanner is not safe — use fail-closed
+  // so an operator misconfiguration surfaces immediately rather than
+  // silently allowing unscanned files.
+  if (required && nodeEnv !== "development" && nodeEnv !== "test") {
+    return new FailClosedEvidenceScanner();
+  }
+  return new NoopEvidenceScanner();
 }
 
 function getEvidenceMetadataRetentionDays(): number {
-    return env.EVIDENCE_METADATA_RETENTION_DAYS;
+  return env.EVIDENCE_METADATA_RETENTION_DAYS;
 }
 
 function isEvidenceMetadataExpired(createdAt: Date): boolean {
-    const retentionMs = getEvidenceMetadataRetentionDays() * 24 * 60 * 60 * 1000;
-    return Date.now() - createdAt.getTime() > retentionMs;
+  const retentionMs = getEvidenceMetadataRetentionDays() * 24 * 60 * 60 * 1000;
+  return Date.now() - createdAt.getTime() > retentionMs;
 }
 
 type EvidenceDatabase = {
-    trade: Pick<PrismaClient["trade"], "findUnique">;
-    tradeEvidence: Pick<PrismaClient["tradeEvidence"], "findMany" | "create">;
+  trade: Pick<PrismaClient["trade"], "findUnique">;
+  tradeEvidence: Pick<PrismaClient["tradeEvidence"], "findMany" | "create">;
 };
 
 export class EvidenceService {
-    private ipfs: IPFSService;
-    private scanner: EvidenceScanner;
-    /** In-process cache: CID → resolved gateway URL */
-    private readonly urlCache = new Map<string, string>();
-    /** In-process gateway circuit state. */
-    private readonly gatewayCircuit = new Map<string, { failures: number; openUntil: number }>();
+  private ipfs: IPFSService;
+  private scanner: EvidenceScanner;
+  /** In-process cache: CID → resolved gateway URL */
+  private readonly urlCache = new Map<string, string>();
+  /** In-process gateway circuit state. */
+  private readonly gatewayCircuit = new Map<
+    string,
+    { failures: number; openUntil: number }
+  >();
 
-    constructor(
-        private readonly prisma: EvidenceDatabase = defaultPrisma as unknown as EvidenceDatabase,
-        ipfs?: IPFSService,
-        scanner?: EvidenceScanner,
+  constructor(
+    private readonly prisma: EvidenceDatabase = defaultPrisma as unknown as EvidenceDatabase,
+    ipfs?: IPFSService,
+    scanner?: EvidenceScanner,
+  ) {
+    this.ipfs = ipfs ?? new IPFSService();
+    this.scanner = scanner ?? buildDefaultScanner();
+  }
+
+  /** Return all evidence records for a trade. Caller must be buyer or seller. */
+  async getEvidenceByTradeId(tradeId: string, callerAddress: string) {
+    const trade = await this.prisma.trade.findUnique({
+      where: { tradeId },
+    });
+
+    if (!trade) throw new EvidenceTradeNotFoundError();
+
+    const caller = callerAddress.toLowerCase();
+    const isAdmin = getAdminAllowlistLowercase().has(caller);
+    if (
+      trade.buyerAddress.toLowerCase() !== caller &&
+      trade.sellerAddress.toLowerCase() !== caller &&
+      !isAdmin
     ) {
-        this.ipfs = ipfs ?? new IPFSService();
-        this.scanner = scanner ?? new NoopEvidenceScanner();
+      throw new EvidenceAccessDeniedError();
     }
 
-    /** Return all evidence records for a trade. Caller must be buyer or seller. */
-    async getEvidenceByTradeId(tradeId: string, callerAddress: string) {
-        const trade = await this.prisma.trade.findUnique({
-            where: { tradeId },
-        });
+    const records = await this.prisma.tradeEvidence.findMany({
+      where: { tradeId },
+      orderBy: { createdAt: "asc" },
+    });
 
-        if (!trade) throw new EvidenceTradeNotFoundError();
+    return records.map((r) => {
+      const retentionExpired = isEvidenceMetadataExpired(r.createdAt);
+      return {
+        id: r.id,
+        cid: retentionExpired ? "redacted" : r.cid,
+        filename: retentionExpired ? "redacted" : r.filename,
+        mimeType: r.mimeType,
+        uploadedBy: retentionExpired && !isAdmin ? "redacted" : r.uploadedBy,
+        url: retentionExpired ? null : this.resolveGatewayUrl(r.cid),
+        createdAt: r.createdAt,
+        retentionExpired,
+      };
+    });
+  }
 
-        const caller = callerAddress.toLowerCase();
-        const isAdmin = getAdminAllowlistLowercase().has(caller);
-        if (
-            trade.buyerAddress.toLowerCase() !== caller &&
-            trade.sellerAddress.toLowerCase() !== caller &&
-            !isAdmin
-        ) {
-            throw new EvidenceAccessDeniedError();
-        }
+  /**
+   * Upload a video file to IPFS and persist the evidence record.
+   * Caller must be buyer or seller of the referenced trade.
+   */
+  async uploadVideoEvidence(
+    tradeId: string,
+    callerAddress: string,
+    file: Express.Multer.File,
+  ) {
+    const trade = await this.prisma.trade.findUnique({ where: { tradeId } });
+    if (!trade) throw new EvidenceTradeNotFoundError();
 
-        const records = await this.prisma.tradeEvidence.findMany({
-            where: { tradeId },
-            orderBy: { createdAt: "asc" },
-        });
-
-        return records.map((r) => {
-            const retentionExpired = isEvidenceMetadataExpired(r.createdAt);
-            return {
-                id: r.id,
-                cid: retentionExpired ? "redacted" : r.cid,
-                filename: retentionExpired ? "redacted" : r.filename,
-                mimeType: r.mimeType,
-                uploadedBy: retentionExpired && !isAdmin ? "redacted" : r.uploadedBy,
-                url: retentionExpired ? null : this.resolveGatewayUrl(r.cid),
-                createdAt: r.createdAt,
-                retentionExpired,
-            };
-        });
-    }
-
-    /**
-     * Upload a video file to IPFS and persist the evidence record.
-     * Caller must be buyer or seller of the referenced trade.
-     */
-    async uploadVideoEvidence(
-        tradeId: string,
-        callerAddress: string,
-        file: Express.Multer.File,
+    const caller = callerAddress.toLowerCase();
+    if (
+      trade.buyerAddress.toLowerCase() !== caller &&
+      trade.sellerAddress.toLowerCase() !== caller
     ) {
-        const trade = await this.prisma.trade.findUnique({ where: { tradeId } });
-        if (!trade) throw new EvidenceTradeNotFoundError();
+      throw new EvidenceAccessDeniedError();
+    }
 
-        const caller = callerAddress.toLowerCase();
-        if (
-            trade.buyerAddress.toLowerCase() !== caller &&
-            trade.sellerAddress.toLowerCase() !== caller
-        ) {
-            throw new EvidenceAccessDeniedError();
-        }
+    // Validate declared mime type
+    const allowed = ["video/mp4", "video/webm"];
+    if (!allowed.includes(file.mimetype)) {
+      throw new EvidenceValidationError("Unsupported file type");
+    }
 
-        // Validate declared mime type
-        const allowed = ["video/mp4", "video/webm"];
-        if (!allowed.includes(file.mimetype)) {
-            throw new EvidenceValidationError("Unsupported file type");
-        }
+    // Validate mime by magic bytes to prevent spoofed content-type uploads.
+    const sniffed = this.sniffMimeType(file.buffer);
+    if (!sniffed || sniffed !== file.mimetype) {
+      throw new EvidenceValidationError(
+        "File content does not match declared MIME type",
+      );
+    }
 
-        // Validate mime by magic bytes to prevent spoofed content-type uploads.
-        const sniffed = this.sniffMimeType(file.buffer);
-        if (!sniffed || sniffed !== file.mimetype) {
-            throw new EvidenceValidationError("File content does not match declared MIME type");
-        }
+    // Enforce configurable size limit (default 50MB)
+    const size = (file as any).size ?? file.buffer.length;
+    const MAX = env.EVIDENCE_MAX_BYTES;
+    if (size > MAX) {
+      throw new EvidenceValidationError("File too large");
+    }
 
-        // Enforce configurable size limit (default 50MB)
-        const size = (file as any).size ?? file.buffer.length;
-        const MAX = env.EVIDENCE_MAX_BYTES;
-        if (size > MAX) {
-            throw new EvidenceValidationError("File too large");
-        }
+    const scan = await this.runEvidenceScan(file);
+    if (!scan.clean) {
+      throw new EvidenceValidationError(
+        scan.reason || "Evidence blocked by malware scanner",
+      );
+    }
 
-        const scan = await this.runEvidenceScan(file);
-        if (!scan.clean) {
-            throw new EvidenceValidationError(scan.reason || "Evidence blocked by malware scanner");
-        }
+    const cid = await this.ipfs.uploadFile(file.buffer, file.originalname);
 
-        const cid = await this.ipfs.uploadFile(file.buffer, file.originalname);
+    const record = await this.prisma.tradeEvidence.create({
+      data: {
+        tradeId,
+        cid,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        uploadedBy: caller,
+      },
+    });
 
-        const record = await this.prisma.tradeEvidence.create({
-            data: {
-                tradeId,
-                cid,
-                filename: file.originalname,
-                mimeType: file.mimetype,
-                uploadedBy: caller,
-            },
+    return {
+      evidenceId: record.id,
+      cid,
+      ipfsUrl: this.resolveGatewayUrl(cid),
+    };
+  }
+
+  /**
+   * Proxy-stream a file from the IPFS gateway with optional Range support.
+   * Returns an axios response stream so the route can pipe it.
+   */
+  async streamFromIPFS(cid: string, range?: string) {
+    // Build list of gateway base URLs to try. Prefer explicit env var list.
+    const urls = this.resolveGatewayUrls(cid);
+
+    const headers: Record<string, string> = {};
+    if (range) headers["Range"] = range;
+
+    const timeoutMs = env.IPFS_STREAM_TIMEOUT_MS;
+
+    let lastError: any = null;
+    for (const url of urls) {
+      if (this.isGatewayCircuitOpen(url)) {
+        continue;
+      }
+
+      try {
+        const response = await axios.get(url, {
+          responseType: "stream",
+          headers,
+          timeout: timeoutMs,
+          validateStatus: (s) => s < 500,
         });
-
-        return {
-            evidenceId: record.id,
-            cid,
-            ipfsUrl: this.resolveGatewayUrl(cid),
-        };
+        this.onGatewaySuccess(url);
+        return response;
+      } catch (err) {
+        lastError = err;
+        this.onGatewayFailure(url);
+      }
     }
 
-    /**
-     * Proxy-stream a file from the IPFS gateway with optional Range support.
-     * Returns an axios response stream so the route can pipe it.
-     */
-    async streamFromIPFS(cid: string, range?: string) {
-        // Build list of gateway base URLs to try. Prefer explicit env var list.
-        const urls = this.resolveGatewayUrls(cid);
+    if (lastError) {
+      throw new ServiceUnavailableError();
+    }
+    throw new ServiceUnavailableError();
+  }
 
-        const headers: Record<string, string> = {};
-        if (range) headers["Range"] = range;
+  /** Resolve and cache the public gateway URL for a CID. */
+  private resolveGatewayUrl(cid: string): string {
+    if (this.urlCache.has(cid)) {
+      return this.urlCache.get(cid)!;
+    }
+    const url = this.ipfs.getFileUrl(cid);
+    this.urlCache.set(cid, url);
+    return url;
+  }
 
-        const timeoutMs = env.IPFS_STREAM_TIMEOUT_MS;
-
-        let lastError: any = null;
-        for (const url of urls) {
-            if (this.isGatewayCircuitOpen(url)) {
-                continue;
-            }
-
-            try {
-                const response = await axios.get(url, {
-                    responseType: "stream",
-                    headers,
-                    timeout: timeoutMs,
-                    validateStatus: (s) => s < 500,
-                });
-                this.onGatewaySuccess(url);
-                return response;
-            } catch (err) {
-                lastError = err;
-                this.onGatewayFailure(url);
-            }
-        }
-
-        if (lastError) {
-            throw new ServiceUnavailableError();
-        }
-        throw new ServiceUnavailableError();
+  private sniffMimeType(buffer: Buffer): "video/mp4" | "video/webm" | null {
+    // MP4: bytes 4-7 should contain 'ftyp' marker in ISO BMFF containers.
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(4, 8).toString("ascii") === "ftyp"
+    ) {
+      return "video/mp4";
     }
 
-    /** Resolve and cache the public gateway URL for a CID. */
-    private resolveGatewayUrl(cid: string): string {
-        if (this.urlCache.has(cid)) {
-            return this.urlCache.get(cid)!;
-        }
-        const url = this.ipfs.getFileUrl(cid);
-        this.urlCache.set(cid, url);
-        return url;
+    // WebM: EBML header starts with 0x1A45DFA3.
+    if (
+      buffer.length >= 4 &&
+      buffer[0] === 0x1a &&
+      buffer[1] === 0x45 &&
+      buffer[2] === 0xdf &&
+      buffer[3] === 0xa3
+    ) {
+      return "video/webm";
     }
 
-    private sniffMimeType(buffer: Buffer): "video/mp4" | "video/webm" | null {
-        // MP4: bytes 4-7 should contain 'ftyp' marker in ISO BMFF containers.
-        if (buffer.length >= 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") {
-            return "video/mp4";
-        }
+    return null;
+  }
 
-        // WebM: EBML header starts with 0x1A45DFA3.
-        if (
-            buffer.length >= 4 &&
-            buffer[0] === 0x1a &&
-            buffer[1] === 0x45 &&
-            buffer[2] === 0xdf &&
-            buffer[3] === 0xa3
-        ) {
-            return "video/webm";
-        }
+  private async runEvidenceScan(
+    file: Express.Multer.File,
+  ): Promise<EvidenceScanResult> {
+    const required =
+      process.env.EVIDENCE_SCAN_REQUIRED !== undefined
+        ? process.env.EVIDENCE_SCAN_REQUIRED.toLowerCase() === "true"
+        : env.EVIDENCE_SCAN_REQUIRED;
+    try {
+      return await this.scanner.scan(file);
+    } catch (error) {
+      if (!required) {
+        return { clean: true };
+      }
+      throw new EvidenceScanError(
+        error instanceof Error
+          ? error.message
+          : "Evidence scan service unavailable",
+      );
+    }
+  }
 
-        return null;
+  private resolveGatewayUrls(cid: string): string[] {
+    const gatewayUrls = process.env.IPFS_GATEWAY_URLS ?? env.IPFS_GATEWAY_URLS;
+    const allowlist = this.parseGatewayAllowlist();
+    const configured: string[] = [];
+
+    if (gatewayUrls) {
+      for (const value of gatewayUrls.split(",")) {
+        const gateway = value.trim();
+        if (!gateway) continue;
+        const normalized = gateway.replace(/\/$/, "");
+        if (!this.isGatewayAllowed(normalized, allowlist)) {
+          continue;
+        }
+        configured.push(`${normalized}/${cid}`);
+      }
     }
 
-    private async runEvidenceScan(file: Express.Multer.File): Promise<EvidenceScanResult> {
-        const required =
-            process.env.EVIDENCE_SCAN_REQUIRED !== undefined
-                ? process.env.EVIDENCE_SCAN_REQUIRED.toLowerCase() === "true"
-                : env.EVIDENCE_SCAN_REQUIRED;
-        try {
-            return await this.scanner.scan(file);
-        } catch (error) {
-            if (!required) {
-                return { clean: true };
-            }
-            throw new EvidenceScanError(
-                error instanceof Error ? error.message : "Evidence scan service unavailable",
-            );
-        }
+    if (configured.length > 0) {
+      return configured;
     }
 
-    private resolveGatewayUrls(cid: string): string[] {
-        const gatewayUrls = process.env.IPFS_GATEWAY_URLS ?? env.IPFS_GATEWAY_URLS;
-        const allowlist = this.parseGatewayAllowlist();
-        const configured: string[] = [];
+    const fallback = this.resolveGatewayUrl(cid);
+    const fallbackBase = fallback.replace(/\/+[^/]+$/, "");
+    if (!this.isGatewayAllowed(fallbackBase, allowlist)) {
+      throw new ServiceUnavailableError("No allowed IPFS gateway configured");
+    }
+    return [fallback];
+  }
 
-        if (gatewayUrls) {
-            for (const value of gatewayUrls.split(",")) {
-                const gateway = value.trim();
-                if (!gateway) continue;
-                const normalized = gateway.replace(/\/$/, "");
-                if (!this.isGatewayAllowed(normalized, allowlist)) {
-                    continue;
-                }
-                configured.push(`${normalized}/${cid}`);
-            }
-        }
+  private parseGatewayAllowlist(): Set<string> {
+    const raw =
+      process.env.IPFS_GATEWAY_ALLOWLIST ?? env.IPFS_GATEWAY_ALLOWLIST ?? "";
+    return new Set(
+      raw
+        .split(",")
+        .map((v: string) => v.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
 
-        if (configured.length > 0) {
-            return configured;
-        }
+  private isGatewayAllowed(
+    gatewayBase: string,
+    allowlist: Set<string>,
+  ): boolean {
+    if (allowlist.size === 0) return true;
+    try {
+      const host = new URL(gatewayBase).hostname.toLowerCase();
+      return allowlist.has(host);
+    } catch {
+      return false;
+    }
+  }
 
-        const fallback = this.resolveGatewayUrl(cid);
-        const fallbackBase = fallback.replace(/\/+[^/]+$/, "");
-        if (!this.isGatewayAllowed(fallbackBase, allowlist)) {
-            throw new ServiceUnavailableError("No allowed IPFS gateway configured");
-        }
-        return [fallback];
+  private isGatewayCircuitOpen(url: string): boolean {
+    const state = this.gatewayCircuit.get(url);
+    if (!state) return false;
+    return state.openUntil > Date.now();
+  }
+
+  private onGatewaySuccess(url: string): void {
+    this.gatewayCircuit.delete(url);
+  }
+
+  private onGatewayFailure(url: string): void {
+    const threshold = env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD;
+    const cooldownMs = env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS;
+    const current = this.gatewayCircuit.get(url) ?? {
+      failures: 0,
+      openUntil: 0,
+    };
+    const failures = current.failures + 1;
+
+    if (failures >= threshold) {
+      this.gatewayCircuit.set(url, {
+        failures,
+        openUntil: Date.now() + cooldownMs,
+      });
+      return;
     }
 
-    private parseGatewayAllowlist(): Set<string> {
-        const raw = process.env.IPFS_GATEWAY_ALLOWLIST ?? env.IPFS_GATEWAY_ALLOWLIST ?? "";
-        return new Set(
-            raw
-                .split(",")
-                .map((v: string) => v.trim().toLowerCase())
-                .filter(Boolean),
-        );
-    }
-
-    private isGatewayAllowed(gatewayBase: string, allowlist: Set<string>): boolean {
-        if (allowlist.size === 0) return true;
-        try {
-            const host = new URL(gatewayBase).hostname.toLowerCase();
-            return allowlist.has(host);
-        } catch {
-            return false;
-        }
-    }
-
-    private isGatewayCircuitOpen(url: string): boolean {
-        const state = this.gatewayCircuit.get(url);
-        if (!state) return false;
-        return state.openUntil > Date.now();
-    }
-
-    private onGatewaySuccess(url: string): void {
-        this.gatewayCircuit.delete(url);
-    }
-
-    private onGatewayFailure(url: string): void {
-        const threshold = env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD;
-        const cooldownMs = env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS;
-        const current = this.gatewayCircuit.get(url) ?? { failures: 0, openUntil: 0 };
-        const failures = current.failures + 1;
-
-        if (failures >= threshold) {
-            this.gatewayCircuit.set(url, {
-                failures,
-                openUntil: Date.now() + cooldownMs,
-            });
-            return;
-        }
-
-        this.gatewayCircuit.set(url, {
-            failures,
-            openUntil: 0,
-        });
-    }
+    this.gatewayCircuit.set(url, {
+      failures,
+      openUntil: 0,
+    });
+  }
 }

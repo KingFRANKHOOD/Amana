@@ -4,15 +4,25 @@ import { appLogger } from "../middleware/logger";
 import { env } from "../config/env";
 import { stellarRpcManager } from "../config/stellar";
 import { getPinataClient } from "../config/ipfs";
-import { AlertService, alertService as defaultAlertService } from "./alert.service";
+import {
+  AlertService,
+  alertService as defaultAlertService,
+} from "./alert.service";
 import { getCircuitBreakerStates } from "../lib/circuitBreaker";
 import { EventStreamService } from "./event-stream";
-import { recordRpcNodeHealth, getTransactionSubmissionStats } from "../lib/metrics";
+import {
+  recordRpcNodeHealth,
+  getTransactionSubmissionStats,
+} from "../lib/metrics";
 
 import fs from "fs";
 import path from "path";
 
-import { metricsService, LatencyPercentiles, EndpointLatencyStats } from "./metrics.service";
+import {
+  metricsService,
+  LatencyPercentiles,
+  EndpointLatencyStats,
+} from "./metrics.service";
 
 export interface HealthIndicatorResult {
   status: "up" | "down";
@@ -129,7 +139,10 @@ export interface HealthCheckResponse {
 }
 
 interface HealthDatabase {
-  $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]>;
+  $queryRaw(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<unknown[]>;
   processedEvent: {
     findFirst(args?: {
       orderBy?: { ledgerSequence?: "asc" | "desc" };
@@ -143,7 +156,11 @@ interface HealthRedis {
   config(...args: string[]): Promise<[string, string]>;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
   let timeoutHandle: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutHandle = setTimeout(() => reject(new Error(message)), timeoutMs);
@@ -256,9 +273,13 @@ export class HealthService {
     const timeout = env.STELLAR_HEALTH_TIMEOUT_MS ?? 5000;
 
     try {
-      if (typeof stellarRpcManager?.checkNetworkHealth === 'function') {
+      if (typeof stellarRpcManager?.checkNetworkHealth === "function") {
+        // Do NOT pass the escrow contract ID (a C… Soroban address) as the
+        // accountToCheck — Horizon's loadAccount rejects non-G… addresses.
+        // checkNetworkHealth uses feeStats() when accountToCheck is omitted,
+        // which is a valid liveness probe for both RPC and Horizon nodes.
         const health = await stellarRpcManager.checkNetworkHealth(
-          env.AMANA_ESCROW_CONTRACT_ID,
+          undefined,
           timeout,
         );
 
@@ -266,7 +287,11 @@ export class HealthService {
 
         if (health?.nodes) {
           for (const node of health.nodes) {
-            recordRpcNodeHealth(node.url, node.status !== "unhealthy", node.latencyMs);
+            recordRpcNodeHealth(
+              node.url,
+              node.status !== "unhealthy",
+              node.latencyMs,
+            );
           }
         }
 
@@ -285,14 +310,26 @@ export class HealthService {
         };
       }
 
-      // Fallback for mocked test environments
+      // Fallback: probe Horizon fee-stats endpoint — no account lookup required,
+      // so it works regardless of whether AMANA_ESCROW_CONTRACT_ID is a G…
+      // keypair or a C… Soroban contract address.
       const { horizonServer } = require("../config/stellar");
-      if (typeof horizonServer?.loadAccount === 'function') {
+      if (typeof horizonServer?.feeStats === "function") {
         await withTimeout(
-          horizonServer.loadAccount(env.AMANA_ESCROW_CONTRACT_ID),
+          horizonServer.feeStats(),
           timeout,
           "Stellar RPC timeout",
         );
+      } else {
+        // Last-resort: attempt getLatestLedger via the RPC client
+        const { sorobanRpcClient } = require("../config/stellar");
+        if (typeof sorobanRpcClient?.getLatestLedger === "function") {
+          await withTimeout(
+            sorobanRpcClient.getLatestLedger(),
+            timeout,
+            "Stellar RPC timeout",
+          );
+        }
       }
 
       const responseTime = Date.now() - startTime;
@@ -322,8 +359,9 @@ export class HealthService {
     try {
       const pinata = getPinataClient();
       await withTimeout(
-        (pinata as { testAuthentication?: () => Promise<unknown> }).testAuthentication?.()
-          ?? Promise.resolve(),
+        (
+          pinata as { testAuthentication?: () => Promise<unknown> }
+        ).testAuthentication?.() ?? Promise.resolve(),
         timeout,
         "IPFS timeout",
       );
@@ -373,12 +411,17 @@ export class HealthService {
       const usedMemoryBytes = Number(memoryInfo["used_memory"] ?? 0);
       const maxMemoryBytes = Number(memoryInfo["maxmemory"] ?? 0);
       const peakMemoryBytes = Number(memoryInfo["used_memory_peak"] ?? 0);
-      const fragmentationRatio = Number(memoryInfo["mem_fragmentation_ratio"] ?? 0);
+      const fragmentationRatio = Number(
+        memoryInfo["mem_fragmentation_ratio"] ?? 0,
+      );
       const evictedKeys = Number(statsInfo["evicted_keys"] ?? 0);
-      const maxmemoryPolicy = Array.isArray(policyResult) ? policyResult[1] ?? "unknown" : "unknown";
-      const memoryUsagePercent = maxMemoryBytes > 0
-        ? Math.round((usedMemoryBytes / maxMemoryBytes) * 1000) / 10
-        : 0;
+      const maxmemoryPolicy = Array.isArray(policyResult)
+        ? (policyResult[1] ?? "unknown")
+        : "unknown";
+      const memoryUsagePercent =
+        maxMemoryBytes > 0
+          ? Math.round((usedMemoryBytes / maxMemoryBytes) * 1000) / 10
+          : 0;
 
       return {
         usedMemoryBytes,
@@ -404,10 +447,7 @@ export class HealthService {
 
     try {
       const [, memoryMetrics] = await withTimeout(
-        Promise.all([
-          this.cacheClient.ping(),
-          this.getRedisMemoryMetrics(),
-        ]),
+        Promise.all([this.cacheClient.ping(), this.getRedisMemoryMetrics()]),
         timeout,
         "Redis health check timeout",
       );
@@ -418,7 +458,10 @@ export class HealthService {
       if (memoryMetrics) {
         message = `Redis connection healthy (memory: ${memoryMetrics.memoryUsagePercent}%, maxmemory: ${memoryMetrics.maxMemoryBytes} bytes, maxmemory-policy: ${memoryMetrics.maxmemoryPolicy}, evicted_keys: ${memoryMetrics.evictedKeys})`;
 
-        if (memoryMetrics.maxMemoryBytes > 0 && memoryMetrics.memoryUsagePercent >= 80) {
+        if (
+          memoryMetrics.maxMemoryBytes > 0 &&
+          memoryMetrics.memoryUsagePercent >= 80
+        ) {
           message = `Redis memory usage at ${memoryMetrics.memoryUsagePercent}% exceeds 80% threshold (${memoryMetrics.usedMemoryBytes}/${memoryMetrics.maxMemoryBytes} bytes)`;
           await this.alerts.dispatch("redis_memory_high", message, {
             usedMemoryBytes: memoryMetrics.usedMemoryBytes,
@@ -440,7 +483,10 @@ export class HealthService {
           message += `; ${evictionMessage}`;
         }
 
-        if (!memoryMetrics.maxmemoryPolicy || memoryMetrics.maxmemoryPolicy === "unknown") {
+        if (
+          !memoryMetrics.maxmemoryPolicy ||
+          memoryMetrics.maxmemoryPolicy === "unknown"
+        ) {
           message += "; maxmemory-policy not configured";
         }
 
@@ -506,7 +552,8 @@ export class HealthService {
 
   private checkEncryptionKey(): HealthIndicatorResult {
     const startTime = Date.now();
-    const value = process.env.TRADE_NOTES_ENCRYPTION_KEY ?? env.TRADE_NOTES_ENCRYPTION_KEY;
+    const value =
+      process.env.TRADE_NOTES_ENCRYPTION_KEY ?? env.TRADE_NOTES_ENCRYPTION_KEY;
     const configured = typeof value === "string" && value.trim().length >= 32;
 
     return {
@@ -524,29 +571,40 @@ export class HealthService {
     stellarCheck?: HealthIndicatorResult,
   ): Promise<void> {
     if (databaseCheck.status === "down") {
-      await this.alerts.dispatch("db_connection_failure", databaseCheck.message, {
-        responseTime: databaseCheck.responseTime,
-      });
+      await this.alerts.dispatch(
+        "db_connection_failure",
+        databaseCheck.message,
+        {
+          responseTime: databaseCheck.responseTime,
+        },
+      );
     }
 
     if (redisCheck.status === "down") {
-      await this.alerts.dispatch("redis_connection_failure", redisCheck.message, {
-        responseTime: redisCheck.responseTime,
-      });
+      await this.alerts.dispatch(
+        "redis_connection_failure",
+        redisCheck.message,
+        {
+          responseTime: redisCheck.responseTime,
+        },
+      );
     }
 
     if (stellarCheck && stellarCheck.status === "down") {
-      const activeUrl = typeof stellarRpcManager?.getActiveRpcUrl === 'function'
-        ? stellarRpcManager.getActiveRpcUrl()
-        : 'https://soroban-testnet.stellar.org';
-      const primaryUrl = typeof stellarRpcManager?.getPrimaryRpcUrl === 'function'
-        ? stellarRpcManager.getPrimaryRpcUrl()
-        : activeUrl;
-      const fallbackUrls = typeof stellarRpcManager?.getFallbackRpcUrls === 'function'
-        ? stellarRpcManager.getFallbackRpcUrls()
-        : [];
+      const activeUrl =
+        typeof stellarRpcManager?.getActiveRpcUrl === "function"
+          ? stellarRpcManager.getActiveRpcUrl()
+          : "https://soroban-testnet.stellar.org";
+      const primaryUrl =
+        typeof stellarRpcManager?.getPrimaryRpcUrl === "function"
+          ? stellarRpcManager.getPrimaryRpcUrl()
+          : activeUrl;
+      const fallbackUrls =
+        typeof stellarRpcManager?.getFallbackRpcUrls === "function"
+          ? stellarRpcManager.getFallbackRpcUrls()
+          : [];
 
-      if (typeof this.alerts?.dispatchStellarConnectionFailure === 'function') {
+      if (typeof this.alerts?.dispatchStellarConnectionFailure === "function") {
         await this.alerts.dispatchStellarConnectionFailure(
           activeUrl,
           stellarCheck.message,
@@ -557,10 +615,14 @@ export class HealthService {
           },
         );
       } else {
-        await this.alerts.dispatch("stellar_connection_failure", stellarCheck.message, {
-          responseTime: stellarCheck.responseTime,
-          endpoint: activeUrl,
-        });
+        await this.alerts.dispatch(
+          "stellar_connection_failure",
+          stellarCheck.message,
+          {
+            responseTime: stellarCheck.responseTime,
+            endpoint: activeUrl,
+          },
+        );
       }
     }
   }
@@ -569,7 +631,11 @@ export class HealthService {
    * Dispatch pool saturation alert if utilization exceeds threshold.
    */
   private async dispatchPoolAlert(
-    poolStatus: { activeConnections: number; utilizationPercent: number; status: string },
+    poolStatus: {
+      activeConnections: number;
+      utilizationPercent: number;
+      status: string;
+    },
     maxConnections: number,
   ): Promise<void> {
     if (poolStatus.status === "critical" && poolStatus.activeConnections > 0) {
@@ -596,7 +662,10 @@ export class HealthService {
   }> {
     const startTime = Date.now();
     const maxConnections = parseInt(env.DATABASE_POOL_SIZE ?? "15", 10);
-    const saturationThreshold = parseInt(env.POOL_SATURATION_WARN_THRESHOLD ?? "80", 10);
+    const saturationThreshold = parseInt(
+      env.POOL_SATURATION_WARN_THRESHOLD ?? "80",
+      10,
+    );
 
     try {
       const rows = await this.prisma.$queryRaw<
@@ -608,10 +677,14 @@ export class HealthService {
         stateMap.set(row.state ?? "unknown", Number(row.count));
       }
 
-      const activeConnections = (stateMap.get("active") ?? 0) + (stateMap.get("idle in transaction") ?? 0);
+      const activeConnections =
+        (stateMap.get("active") ?? 0) +
+        (stateMap.get("idle in transaction") ?? 0);
       const idleConnections = stateMap.get("idle") ?? 0;
       const waitingQueries = stateMap.get("waiting") ?? 0;
-      const utilizationPercent = Math.round((activeConnections / maxConnections) * 100);
+      const utilizationPercent = Math.round(
+        (activeConnections / maxConnections) * 100,
+      );
 
       let status: "healthy" | "degraded" | "critical" = "healthy";
       let message = `Pool utilization: ${activeConnections}/${maxConnections} (${utilizationPercent}%)`;
@@ -619,7 +692,10 @@ export class HealthService {
       if (utilizationPercent >= saturationThreshold) {
         status = "critical";
         message = `Pool saturation alert: ${activeConnections}/${maxConnections} connections in use (${utilizationPercent}% >= ${saturationThreshold}% threshold)`;
-        appLogger.warn({ activeConnections, maxConnections, utilizationPercent }, "Connection pool saturation detected");
+        appLogger.warn(
+          { activeConnections, maxConnections, utilizationPercent },
+          "Connection pool saturation detected",
+        );
       } else if (utilizationPercent >= saturationThreshold * 0.75) {
         status = "degraded";
         message = `Pool utilization elevated: ${activeConnections}/${maxConnections} (${utilizationPercent}%)`;
@@ -694,32 +770,36 @@ export class HealthService {
     let status: "healthy" | "degraded" | "unhealthy" = "healthy";
 
     if (
-      databaseCheck.status === "down"
-      || indexerCheck.status === "down"
-      || stellarCheck.status === "down"
-      || configCheck.status === "down"
-      || encryptionKeyCheck.status === "down"
+      databaseCheck.status === "down" ||
+      indexerCheck.status === "down" ||
+      stellarCheck.status === "down" ||
+      configCheck.status === "down" ||
+      encryptionKeyCheck.status === "down"
     ) {
       status = "unhealthy";
     } else if (
-      redisCheck.status === "down"
-      || Number(redisCheck.details?.memoryUsagePercent ?? 0) >= 80
-      || ipfsCheck.status === "down"
-      || databaseCheck.responseTime > 150
-      || indexerCheck.responseTime > 150
-      || stellarCheck.responseTime > 5000
+      redisCheck.status === "down" ||
+      Number(redisCheck.details?.memoryUsagePercent ?? 0) >= 80 ||
+      ipfsCheck.status === "down" ||
+      databaseCheck.responseTime > 150 ||
+      indexerCheck.responseTime > 150 ||
+      stellarCheck.responseTime > 5000
     ) {
       status = "degraded";
     }
 
-    let latestLedger: { ledgerSequence: number; processedAt: Date } | null = null;
+    let latestLedger: { ledgerSequence: number; processedAt: Date } | null =
+      null;
     try {
       latestLedger = await this.prisma.processedEvent.findFirst({
         orderBy: { ledgerSequence: "desc" },
         take: 1,
       });
     } catch (error) {
-      appLogger.error({ error }, "Failed to fetch latest ledger for health details");
+      appLogger.error(
+        { error },
+        "Failed to fetch latest ledger for health details",
+      );
     }
 
     const indexerLagSeconds = latestLedger
@@ -758,9 +838,18 @@ export class HealthService {
         indexerLagSeconds: indexerLagSeconds > 0 ? indexerLagSeconds : 0,
         lastProcessedLedger: latestLedger?.ledgerSequence ?? null,
         stellarNetwork: env.STELLAR_NETWORK,
-        stellarActiveRpcUrl: typeof stellarRpcManager?.getActiveRpcUrl === 'function' ? stellarRpcManager.getActiveRpcUrl() : undefined,
-        stellarPrimaryRpcUrl: typeof stellarRpcManager?.getPrimaryRpcUrl === 'function' ? stellarRpcManager.getPrimaryRpcUrl() : undefined,
-        stellarFallbackRpcUrls: typeof stellarRpcManager?.getFallbackRpcUrls === 'function' ? stellarRpcManager.getFallbackRpcUrls() : [],
+        stellarActiveRpcUrl:
+          typeof stellarRpcManager?.getActiveRpcUrl === "function"
+            ? stellarRpcManager.getActiveRpcUrl()
+            : undefined,
+        stellarPrimaryRpcUrl:
+          typeof stellarRpcManager?.getPrimaryRpcUrl === "function"
+            ? stellarRpcManager.getPrimaryRpcUrl()
+            : undefined,
+        stellarFallbackRpcUrls:
+          typeof stellarRpcManager?.getFallbackRpcUrls === "function"
+            ? stellarRpcManager.getFallbackRpcUrls()
+            : [],
         stellarTransactionStats: txStats,
         ipfsGateway: env.IPFS_GATEWAY_URL,
         missingEnvVars,
@@ -783,12 +872,13 @@ export class HealthService {
   }> {
     const timestamp = new Date().toISOString();
 
-    const [databaseCheck, redisCheck, configCheck, encryptionKeyCheck] = await Promise.all([
-      this.checkDatabase(),
-      this.checkRedis(),
-      this.checkConfig(),
-      Promise.resolve(this.checkEncryptionKey()),
-    ]);
+    const [databaseCheck, redisCheck, configCheck, encryptionKeyCheck] =
+      await Promise.all([
+        this.checkDatabase(),
+        this.checkRedis(),
+        this.checkConfig(),
+        Promise.resolve(this.checkEncryptionKey()),
+      ]);
 
     const checks = {
       database: databaseCheck,
@@ -797,9 +887,13 @@ export class HealthService {
       encryptionKey: encryptionKeyCheck,
     };
 
-    const status = databaseCheck.status === "up" && redisCheck.status === "up" && configCheck.status === "up" && encryptionKeyCheck.status === "up"
-      ? "ready"
-      : "not_ready";
+    const status =
+      databaseCheck.status === "up" &&
+      redisCheck.status === "up" &&
+      configCheck.status === "up" &&
+      encryptionKeyCheck.status === "up"
+        ? "ready"
+        : "not_ready";
 
     return { status, timestamp, checks };
   }
@@ -918,22 +1012,63 @@ export class HealthService {
       stellarRpc: {
         ...toDependency("Stellar Horizon / RPC", stellarCheck, true, 2000),
         details: {
-          activeRpcUrl: typeof stellarRpcManager?.getActiveRpcUrl === 'function' ? stellarRpcManager.getActiveRpcUrl() : undefined,
-          primaryRpcUrl: typeof stellarRpcManager?.getPrimaryRpcUrl === 'function' ? stellarRpcManager.getPrimaryRpcUrl() : undefined,
-          fallbackRpcUrls: typeof stellarRpcManager?.getFallbackRpcUrls === 'function' ? stellarRpcManager.getFallbackRpcUrls() : [],
+          activeRpcUrl:
+            typeof stellarRpcManager?.getActiveRpcUrl === "function"
+              ? stellarRpcManager.getActiveRpcUrl()
+              : undefined,
+          primaryRpcUrl:
+            typeof stellarRpcManager?.getPrimaryRpcUrl === "function"
+              ? stellarRpcManager.getPrimaryRpcUrl()
+              : undefined,
+          fallbackRpcUrls:
+            typeof stellarRpcManager?.getFallbackRpcUrls === "function"
+              ? stellarRpcManager.getFallbackRpcUrls()
+              : [],
           transactionSuccessRate: txStats.successRate,
           totalTransactions: txStats.totalSubmissions,
         },
       },
-      eventIndexer: toDependency("Soroban Event Indexer", indexerCheck, true, 200),
-      ipfsStorage: toDependency("IPFS / Pinata Storage", ipfsCheck, false, 3000),
-      workerQueues: toDependency("BullMQ Worker Queues", queuesCheck, false, 200),
-      localStorage: toDependency("Local Disk & Archival Volume", storageCheck, false, 100),
-      configuration: toDependency("Application Configuration", configCheck, true, 50),
-      encryptionKey: toDependency("Encryption Key Management", encryptionCheck, true, 50),
+      eventIndexer: toDependency(
+        "Soroban Event Indexer",
+        indexerCheck,
+        true,
+        200,
+      ),
+      ipfsStorage: toDependency(
+        "IPFS / Pinata Storage",
+        ipfsCheck,
+        false,
+        3000,
+      ),
+      workerQueues: toDependency(
+        "BullMQ Worker Queues",
+        queuesCheck,
+        false,
+        200,
+      ),
+      localStorage: toDependency(
+        "Local Disk & Archival Volume",
+        storageCheck,
+        false,
+        100,
+      ),
+      configuration: toDependency(
+        "Application Configuration",
+        configCheck,
+        true,
+        50,
+      ),
+      encryptionKey: toDependency(
+        "Encryption Key Management",
+        encryptionCheck,
+        true,
+        50,
+      ),
     };
 
-    const redisMemoryUsagePercent = Number(redisCheck.details?.memoryUsagePercent ?? 0);
+    const redisMemoryUsagePercent = Number(
+      redisCheck.details?.memoryUsagePercent ?? 0,
+    );
     const redisEvictedKeys = Number(redisCheck.details?.evictedKeys ?? 0);
 
     if (redisMemoryUsagePercent >= 80) {
@@ -957,10 +1092,14 @@ export class HealthService {
 
     const depList = Object.values(dependencies);
     const totalDependencies = depList.length;
-    const unhealthyCount = depList.filter((d) => d.status === "unhealthy").length;
+    const unhealthyCount = depList.filter(
+      (d) => d.status === "unhealthy",
+    ).length;
     const degradedCount = depList.filter((d) => d.status === "degraded").length;
     const healthyCount = depList.filter((d) => d.status === "healthy").length;
-    const criticalFailingCount = depList.filter((d) => d.isCritical && d.status === "unhealthy").length;
+    const criticalFailingCount = depList.filter(
+      (d) => d.isCritical && d.status === "unhealthy",
+    ).length;
 
     let overallStatus: "healthy" | "degraded" | "unhealthy" = "healthy";
     if (criticalFailingCount > 0) {
@@ -971,7 +1110,9 @@ export class HealthService {
 
     const healthScore = Math.max(
       0,
-      Math.round(((healthyCount * 1.0 + degradedCount * 0.5) / totalDependencies) * 100),
+      Math.round(
+        ((healthyCount * 1.0 + degradedCount * 0.5) / totalDependencies) * 100,
+      ),
     );
 
     const circuitBreakers = this.checkCircuitBreakers();
@@ -980,7 +1121,8 @@ export class HealthService {
 
     return {
       status: overallStatus,
-      systemHealthScore: criticalFailingCount > 0 ? Math.min(healthScore, 49) : healthScore,
+      systemHealthScore:
+        criticalFailingCount > 0 ? Math.min(healthScore, 49) : healthScore,
       timestamp,
       uptimeSeconds,
       version: process.env.npm_package_version ?? "1.0.0",
