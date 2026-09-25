@@ -64,6 +64,9 @@
     },
     {
       "name": "Goals"
+    },
+    {
+      "name": "Security"
     }
   ],
   "components": {
@@ -191,16 +194,9 @@
         "in": "query",
         "name": "status",
         "required": false,
+        "description": "Exact `TradeStatus` value; any other value is rejected with 400.",
         "schema": {
-          "type": "string",
-          "enum": [
-            "CREATED",
-            "FUNDED",
-            "DELIVERED",
-            "RELEASED",
-            "DISPUTED",
-            "RESOLVED"
-          ]
+          "$ref": "#/components/schemas/TradeStatus"
         }
       },
       "ListTradesPageQuery": {
@@ -222,6 +218,18 @@
           "minimum": 1,
           "maximum": 100,
           "default": 20
+        }
+      },
+      "TradeExportLimitQuery": {
+        "in": "query",
+        "name": "limit",
+        "required": false,
+        "description": "Page size for the JSON export. Ignored when `format=csv`.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
         }
       },
       "ListTradesSortQuery": {
@@ -267,6 +275,55 @@
         "example": {
           "error": "Unauthorized"
         }
+      },
+      "TradeStatus": {
+        "type": "string",
+        "description": "Mirrors the Prisma `TradeStatus` enum in `backend/prisma/schema.prisma`.",
+        "enum": [
+          "PENDING_SIGNATURE",
+          "CREATED",
+          "FUNDED",
+          "DELIVERED",
+          "COMPLETED",
+          "DISPUTED",
+          "CANCELLED"
+        ]
+      },
+      "GoalStatus": {
+        "type": "string",
+        "description": "Mirrors the Prisma `GoalStatus` enum in `backend/prisma/schema.prisma`.",
+        "enum": [
+          "ACTIVE",
+          "COMPLETED",
+          "CANCELLED"
+        ]
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ]
       },
       "AppErrorResponse": {
         "type": "object",
@@ -778,6 +835,493 @@
         "type": "object",
         "additionalProperties": true
       },
+      "TradeExportRow": {
+        "type": "object",
+        "description": "Flattened trade row shared by the JSON and CSV exports. `fee` is always\nan empty string because platform fees are not yet persisted per trade.\n",
+        "properties": {
+          "trade_id": {
+            "type": "string"
+          },
+          "buyer": {
+            "type": "string"
+          },
+          "seller": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string",
+            "enum": [
+              "USDC"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "fee": {
+            "type": "string"
+          },
+          "dispute_flag": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "trade_id",
+          "buyer",
+          "seller",
+          "amount",
+          "asset",
+          "status",
+          "created_at",
+          "completed_at",
+          "fee",
+          "dispute_flag"
+        ]
+      },
+      "TradeExportListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TradeExportRow"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ]
+      },
+      "WatchRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userAddress": {
+            "type": "string"
+          },
+          "tradeId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "userAddress",
+          "tradeId",
+          "createdAt"
+        ]
+      },
+      "WatchResponse": {
+        "type": "object",
+        "properties": {
+          "watch": {
+            "$ref": "#/components/schemas/WatchRecord"
+          }
+        },
+        "required": [
+          "watch"
+        ]
+      },
+      "WatchRemovalResponse": {
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean",
+            "description": "False when the trade was not on the caller's watchlist."
+          }
+        },
+        "required": [
+          "removed"
+        ]
+      },
+      "WatchedTrade": {
+        "type": "object",
+        "description": "Full trade row returned by the watchlist with the bookmark timestamp.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tradeId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "buyerAddress": {
+            "type": "string"
+          },
+          "sellerAddress": {
+            "type": "string"
+          },
+          "amountUsdc": {
+            "type": "string"
+          },
+          "buyerLossBps": {
+            "type": "integer"
+          },
+          "sellerLossBps": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          },
+          "fundedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "watchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the caller bookmarked the trade."
+          }
+        },
+        "required": [
+          "id",
+          "tradeId",
+          "buyerAddress",
+          "sellerAddress",
+          "amountUsdc",
+          "buyerLossBps",
+          "sellerLossBps",
+          "version",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "watchedAt"
+        ]
+      },
+      "WatchedTradeListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WatchedTrade"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ]
+      },
+      "EscrowMilestoneRequest": {
+        "type": "object",
+        "properties": {
+          "milestoneIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "amountUsdc": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,7})?$",
+            "description": "USDC amount, at most 7 decimal places, no negative sign."
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 timestamp for the milestone due date."
+          },
+          "conditionHash": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true
+          }
+        },
+        "required": [
+          "milestoneIndex",
+          "amountUsdc",
+          "dueAt"
+        ]
+      },
+      "EscrowScheduleRequest": {
+        "type": "object",
+        "properties": {
+          "milestones": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/EscrowMilestoneRequest"
+            }
+          }
+        },
+        "required": [
+          "milestones"
+        ]
+      },
+      "EscrowReleaseMilestoneView": {
+        "type": "object",
+        "properties": {
+          "milestoneIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "amountUsdc": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "conditionHash": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true
+          },
+          "released": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "milestoneIndex",
+          "amountUsdc",
+          "dueAt",
+          "conditionHash",
+          "released"
+        ]
+      },
+      "EscrowReleaseSchedule": {
+        "type": "object",
+        "properties": {
+          "tradeId": {
+            "type": "string"
+          },
+          "milestoneCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextReleaseDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Earliest unreleased milestone due date in the future, or null."
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EscrowReleaseMilestoneView"
+            }
+          }
+        },
+        "required": [
+          "tradeId",
+          "milestoneCount",
+          "nextReleaseDate",
+          "milestones"
+        ]
+      },
+      "TreasuryBalanceResponse": {
+        "type": "object",
+        "properties": {
+          "balance": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "contractId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "balance",
+          "asset",
+          "contractId"
+        ],
+        "example": {
+          "balance": "150.50",
+          "asset": "USDC",
+          "contractId": "CTEST00000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "TreasuryConfigResponse": {
+        "type": "object",
+        "properties": {
+          "contractId": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contractId",
+          "network",
+          "asset"
+        ]
+      },
+      "CspViolationReport": {
+        "type": "object",
+        "properties": {
+          "blocked-uri": {
+            "type": "string"
+          },
+          "violated-directive": {
+            "type": "string"
+          },
+          "document-uri": {
+            "type": "string"
+          },
+          "effective-directive": {
+            "type": "string"
+          },
+          "original-policy": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          }
+        }
+      },
+      "CspReportBody": {
+        "type": "object",
+        "properties": {
+          "csp-report": {
+            "$ref": "#/components/schemas/CspViolationReport"
+          }
+        }
+      },
+      "GoalAnalytics": {
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string"
+          },
+          "targetAmountUsdc": {
+            "type": "string"
+          },
+          "currentAmountUsdc": {
+            "type": "string"
+          },
+          "percentageComplete": {
+            "type": "number"
+          },
+          "daysRemaining": {
+            "type": "integer"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GoalStatus"
+          },
+          "vaultBalance": {
+            "type": "string"
+          },
+          "isOnTrack": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "goalId",
+          "targetAmountUsdc",
+          "currentAmountUsdc",
+          "percentageComplete",
+          "daysRemaining",
+          "deadline",
+          "status",
+          "vaultBalance",
+          "isOnTrack"
+        ]
+      },
+      "GoalsAnalyticsResponse": {
+        "type": "object",
+        "properties": {
+          "walletAddress": {
+            "type": "string"
+          },
+          "totalGoals": {
+            "type": "integer"
+          },
+          "activeGoals": {
+            "type": "integer"
+          },
+          "completedGoals": {
+            "type": "integer"
+          },
+          "totalTargetAmount": {
+            "type": "string"
+          },
+          "totalCurrentAmount": {
+            "type": "string"
+          },
+          "overallProgressPercentage": {
+            "type": "number"
+          },
+          "goals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GoalAnalytics"
+            }
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "walletAddress",
+          "totalGoals",
+          "activeGoals",
+          "completedGoals",
+          "totalTargetAmount",
+          "totalCurrentAmount",
+          "overallProgressPercentage",
+          "goals",
+          "timestamp"
+        ]
+      },
       "DisputeCategory": {
         "type": "object",
         "properties": {
@@ -1175,99 +1719,11 @@
           "algorithm",
           "keyId"
         ]
-      },
-      "GoalsAnalyticsResponse": {
-        "type": "object",
-        "properties": {
-          "walletAddress": {
-            "type": "string"
-          },
-          "totalGoals": {
-            "type": "integer"
-          },
-          "activeGoals": {
-            "type": "integer"
-          },
-          "completedGoals": {
-            "type": "integer"
-          },
-          "totalTargetAmount": {
-            "type": "string"
-          },
-          "totalCurrentAmount": {
-            "type": "string"
-          },
-          "overallProgressPercentage": {
-            "type": "number"
-          },
-          "goals": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "goalId": {
-                  "type": "string"
-                },
-                "targetAmountUsdc": {
-                  "type": "string"
-                },
-                "currentAmountUsdc": {
-                  "type": "string"
-                },
-                "percentageComplete": {
-                  "type": "number"
-                },
-                "daysRemaining": {
-                  "type": "integer"
-                },
-                "deadline": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "vaultBalance": {
-                  "type": "string"
-                },
-                "isOnTrack": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "goalId",
-                "targetAmountUsdc",
-                "currentAmountUsdc",
-                "percentageComplete",
-                "daysRemaining",
-                "deadline",
-                "status",
-                "vaultBalance",
-                "isOnTrack"
-              ]
-            }
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "walletAddress",
-          "totalGoals",
-          "activeGoals",
-          "completedGoals",
-          "totalTargetAmount",
-          "totalCurrentAmount",
-          "overallProgressPercentage",
-          "goals",
-          "timestamp"
-        ]
       }
     },
     "responses": {
       "UnauthorizedError": {
-        "description": "Missing, invalid, revoked, or semantically invalid session.",
+        "description": "Missing, invalid, revoked, or semantically invalid session. `authMiddleware`\nreturns the classified error as `{ code, error, details }`; `details.errorType`\nis one of `missing_header`, `invalid_format`, `invalid_token`, `expired_token`,\n`network_error`, `config_error`.",
         "content": {
           "application/json": {
             "schema": {
@@ -1276,12 +1732,20 @@
             "examples": {
               "unauthorized": {
                 "value": {
-                  "error": "Unauthorized"
+                  "code": "AUTH_ERROR",
+                  "error": "Missing Authorization header",
+                  "details": {
+                    "errorType": "missing_header"
+                  }
                 }
               },
               "revoked": {
                 "value": {
-                  "error": "Unauthorized: token has been revoked"
+                  "code": "AUTH_ERROR",
+                  "error": "Unauthorized: token has been revoked",
+                  "details": {
+                    "errorType": "invalid_token"
+                  }
                 }
               }
             }
@@ -3298,7 +3762,7 @@
           "Treasury"
         ],
         "summary": "Fetch the treasury balance",
-        "description": "Returns the current balance of the escrow contract treasury.\nRequires admin authorization via ADMIN_STELLAR_PUBKEYS env.\nError code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
+        "description": "Returns the current USDC balance of the escrow contract address configured by\n`AMANA_ESCROW_CONTRACT_ID`. Any authenticated session may read it; no admin\nallowlist check is applied on this route.\nError code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
             "cookieAuth": []
@@ -3310,18 +3774,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "balance": {
-                      "type": "string"
-                    },
-                    "asset": {
-                      "type": "string"
-                    },
-                    "contractId": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/TreasuryBalanceResponse"
                 }
               }
             }
@@ -3341,7 +3794,7 @@
           "Treasury"
         ],
         "summary": "Withdraw funds from the treasury",
-        "description": "Withdraws tokens from the escrow contract treasury.\nOnly admin wallets can perform this operation.\nError code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
+        "description": "Withdraws tokens from the escrow contract treasury. Only wallets in the\n`ADMIN_STELLAR_PUBKEYS` / mediator allowlist may call it; every other\nauthenticated caller receives 403.\n\nThe withdrawal itself is not implemented yet: `TreasuryService.withdraw`\nthrows a not-implemented `AppError` and the controller maps any non-403\nfailure to `500` with `{ \"error\": \"Treasury withdrawal failed\" }`, so the\n200 response below is currently unreachable.\nError code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
             "cookieAuth": []
@@ -3356,11 +3809,11 @@
                 "properties": {
                   "destination": {
                     "type": "string",
-                    "description": "Stellar public key to receive the funds."
+                    "description": "Stellar Ed25519 public key to receive the funds."
                   },
                   "amount": {
                     "type": "string",
-                    "description": "Amount to withdraw in USDC."
+                    "description": "Amount to withdraw in USDC. The handler only checks that it is a string."
                   }
                 },
                 "required": [
@@ -3377,24 +3830,53 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "unsignedXdr": {
-                      "type": "string"
+                  "$ref": "#/components/schemas/UnsignedXdrResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Destination missing/not a string, not a valid Ed25519 public key, or amount missing/not a string.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "missingDestination": {
+                    "value": {
+                      "error": "Destination address is required"
+                    }
+                  },
+                  "invalidDestination": {
+                    "value": {
+                      "error": "Invalid destination address"
+                    }
+                  },
+                  "missingAmount": {
+                    "value": {
+                      "error": "Amount is required"
                     }
                   }
                 }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/LegacyValidationError"
-          },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
           },
           "403": {
-            "$ref": "#/components/responses/ForbiddenError"
+            "description": "Caller is not in the treasury admin allowlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "Only admin can withdraw treasury funds"
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
@@ -3408,7 +3890,7 @@
           "Treasury"
         ],
         "summary": "Fetch treasury configuration",
-        "description": "Returns the current treasury configuration including contract ID and network.\nError code references: `AUTH_ERROR`, `INTERNAL_ERROR`.",
+        "description": "Returns the current treasury configuration including contract ID, Stellar\nnetwork, and USDC asset code. Any authenticated session may read it.\nError code references: `AUTH_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
             "cookieAuth": []
@@ -3420,18 +3902,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "contractId": {
-                      "type": "string"
-                    },
-                    "network": {
-                      "type": "string"
-                    },
-                    "asset": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/TreasuryConfigResponse"
                 }
               }
             }
@@ -3838,7 +4309,7 @@
           "Trades"
         ],
         "summary": "Export authenticated user's trades",
-        "description": "Returns a filtered trade export as JSON or CSV.",
+        "description": "Exports every trade where the caller is the buyer or seller, optionally filtered\nby status and creation date. `format=json` (default) returns one page plus\npagination metadata; `format=csv` returns the complete filtered set as a\nUTF-8 BOM-prefixed `text/csv` attachment with the `TradeExportRow` columns in\ndeclaration order and ignores `page`/`limit`.\n`from`/`to` are aliases of `dateFrom`/`dateTo`; when both are supplied the\nexplicit `from`/`to` pair wins.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
             "cookieAuth": []
@@ -3848,6 +4319,8 @@
           {
             "in": "query",
             "name": "format",
+            "required": false,
+            "description": "Response format.",
             "schema": {
               "type": "string",
               "enum": [
@@ -3863,6 +4336,8 @@
           {
             "in": "query",
             "name": "dateFrom",
+            "required": false,
+            "description": "Only trades created at or after this ISO-8601 timestamp.",
             "schema": {
               "type": "string",
               "format": "date-time"
@@ -3871,6 +4346,28 @@
           {
             "in": "query",
             "name": "dateTo",
+            "required": false,
+            "description": "Only trades created at or before this ISO-8601 timestamp.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "description": "Alias of `dateFrom`, used when `dateFrom` is absent.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "description": "Alias of `dateTo`, used when `dateTo` is absent.",
             "schema": {
               "type": "string",
               "format": "date-time"
@@ -3880,7 +4377,7 @@
             "$ref": "#/components/parameters/ListTradesPageQuery"
           },
           {
-            "$ref": "#/components/parameters/ListTradesLimitQuery"
+            "$ref": "#/components/parameters/TradeExportLimitQuery"
           }
         ],
         "responses": {
@@ -3889,8 +4386,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/TradeExportListResponse"
                 }
               },
               "text/csv": {
@@ -3900,8 +4396,24 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid query (for example `from` after `to`, or `limit` above 100).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "from: from must be before or equal to to"
+                }
+              }
+            }
+          },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }
@@ -4027,37 +4539,46 @@
           "Trades"
         ],
         "summary": "List watched trades",
-        "description": "Lists trades the authenticated user has added to their watchlist.",
+        "description": "Lists trades the authenticated user has added to their watchlist, newest\nbookmark first, with pagination metadata. Only trades the caller is a party\nto can be watched in the first place.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
             "cookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ListTradesPageQuery"
+          },
+          {
+            "$ref": "#/components/parameters/ListTradesLimitQuery"
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Watched trade list.",
+            "description": "Watched trade page.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
-                    }
-                  },
-                  "required": [
-                    "items"
-                  ]
+                  "$ref": "#/components/schemas/WatchedTradeListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`page` below 1 or `limit` outside 1-100.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }
@@ -4068,7 +4589,7 @@
           "Trades"
         ],
         "summary": "Watch a trade",
-        "description": "Adds a trade visible to the authenticated user to their watchlist.",
+        "description": "Adds a trade to the caller's watchlist. The trade must exist and the caller\nmust be its buyer or seller. Adding the same trade twice is idempotent and\nreturns the existing bookmark.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `FORBIDDEN`.",
         "security": [
           {
             "cookieAuth": []
@@ -4085,8 +4606,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/WatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or missing trade id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -4107,7 +4637,7 @@
           "Trades"
         ],
         "summary": "Stop watching a trade",
-        "description": "Removes a watched trade for the authenticated user.",
+        "description": "Removes a trade from the caller's watchlist. Ownership of the trade is checked\neven when no bookmark exists, so this endpoint cannot be used to probe\nunrelated trades. `removed` is false when the trade was not watched.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `FORBIDDEN`.",
         "security": [
           {
             "cookieAuth": []
@@ -4124,8 +4654,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/WatchRemovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or missing trade id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -4249,7 +4788,7 @@
           "Trades"
         ],
         "summary": "Get escrow release schedule",
-        "description": "Returns release milestones configured for a trade.",
+        "description": "Returns the milestone-based release schedule for a trade, ordered by\n`milestoneIndex`. A trade with no schedule returns `milestoneCount: 0`, an\nempty `milestones` array, and `nextReleaseDate: null`. Accepts either the\n`tradeId` string or the numeric surrogate key in the `id` path segment.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `INFRA_ERROR`.",
         "security": [
           {
             "cookieAuth": []
@@ -4266,8 +4805,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/EscrowReleaseSchedule"
                 }
               }
             }
@@ -4277,6 +4815,19 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "description": "Release schedule store unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "Release schedule store unavailable"
+                }
+              }
+            }
           }
         }
       },
@@ -4285,7 +4836,7 @@
           "Trades"
         ],
         "summary": "Replace escrow release schedule",
-        "description": "Replaces the trade's milestone-based release schedule.",
+        "description": "Replaces the trade's milestone-based release schedule. Existing milestones for\nthe trade are deleted before the new ones are written, so the call is a full\noverwrite rather than an append. Only the buyer or seller may set the\nschedule, and only while the trade is `CREATED` or `FUNDED`.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `FORBIDDEN`, `DOMAIN_ERROR`, `INFRA_ERROR`.",
         "security": [
           {
             "cookieAuth": []
@@ -4301,42 +4852,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "milestones": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 100,
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "milestoneIndex": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "amountUsdc": {
-                          "type": "string"
-                        },
-                        "dueAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "conditionHash": {
-                          "type": "string",
-                          "maxLength": 64
-                        }
-                      },
-                      "required": [
-                        "milestoneIndex",
-                        "amountUsdc",
-                        "dueAt"
-                      ]
-                    }
-                  }
-                },
-                "required": [
-                  "milestones"
-                ]
+                "$ref": "#/components/schemas/EscrowScheduleRequest"
               }
             }
           }
@@ -4347,14 +4863,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/EscrowReleaseSchedule"
                 }
               }
             }
           },
           "400": {
-            "$ref": "#/components/responses/LegacyValidationError"
+            "description": "Body failed validation (missing/empty `milestones`, more than 100 milestones,\nnegative `milestoneIndex`, malformed `amountUsdc`/`dueAt`) or the trade is\nnot in `CREATED`/`FUNDED` state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalidMilestones": {
+                    "value": {
+                      "error": "milestones.0.amountUsdc: Invalid USDC amount"
+                    }
+                  },
+                  "wrongTradeStatus": {
+                    "value": {
+                      "error": "Trade must be CREATED or FUNDED to set a release schedule (current: COMPLETED)"
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
@@ -4364,6 +4898,19 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "description": "Release schedule store unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "Release schedule store unavailable"
+                }
+              }
+            }
           }
         }
       }
@@ -5094,7 +5641,7 @@
           "Goals"
         ],
         "summary": "Fetch authenticated goal analytics",
-        "description": "Error code references: `AUTH_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
+        "description": "Returns savings-goal analytics for the authenticated wallet, correlating each\ngoal with its vault balance. Amounts are returned as strings to preserve\nprecision; `percentageComplete` and `overallProgressPercentage` are\ninteger-truncated percentages, and `daysRemaining` is clamped to 0 once the\ndeadline has passed.\nA wallet with no `User` row yields 404 (`NOT_FOUND`).\nError code references: `AUTH_ERROR`, `NOT_FOUND`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
             "cookieAuth": []
@@ -5114,8 +5661,85 @@
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
           },
+          "404": {
+            "description": "No user record exists for the authenticated wallet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppErrorResponse"
+                },
+                "example": {
+                  "code": "NOT_FOUND",
+                  "message": "User not found: GAAA...WHF",
+                  "details": {}
+                }
+              }
+            }
+          },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/csp-violation": {
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "summary": "Report a Content-Security-Policy violation",
+        "description": "Browser-reported CSP violation collector wired to helmet's `report-uri`\ndirective. Unauthenticated, always responds `204 No Content`; violations are\nlogged and counted for metrics. Accepts `application/csp-report` (what browsers\nsend) or `application/json`, up to 20 KB. Rate limited to 10 reports per minute\nper client.\nUnlike the rest of the API this route is only mounted under the versioned\n`/api/v1` prefix and has no legacy unprefixed alias.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/csp-report": {
+              "schema": {
+                "$ref": "#/components/schemas/CspReportBody"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CspReportBody"
+              }
+            }
+          },
+          "examples": {
+            "report": {
+              "value": {
+                "csp-report": {
+                  "blocked-uri": "https://evil.example.com/script.js",
+                  "violated-directive": "script-src",
+                  "effective-directive": "script-src",
+                  "document-uri": "https://app.example.com/trades"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report accepted. No response body."
+          },
+          "413": {
+            "description": "Report body exceeded the 20 KB limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "More than 10 reports in the last minute from the same client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
           }
         }
       }

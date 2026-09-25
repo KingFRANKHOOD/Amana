@@ -102,6 +102,7 @@ describe("OpenAPI documentation coverage", () => {
     "/webhooks": ["get", "post"],
     "/webhooks/{id}": ["delete"],
     "/goals": ["get"],
+    "/api/v1/csp-violation": ["post"],
   };
 
   const protectedOperations = [
