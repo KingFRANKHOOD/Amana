@@ -10,9 +10,16 @@ const scheduleParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+// Reject zero-equivalent values ("0", "00.0") and cap digit length to avoid
+// precision/DoS via arbitrarily long digit strings. At least one non-zero
+// digit is required, and the integer part is limited to 12 digits.
+const amountUsdcSchema = z
+  .string()
+  .regex(/^(?=.*[1-9])\d{1,12}(\.\d{1,7})?$/, "Invalid USDC amount");
+
 const milestoneSchema = z.object({
   milestoneIndex: z.coerce.number().int().min(0),
-  amountUsdc: z.string().regex(/^\d+(\.\d{1,7})?$/, "Invalid USDC amount"),
+  amountUsdc: amountUsdcSchema,
   dueAt: z.string().datetime({ message: "Invalid ISO date for dueAt" }),
   conditionHash: z.string().max(64).optional(),
 });
