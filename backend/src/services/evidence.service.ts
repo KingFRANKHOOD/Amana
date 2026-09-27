@@ -91,9 +91,26 @@ function isEvidenceMetadataExpired(createdAt: Date): boolean {
   return Date.now() - createdAt.getTime() > retentionMs;
 }
 
+/**
+ * Strict CID (v0/v1) format validation. Rejects anything that is not a
+ * well-formed IPFS CID so malformed input cannot be used to probe the
+ * gateway or bypass record resolution.
+ */
+export function isValidCid(cid: string): boolean {
+  if (typeof cid !== "string") return false;
+  // CIDv0: base58btc, always starts with "Qm", 46 chars total.
+  if (/^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(cid)) return true;
+  // CIDv1: multibase prefix (b/B/z/f) followed by base-encoded multihash.
+  if (/^[bBzZfF][1-9A-HJ-NP-Za-km-z]{20,}$/.test(cid)) return true;
+  return false;
+}
+
 type EvidenceDatabase = {
   trade: Pick<PrismaClient["trade"], "findUnique">;
-  tradeEvidence: Pick<PrismaClient["tradeEvidence"], "findMany" | "create">;
+  tradeEvidence: Pick<
+    PrismaClient["tradeEvidence"],
+    "findMany" | "create" | "findFirst"
+  >;
 };
 
 export class EvidenceService {
@@ -152,6 +169,40 @@ export class EvidenceService {
         retentionExpired,
       };
     });
+  }
+
+  /**
+   * Resolve a CID to its TradeEvidence record and enforce that the caller is
+   * a party (buyer/seller) to the associated trade or an allowlisted admin.
+   * Mirrors the authorization performed by getEvidenceByTradeId so the stream
+   * route cannot be used as an IDOR to read another trade's evidence.
+   */
+  async authorizeEvidenceAccess(cid: string, callerAddress: string) {
+    if (!isValidCid(cid)) {
+      throw new EvidenceValidationError("Invalid CID format");
+    }
+
+    const record = await this.prisma.tradeEvidence.findFirst({
+      where: { cid },
+    });
+    if (!record) throw new EvidenceTradeNotFoundError();
+
+    const trade = await this.prisma.trade.findUnique({
+      where: { tradeId: record.tradeId },
+    });
+    if (!trade) throw new EvidenceTradeNotFoundError();
+
+    const caller = callerAddress.toLowerCase();
+    const isAdmin = getAdminAllowlistLowercase().has(caller);
+    if (
+      trade.buyerAddress.toLowerCase() !== caller &&
+      trade.sellerAddress.toLowerCase() !== caller &&
+      !isAdmin
+    ) {
+      throw new EvidenceAccessDeniedError();
+    }
+
+    return record;
   }
 
   /**
@@ -224,8 +275,16 @@ export class EvidenceService {
   /**
    * Proxy-stream a file from the IPFS gateway with optional Range support.
    * Returns an axios response stream so the route can pipe it.
+   *
+   * When a callerAddress is supplied, the CID is resolved to its
+   * TradeEvidence record and the caller must be a party to the trade (or an
+   * allowlisted admin) before any bytes are fetched from the gateway.
    */
-  async streamFromIPFS(cid: string, range?: string) {
+  async streamFromIPFS(cid: string, range?: string, callerAddress?: string) {
+    if (callerAddress !== undefined) {
+      await this.authorizeEvidenceAccess(cid, callerAddress);
+    }
+
     // Build list of gateway base URLs to try. Prefer explicit env var list.
     const urls = this.resolveGatewayUrls(cid);
 
@@ -261,143 +320,6 @@ export class EvidenceService {
     throw new ServiceUnavailableError();
   }
 
-  /** Resolve and cache the public gateway URL for a CID. */
-  private resolveGatewayUrl(cid: string): string {
-    if (this.urlCache.has(cid)) {
-      return this.urlCache.get(cid)!;
-    }
-    const url = this.ipfs.getFileUrl(cid);
-    this.urlCache.set(cid, url);
-    return url;
-  }
+  /** Resolve and cache the public gateway URL for
 
-  private sniffMimeType(buffer: Buffer): "video/mp4" | "video/webm" | null {
-    // MP4: bytes 4-7 should contain 'ftyp' marker in ISO BMFF containers.
-    if (
-      buffer.length >= 12 &&
-      buffer.subarray(4, 8).toString("ascii") === "ftyp"
-    ) {
-      return "video/mp4";
-    }
-
-    // WebM: EBML header starts with 0x1A45DFA3.
-    if (
-      buffer.length >= 4 &&
-      buffer[0] === 0x1a &&
-      buffer[1] === 0x45 &&
-      buffer[2] === 0xdf &&
-      buffer[3] === 0xa3
-    ) {
-      return "video/webm";
-    }
-
-    return null;
-  }
-
-  private async runEvidenceScan(
-    file: Express.Multer.File,
-  ): Promise<EvidenceScanResult> {
-    const required =
-      process.env.EVIDENCE_SCAN_REQUIRED !== undefined
-        ? process.env.EVIDENCE_SCAN_REQUIRED.toLowerCase() === "true"
-        : env.EVIDENCE_SCAN_REQUIRED;
-    try {
-      return await this.scanner.scan(file);
-    } catch (error) {
-      if (!required) {
-        return { clean: true };
-      }
-      throw new EvidenceScanError(
-        error instanceof Error
-          ? error.message
-          : "Evidence scan service unavailable",
-      );
-    }
-  }
-
-  private resolveGatewayUrls(cid: string): string[] {
-    const gatewayUrls = process.env.IPFS_GATEWAY_URLS ?? env.IPFS_GATEWAY_URLS;
-    const allowlist = this.parseGatewayAllowlist();
-    const configured: string[] = [];
-
-    if (gatewayUrls) {
-      for (const value of gatewayUrls.split(",")) {
-        const gateway = value.trim();
-        if (!gateway) continue;
-        const normalized = gateway.replace(/\/$/, "");
-        if (!this.isGatewayAllowed(normalized, allowlist)) {
-          continue;
-        }
-        configured.push(`${normalized}/${cid}`);
-      }
-    }
-
-    if (configured.length > 0) {
-      return configured;
-    }
-
-    const fallback = this.resolveGatewayUrl(cid);
-    const fallbackBase = fallback.replace(/\/+[^/]+$/, "");
-    if (!this.isGatewayAllowed(fallbackBase, allowlist)) {
-      throw new ServiceUnavailableError("No allowed IPFS gateway configured");
-    }
-    return [fallback];
-  }
-
-  private parseGatewayAllowlist(): Set<string> {
-    const raw =
-      process.env.IPFS_GATEWAY_ALLOWLIST ?? env.IPFS_GATEWAY_ALLOWLIST ?? "";
-    return new Set(
-      raw
-        .split(",")
-        .map((v: string) => v.trim().toLowerCase())
-        .filter(Boolean),
-    );
-  }
-
-  private isGatewayAllowed(
-    gatewayBase: string,
-    allowlist: Set<string>,
-  ): boolean {
-    if (allowlist.size === 0) return true;
-    try {
-      const host = new URL(gatewayBase).hostname.toLowerCase();
-      return allowlist.has(host);
-    } catch {
-      return false;
-    }
-  }
-
-  private isGatewayCircuitOpen(url: string): boolean {
-    const state = this.gatewayCircuit.get(url);
-    if (!state) return false;
-    return state.openUntil > Date.now();
-  }
-
-  private onGatewaySuccess(url: string): void {
-    this.gatewayCircuit.delete(url);
-  }
-
-  private onGatewayFailure(url: string): void {
-    const threshold = env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD;
-    const cooldownMs = env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS;
-    const current = this.gatewayCircuit.get(url) ?? {
-      failures: 0,
-      openUntil: 0,
-    };
-    const failures = current.failures + 1;
-
-    if (failures >= threshold) {
-      this.gatewayCircuit.set(url, {
-        failures,
-        openUntil: Date.now() + cooldownMs,
-      });
-      return;
-    }
-
-    this.gatewayCircuit.set(url, {
-      failures,
-      openUntil: 0,
-    });
-  }
-}
+/* … truncated 3704 chars — edit only what you need near the top … */
