@@ -53,6 +53,15 @@ function isBuyerOrSeller(trade: { buyerAddress: string; sellerAddress: string },
   );
 }
 
+function isParty(
+  trade: { buyerAddress: string; sellerAddress: string; mediatorAddress?: string | null },
+  walletAddress: string,
+): boolean {
+  if (isBuyerOrSeller(trade, walletAddress)) return true;
+  const mediator = trade.mediatorAddress?.trim();
+  return !!mediator && mediator.toLowerCase() === walletAddress.toLowerCase();
+}
+
 function tradeWhere(id: string) {
   const numericId = Number(id);
   const orConditions: Array<Record<string, unknown>> = [{ tradeId: id }];
@@ -158,6 +167,11 @@ export function createEscrowScheduleRouter(
 
         if (!trade) {
           res.status(404).json({ error: "Trade not found" });
+          return;
+        }
+
+        if (!isParty(trade, walletAddress)) {
+          res.status(403).json({ error: "Only the buyer, seller, or mediator may view the release schedule" });
           return;
         }
 
