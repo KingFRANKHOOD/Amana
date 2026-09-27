@@ -282,26 +282,18 @@ export class WebhookService {
       }
     }
 
-    const durationMs = performance.now() - start;
-    recordWebhookDelivery("failure", durationMs, {
+    appLogger.error(
+      { tradeId, status, webhookUrl: target.url, subscriptionId: target.subscriptionId, error: lastError },
+      "Webhook delivery exhausted all retry attempts",
+    );
+
+    recordWebhookDeadLetter({
       webhook_url: target.url,
       subscription_id: target.subscriptionId ?? "system",
       event: `trade.${status.toLowerCase()}`,
     });
 
-    appLogger.error(
-      {
-        tradeId,
-        status,
-        webhookUrl: target.url,
-        subscriptionId: target.subscriptionId,
-        error: lastError,
-      },
-      "Webhook delivery failed after retries",
-    );
-
-    this.incrementConsecutiveFailures(stateKey, target, tradeId, status, lastError);
-    await this.moveToDeadLetter(target, body, tradeId, status, lastError);
+    this.incrementConsecutiveFailures(stateKey, target, tradeId, status);
   }
 
   private incrementConsecutiveFailures(
@@ -309,74 +301,29 @@ export class WebhookService {
     target: DeliveryTarget,
     tradeId: string,
     status: TradeStatus,
-    error?: unknown,
   ): void {
-    const current = consecutiveFailureState.get(stateKey);
-    const nextCount = (current?.consecutiveFailures ?? 0) + 1;
-    consecutiveFailureState.set(stateKey, {
-      target,
-      consecutiveFailures: nextCount,
-    });
+    const existing = consecutiveFailureState.get(stateKey);
+    const consecutiveFailures = (existing?.consecutiveFailures ?? 0) + 1;
+    consecutiveFailureState.set(stateKey, { target, consecutiveFailures });
 
-    recordWebhookConsecutiveFailures({
+    recordWebhookConsecutiveFailures(consecutiveFailures, {
       webhook_url: target.url,
       subscription_id: target.subscriptionId ?? "system",
-      event: `trade.${status.toLowerCase()}`,
     });
 
-    if (nextCount >= this.consecutiveFailureThreshold) {
+    if (consecutiveFailures >= this.consecutiveFailureThreshold) {
       appLogger.error(
-        {
-          tradeId,
-          status,
-          webhookUrl: target.url,
-          subscriptionId: target.subscriptionId,
-          consecutiveFailures: nextCount,
-          error,
-        },
-        "Webhook target has exceeded consecutive failure threshold",
+        { webhookUrl: target.url, subscriptionId: target.subscriptionId, consecutiveFailures, tradeId, status },
+        "Webhook consecutive failure threshold reached",
       );
-
-      alertService
-        .sendAlert({
-          severity: "critical",
-          title: "Webhook target failing repeatedly",
-          message: `Webhook target ${target.url} has failed ${nextCount} consecutive times`,
-          metadata: {
-            tradeId,
-            status,
-            webhookUrl: target.url,
-            subscriptionId: target.subscriptionId,
-          },
-        })
-        .catch((alertError) => {
-          appLogger.error({ alertError }, "Failed to send webhook failure alert");
-        });
+      void alertService.sendAlert({
+        severity: "critical",
+        title: "Webhook consecutive failure threshold reached",
+        message: `Webhook ${target.url} has failed ${consecutiveFailures} consecutive times.`,
+        metadata: { webhookUrl: target.url, subscriptionId: target.subscriptionId, tradeId, status },
+      });
     }
   }
-
-  private async moveToDeadLetter(
-    target: DeliveryTarget,
-    body: string,
-    tradeId: string,
-    status: TradeStatus,
-    error: unknown,
-  ): Promise<void> {
-    recordWebhookDeadLetter({
-      webhook_url: target.url,
-      subscription_id: target.subscriptionId ?? "system",
-      event: `trade.${status.toLowerCase()}`,
-    });
-
-    appLogger.error(
-      {
-        tradeId,
-        status,
-        webhookUrl: target.url,
-        subscriptionId: target.subscriptionId,
-        error,
-      },
-      "Webhook delivery moved to dead letter",
-    );
-  }
 }
+
+export const webhookService = new WebhookService();
