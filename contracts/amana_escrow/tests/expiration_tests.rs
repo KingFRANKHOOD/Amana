@@ -3,8 +3,9 @@ extern crate std;
 use amana_escrow::{EscrowContract, EscrowContractClient, TradeStatus};
 use soroban_sdk::{
     Address, Env,
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Events, Ledger},
     token,
+    xdr::ContractEventBody,
 };
 
 struct H {
@@ -50,7 +51,7 @@ impl H {
 
     fn init(&self) {
         self.c()
-            .initialize(&self.admin, &self.token, &self.admin, &0u32, &self.token);
+            .initialize(&soroban_sdk::vec![self.admin.env(), self.admin.clone()], &1u32, &self.token, &self.admin, &1u32, &self.token);
     }
 
     fn now(&self) -> u64 {
@@ -276,4 +277,28 @@ fn test_expiry_refund_at_exact_deadline() {
     let buyer_after = h.token_balance(&h.buyer);
 
     assert_eq!(buyer_after - buyer_before, amount);
+}
+
+/// claim_expiry_refund() must publish a TradeExpiredEvent (topic "TRDEXP")
+/// carrying trade_id, refund_amount and caller.
+#[test]
+fn test_expiry_refund_emits_trade_expired_event() {
+    let h = H::new();
+    h.init();
+
+    let amount = 1_000_000i128;
+    let trade_id = h.funded_trade_with_deadline(amount, 3600);
+
+    h.advance_time(3601);
+    h.c().claim_expiry_refund(&trade_id, &h.buyer);
+
+    let all = h.env.events().all();
+    let events = all.events();
+    let last = events.last().expect("no events emitted");
+    let ContractEventBody::V0(v0) = &last.body;
+    let topic_str = std::format!("{:?}", v0.topics.first().unwrap());
+    assert!(
+        topic_str.contains("TRDEXP"),
+        "expected TradeExpired event, got: {topic_str}"
+    );
 }

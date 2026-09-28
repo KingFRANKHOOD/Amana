@@ -44,7 +44,7 @@ impl Stress {
             .address();
         let contract_id = env.register(EscrowContract, ());
         EscrowContractClient::new(&env, &contract_id)
-            .initialize(&admin, &usdc_id, &treasury, &fee_bps, &usdc_id);
+            .initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         Stress {
             env,
             contract_id,

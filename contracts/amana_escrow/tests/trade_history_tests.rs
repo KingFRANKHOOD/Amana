@@ -96,7 +96,8 @@ impl H {
     fn setup(&self) {
         let c = self.c();
         c.initialize(
-            &self.admin,
+            &soroban_sdk::vec![self.admin.env(), self.admin.clone()],
+            &1u32,
             &self.token,
             &self.treasury,
             &100u32,
