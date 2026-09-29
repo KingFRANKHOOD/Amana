@@ -318,3 +318,15 @@ fn test_all_datakey_variants_are_distinct() {
         }
     }
 }
+
+/// Issue #1416 — the token-contract key is documented in README.md as
+/// `DataKey::CngnContract`. Soroban keys storage by variant name, so assert the
+/// serialized key carries that exact symbol (and not the legacy `UsdcContract`).
+#[test]
+fn test_token_contract_key_symbol_matches_readme() {
+    let env = Env::default();
+    let hex = key_to_hex(&env, &DataKey::CngnContract);
+    let to_hex = |s: &str| -> String { s.bytes().map(|b| format!("{b:02x}")).collect() };
+    assert!(hex.contains(&to_hex("CngnContract")));
+    assert!(!hex.contains(&to_hex("UsdcContract")));
+}

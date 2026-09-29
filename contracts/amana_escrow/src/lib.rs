@@ -1432,6 +1432,13 @@ impl EscrowContract {
             dest_amount >= intent.dest_min,
             "Path payment: dest_amount below dest_min"
         );
+        // The swap output becomes the trade amount, so it must satisfy the same
+        // bounds create_trade() enforces for every trade.
+        assert!(
+            dest_amount >= MIN_TRADE_AMOUNT,
+            "amount must be at least MIN_TRADE_AMOUNT"
+        );
+        assert!(dest_amount <= MAX_TRADE_VALUE, "TradeValueTooLarge");
 
         let now = env.ledger().timestamp();
         trade.amount = dest_amount;
@@ -2123,12 +2130,9 @@ impl EscrowContract {
             .persistent()
             .set(&evidence_key, &evidence_list);
 
-        // For backward compatibility with legacy get_evidence API, store
-        // a Bytes representation of the IPFS hash.
+        // Bytes representation of the IPFS hash, emitted as the event's
+        // `legacy_hash` field. It is not persisted to storage.
         let evidence_hash_bytes = Bytes::from_slice(&env, ipfs_hash.as_bytes());
-        env.storage()
-            .persistent()
-            .set(&DataKey::Evidence(trade_id, caller.clone()), &evidence_hash_bytes);
         // Store a legacy sentinel for the old get_evidence() API so existing callers
         // are not broken. Clients should use get_evidence_list() for the full record.
         env.storage()
