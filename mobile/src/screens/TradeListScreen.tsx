@@ -21,20 +21,20 @@ type Props = StackScreenProps<RootStackParamList, 'TradeList'>;
 
 const STATUS_FILTERS: Array<{ label: string; value: TradeStatus | 'ALL' }> = [
   { label: 'All', value: 'ALL' },
-  { label: 'Pending', value: 'PENDING' },
-  { label: 'Active', value: 'IN_TRANSIT' },
+  { label: 'Pending', value: 'PENDING_SIGNATURE' },
+  { label: 'Active', value: 'FUNDED' },
   { label: 'Disputed', value: 'DISPUTED' },
   { label: 'Done', value: 'COMPLETED' },
 ];
 
 const STATUS_COLORS: Record<TradeStatus, string> = {
-  PENDING: '#F59E0B',
+  PENDING_SIGNATURE: '#F59E0B',
+  CREATED: '#8B5CF6',
   FUNDED: '#3B82F6',
-  IN_TRANSIT: '#14B8A6',
   DELIVERED: '#34D399',
   DISPUTED: '#EF4444',
   COMPLETED: '#34D399',
-  REFUNDED: '#6B7280',
+  CANCELLED: '#6B7280',
 };
 
 function TradeCard({ trade, onPress }: { trade: Trade; onPress: () => void }) {
@@ -216,36 +216,6 @@ const styles = StyleSheet.create({
   filterTabActive: { backgroundColor: '#2d6a2d' },
   filterLabel: { fontSize: 13, color: '#4a6a4a', fontWeight: '500' },
   filterLabelActive: { color: '#fff' },
-  errorBanner: {
-    backgroundColor: '#FEE2E2',
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 8,
-  },
-  errorText: { color: '#DC2626', fontSize: 13 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  listContent: { padding: 16, gap: 12 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  emptyState: { alignItems: 'center' },
-  emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#1a3a1a', marginBottom: 8 },
-  emptyBody: { fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 22 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-    gap: 8,
-  },
-  cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  tradeId: { fontSize: 13, color: '#888', fontFamily: 'monospace' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
-  statusText: { fontSize: 11, fontWeight: '600' },
-  amount: { fontSize: 20, fontWeight: '700', color: '#1a3a1a' },
-  addressLabel: { fontSize: 12, color: '#888' },
-  address: { color: '#2d6a2d', fontFamily: 'monospace' },
-});
+  
+
+/* … truncated 1296 chars — edit only what you need near the top … */
