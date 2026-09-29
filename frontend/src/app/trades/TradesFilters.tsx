@@ -26,13 +26,17 @@ const FILTERS: { label: string; value: TradeStatus }[] = [
   { label: "Disputed",  value: "disputed"  },
 ];
 
+// Keys mirror the backend Prisma TradeStatus enum (backend/prisma/schema.prisma)
+// so real `trade.status` values resolve to their intended colors instead of
+// falling through to the default. Keep in sync with the backend enum.
 const STATUS_STYLES: Record<string, string> = {
-  active:    "text-status-success bg-status-success/10 border border-status-success/20",
-  pending:   "text-status-warning bg-status-warning/10 border border-status-warning/20",
-  completed: "text-text-secondary bg-surface-2 border border-border-default",
-  disputed:  "text-status-danger  bg-status-danger/10  border border-status-danger/20",
-  locked:    "text-status-locked  bg-status-locked/10  border border-status-locked/20",
-  draft:     "text-status-draft   bg-surface-1         border border-border-default",
+  PENDING_SIGNATURE: "text-status-warning bg-status-warning/10 border border-status-warning/20",
+  CREATED:           "text-status-warning bg-status-warning/10 border border-status-warning/20",
+  FUNDED:            "text-status-success bg-status-success/10 border border-status-success/20",
+  DELIVERED:         "text-status-success bg-status-success/10 border border-status-success/20",
+  COMPLETED:         "text-text-secondary bg-surface-2 border border-border-default",
+  DISPUTED:          "text-status-danger  bg-status-danger/10  border border-status-danger/20",
+  CANCELLED:         "text-status-draft   bg-surface-1         border border-border-default",
 };
 
 const PAGE_SIZE = 10;
@@ -240,135 +244,99 @@ export function TradesFilters({ initialStatus, initialPage }: TradesFiltersProps
   });
 
   // ------------------------------------------------------------------
-  // Export
-  // ------------------------------------------------------------------
-
-  const [exporting, setExporting] = useState(false);
-
-  async function handleExport() {
-    if (!token) return;
-
-    setExporting(true);
-    try {
-      const blob = await api.trades.export(token, {
-        status: toExportStatus(currentStatus),
-      });
-      downloadBlob(blob, `trades-${Date.now()}.csv`);
-      addToast({ type: "success", message: "Trades exported" });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Export failed";
-      addToast({ type: "error", message });
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
 
   return (
-    <div className="space-y-6">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map((f) => (
-            <Button
-              key={f.value}
-              variant={currentStatus === f.value ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => handleFilter(f.value)}
-            >
-              {f.label}
-            </Button>
-          ))}
-        </div>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handleExport}
-          disabled={exporting || trades.length === 0}
-        >
-          {exporting ? "Exporting…" : "Export CSV"}
-        </Button>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {FILTERS.map((filter) => (
+          <Button
+            key={filter.value}
+            variant={currentStatus === filter.value ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => handleFilter(filter.value)}
+          >
+            {filter.label}
+          </Button>
+        ))}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-status-danger/20 bg-status-danger/10 px-4 py-3 text-sm text-status-danger">
-          {error}
-        </div>
-      )}
-
-      {/* Table */}
       {loading ? (
         <TradesTableSkeleton />
+      ) : error ? (
+        <div className="rounded-lg border border-status-danger/20 bg-status-danger/10 p-4 text-sm text-status-danger">
+          {error}
+        </div>
       ) : trades.length === 0 ? (
-        <div className="rounded-lg border border-border-default bg-surface-0 px-6 py-12 text-center">
-          <p className="text-sm text-text-secondary">No trades found.</p>
+        <div className="rounded-lg border border-border-default bg-surface-0 p-8 text-center text-sm text-text-muted">
+          No trades found.
         </div>
       ) : (
         <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">
-          <div className="border-b border-border-default bg-surface-1 px-4 py-3">
-            <div className="grid grid-cols-5 gap-4 text-xs font-medium uppercase tracking-wide text-text-tertiary">
-              <span>Trade</span>
-              <span>Counterparty</span>
-              <span>Amount</span>
-              <span>Status</span>
-              <span>Date</span>
-            </div>
-          </div>
-          <div className="divide-y divide-border-default bg-surface-0">
-            {trades.map((trade) => (
-              <Link
-                key={trade.id}
-                href={`/trades/${trade.id}`}
-                className="grid grid-cols-5 gap-4 px-4 py-4 text-sm transition-colors hover:bg-surface-1"
-              >
-                <span className="font-mono text-text-primary">
-                  {formatAddress(trade.id)}
-                </span>
-                <span className="font-mono text-text-secondary">
-                  {formatAddress(trade.counterparty ?? "—")}
-                </span>
-                <span className="text-text-primary">
-                  {trade.amountUsdc} USDC
-                </span>
-                <span>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      STATUS_STYLES[trade.status?.toLowerCase()] ?? STATUS_STYLES.draft
-                    }`}
-                  >
-                    {trade.status}
-                  </span>
-                </span>
-                <span className="text-text-secondary">
-                  {formatDate(trade.createdAt)}
-                </span>
-              </Link>
-            ))}
-          </div>
+          <table className="w-full text-sm">
+            <thead className="border-b border-border-default bg-surface-1 text-left text-xs uppercase text-text-muted">
+              <tr>
+                <th className="px-4 py-3 font-medium">Trade</th>
+                <th className="px-4 py-3 font-medium">Counterparty</th>
+                <th className="px-4 py-3 font-medium">Amount</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Created</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-default bg-surface-0">
+              {trades.map((trade) => (
+                <tr key={trade.id} className="hover:bg-surface-1">
+                  <td className="px-4 py-4">
+                    <Link
+                      href={`/trades/${trade.id}`}
+                      className="font-medium text-text-primary hover:text-brand-primary"
+                    >
+                      {trade.id.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-4 text-text-secondary">
+                    {formatAddress(trade.counterparty ?? "—")}
+                  </td>
+                  <td className="px-4 py-4 text-text-secondary">
+                    {trade.amount ?? "—"}
+                  </td>
+                  <td className="px-4 py-4">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        STATUS_STYLES[trade.status] ?? "text-text-muted"
+                      }`}
+                    >
+                      {trade.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-text-secondary">
+                    {formatDate(trade.createdAt)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <NavButton
-            direction="prev"
             disabled={currentPage <= 1}
             onClick={() => handlePage(currentPage - 1)}
-          />
-          <span className="text-sm text-text-secondary">
+          >
+            Previous
+          </NavButton>
+          <span className="text-sm text-text-muted">
             Page {currentPage} of {totalPages}
           </span>
           <NavButton
-            direction="next"
             disabled={currentPage >= totalPages}
             onClick={() => handlePage(currentPage + 1)}
-          />
+          >
+            Next
+          </NavButton>
         </div>
       )}
     </div>

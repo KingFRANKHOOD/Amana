@@ -18,6 +18,17 @@ import { useDraftForm } from "@/hooks/useDraftForm";
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { z } from "zod";
 
+// Backend TradeStatus enum values (backend/prisma/schema.prisma) are the source of truth.
+const STATUS_BADGE_STYLES: Record<string, string> = {
+  PENDING_SIGNATURE: "bg-status-warning/10 text-status-warning",
+  CREATED: "bg-status-info/10 text-status-info",
+  FUNDED: "bg-status-info/10 text-status-info",
+  DELIVERED: "bg-status-warning/10 text-status-warning",
+  COMPLETED: "bg-status-success/10 text-status-success",
+  DISPUTED: "bg-status-danger/10 text-status-danger",
+  CANCELLED: "bg-status-danger/10 text-status-danger",
+};
+
 export function DashboardContent() {
   const { t } = useTranslation();
   const { token, isAuthenticated } = useAuth();
@@ -216,7 +227,7 @@ export function DashboardContent() {
           icon={<CheckCircle2 className="w-5 h-5" />}
         >
           <div className="text-3xl font-bold text-text-primary mt-2">
-            {(stats?.totalTrades || 0) - (stats?.openTrades || 0)}
+            {stats?.completedTrades || 0}
           </div>
           <div className="text-sm text-text-secondary mt-1">
             {t("dashboard.stats.completedTradesDesc")}
@@ -224,95 +235,62 @@ export function DashboardContent() {
         </BentoCard>
 
         <BentoCard 
-          title={t("dashboard.stats.totalTrades")} 
+          title={t("dashboard.stats.disputedTrades")} 
           icon={<AlertCircle className="w-5 h-5" />}
+          glowVariant="danger"
         >
           <div className="text-3xl font-bold text-text-primary mt-2">
-            {stats?.totalTrades || 0}
+            {stats?.disputedTrades || 0}
           </div>
-          <div className="text-sm text-text-secondary mt-1">
-            {t("dashboard.stats.totalTradesDesc")}
+          <div className="text-sm text-status-danger mt-1">
+            {t("dashboard.stats.disputedTradesDesc")}
           </div>
         </BentoCard>
       </div>
 
-      {/* Recent Activity Section */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-end">
-          <h2 className="text-xl font-semibold text-text-primary">{t("dashboard.recentTrades")}</h2>
-          <Link href="/trades" className="text-sm text-gold hover:underline underline-offset-4">
-            {t("dashboard.recentTrades.viewAll")}
+      {/* Recent Trades */}
+      <div className="rounded-xl border border-border-default bg-bg-card overflow-hidden">
+        <div className="p-5 border-b border-border-default flex justify-between items-center">
+          <h2 className="text-lg font-semibold text-text-primary">{t("dashboard.recentTrades")}</h2>
+          <Link href="/trades" className="text-sm text-gold hover:underline">
+            {t("dashboard.viewAll")}
           </Link>
         </div>
         
         {recentTrades.length === 0 ? (
-          <div className="bg-bg-card border border-border-default rounded-xl p-8 text-center flex flex-col items-center">
-            <div className="w-12 h-12 rounded-full bg-bg-elevated border border-border-default flex items-center justify-center mb-3">
-              <Activity className="w-6 h-6 text-text-muted" />
-            </div>
-            <p className="text-text-primary font-medium">{t("dashboard.recentTrades.empty")}</p>
-            <p className="text-text-secondary text-sm mt-1 max-w-sm mb-4">
-              {t("dashboard.recentTrades.emptyDescription")}
-            </p>
-            <Link
-              href="/trades/create"
-              className="px-4 py-2 bg-bg-elevated border border-border-default text-text-primary text-sm font-medium rounded-lg hover:bg-bg-input transition-colors"
-            >
-              {t("dashboard.recentTrades.startTrading")}
-            </Link>
+          <div className="p-8 text-center text-text-secondary">
+            {t("dashboard.noTrades")}
           </div>
         ) : (
-          <div className="bg-bg-card border border-border-default rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-text-muted uppercase bg-bg-elevated/50 border-b border-border-default">
-                  <tr>
-                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.tradeId")}</th>
-                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.counterparty")}</th>
-                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.amount")}</th>
-                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.status")}</th>
-                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.date")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentTrades.map((trade, idx) => (
-                    <tr 
-                      key={trade.tradeId} 
-                      className={`
-                        border-b border-border-default hover:bg-bg-elevated/40 transition-colors
-                        ${idx === recentTrades.length - 1 ? 'border-b-0' : ''}
-                      `}
-                    >
-                      <td className="px-6 py-4 font-mono text-gold">
-                        <Link href={`/trades/${trade.tradeId}`} className="hover:underline">
-                          {trade.tradeId.substring(0, 8)}...
-                        </Link>
-                      </td>
-                      <td className="px-6 py-4 text-text-secondary font-mono">
-                        {trade.sellerAddress.substring(0, 6)}...{trade.sellerAddress.substring(trade.sellerAddress.length - 4)}
-                      </td>
-                      <td className="px-6 py-4 text-text-primary font-medium">
-                        {trade.amountCngn} cNGN
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 text-xs font-medium rounded-full capitalize
-                          ${trade.status === 'active' ? 'bg-status-success/20 text-status-success border border-status-success/30' : 
-                            trade.status === 'completed' ? 'bg-bg-elevated text-text-secondary border border-border-default' :
-                            trade.status === 'pending' ? 'bg-status-warning/20 text-status-warning border border-status-warning/30' :
-                            'bg-status-danger/20 text-status-danger border border-status-danger/30'
-                          }
-                        `}>
-                          {trade.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-text-secondary">
-                        {new Date(trade.createdAt).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="divide-y divide-border-default">
+            {recentTrades.map((trade) => (
+              <Link
+                key={trade.id}
+                href={`/trades/${trade.id}`}
+                className="flex items-center justify-between p-4 hover:bg-bg-elevated transition-colors"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-bg-elevated flex items-center justify-center">
+                    <CreditCard className="w-5 h-5 text-text-secondary" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-text-primary">
+                      {trade.amount} {trade.currency}
+                    </div>
+                    <div className="text-sm text-text-secondary">
+                      {new Date(trade.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    STATUS_BADGE_STYLES[trade.status] ?? "text-text-muted"
+                  }`}
+                >
+                  {trade.status}
+                </span>
+              </Link>
+            ))}
           </div>
         )}
       </div>
