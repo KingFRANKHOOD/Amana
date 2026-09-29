@@ -66,7 +66,7 @@ export interface EvidenceResponse {
 
 export interface CreateTradeRequest {
   sellerAddress: string;
-  amountCngn: string;
+  amountUsdc: string;
   buyerLossBps: number;
   sellerLossBps: number;
 }
