@@ -65,6 +65,9 @@ jobs:
       - name: Check for unpinned GitHub Actions
         run: bash ./scripts/check-unpinned-actions.sh
 
+      - name: Check docs for known drift
+        run: bash ./scripts/check-doc-drift.sh
+
       # Job-level `if:` conditions cannot reference the `matrix` context (it
       # is only resolved once a matrix job actually starts), so the set of
       # stacks to run is computed here instead and consumed as a plain

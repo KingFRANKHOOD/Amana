@@ -231,15 +231,13 @@ Start all services with:
 ./scripts/dev-up.sh
 ```
 
-This starts:
+This starts the `dev` profile only:
 - PostgreSQL (port 5432)
 - Redis (port 6379)
-- Supabase (port 54321)
-- Jaeger (port 16686) — distributed tracing
-- Prometheus (port 9090) — metrics collection
-- Grafana (port 3000) — dashboards
 
-Check `docker-compose.yml` for full service definitions.
+No tracing or dashboard services (Jaeger, Prometheus, Grafana, Supabase) are
+part of this stack. See [docker-profiles.md](docker-profiles.md) for what each
+profile runs, and `docker-compose.yml` for full service definitions.
 
 ---
 

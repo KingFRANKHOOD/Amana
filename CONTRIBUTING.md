@@ -73,7 +73,7 @@ your working directory stable and uses the lockfile owned by each package.
 | Build the backend | `pnpm --dir backend build` |
 | Build the frontend | `pnpm --dir frontend build` |
 | Start the mobile app | `pnpm --dir mobile start` |
-| Test the routes service | `pnpm --dir routes-d test` |
+| Test the routes service (npm-managed, not in the pnpm workspace) | `cd routes-d && npm ci && npm test -- --coverage` |
 
 To pass additional arguments to a package script, insert `--` before them. For
 example, run one frontend test with
