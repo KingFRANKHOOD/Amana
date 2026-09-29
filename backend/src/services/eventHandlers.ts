@@ -296,7 +296,7 @@ export async function handleFundsReleased(
     version: 1,
   });
 
-  // Record the 1% platform fee for this completed trade
+  // Record the platform fee (current on-chain fee_bps) for this completed trade
   const amountUsdc =
     event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
   await feeAccountingService.recordFee(
@@ -370,7 +370,7 @@ export async function handleDisputeResolved(
     version: 1,
   });
 
-  // Record the 1% platform fee for dispute-resolved (completed) trades
+  // Record the platform fee (current on-chain fee_bps) for dispute-resolved trades
   const amountUsdc =
     event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
   await feeAccountingService.recordFee(
@@ -399,6 +399,23 @@ export async function handleDisputeResolved(
     });
 }
 
+/**
+ * Keep fee accounting in sync with the contract's live fee_bps
+ * (admin update_fee_bps / multisig UpdateFeeBps both emit FEEUPD).
+ */
+export async function handleFeeRateUpdated(
+  _tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
+  const newFeeBps = Number(event.data.new_fee_bps);
+  feeAccountingService.setFeeBps(newFeeBps);
+  appLogger.debug(
+    { newFeeBps, ledger: event.ledgerSequence },
+    "[EventHandler] FeeRateUpdated",
+  );
+  return () => {};
+}
+
 /** Dispatch a parsed event to the correct handler, returning a post-commit thunk. */
 export async function dispatchEvent(
   tx: Prisma.TransactionClient,
@@ -423,7 +440,7 @@ export async function dispatchEvent(
     [EventType.DeadlineExtended]: handleNoop,
     [EventType.MediatorAdded]: handleNoop,
     [EventType.MediatorRemoved]: handleNoop,
-    [EventType.FeeRateUpdated]: handleNoop,
+    [EventType.FeeRateUpdated]: handleFeeRateUpdated,
     [EventType.FeesWithdrawn]: handleNoop,
     [EventType.PathPaymentInitiated]: handleNoop,
     [EventType.PathPaymentExecuted]: handleNoop,
