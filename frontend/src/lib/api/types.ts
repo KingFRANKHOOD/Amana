@@ -15,7 +15,7 @@ export interface TradeResponse {
   tradeId: string;
   buyerAddress: string;
   sellerAddress: string;
-  amountCngn: string;
+  amountUsdc: string;
   buyerLossBps: number;
   sellerLossBps: number;
   status: string;

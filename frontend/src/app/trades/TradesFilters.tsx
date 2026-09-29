@@ -230,35 +230,36 @@ export function TradesFilters({ initialStatus, initialPage }: TradesFiltersProps
     return () => window.clearTimeout(timer);
   }, [fetchTrades]);
 
+  // Live updates — refresh the list when a trade event arrives.
   useTradeStream({
     token,
-    tradeIds: trades.map((trade) => trade.tradeId),
-    onTradeEvent: (event) => {
-      setTrades((current) =>
-        current.map((trade) =>
-          trade.tradeId === event.trade_id ? { ...trade, status: event.status } : trade,
-        ),
-      );
-    },
-    onFallbackPoll: () => {
+    enabled: isAuthenticated && !!token,
+    onEvent: () => {
       void fetchTrades();
     },
   });
 
+  // ------------------------------------------------------------------
+  // Export
+  // ------------------------------------------------------------------
+
+  const [exporting, setExporting] = useState(false);
+
   async function handleExport() {
     if (!token) return;
 
+    setExporting(true);
     try {
-      const blob = await api.trades.exportCsv(token, {
+      const blob = await api.trades.export(token, {
         status: toExportStatus(currentStatus),
       });
-      downloadBlob(blob, `trades-${new Date().toISOString().slice(0, 10)}.csv`);
+      downloadBlob(blob, `trades-${Date.now()}.csv`);
+      addToast({ type: "success", message: "Trades exported" });
     } catch (err) {
-      addToast({
-        type: "error",
-        title: "Export failed",
-        message: err instanceof Error ? err.message : "Failed to export trades.",
-      });
+      const message = err instanceof Error ? err.message : "Export failed";
+      addToast({ type: "error", message });
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -267,191 +268,109 @@ export function TradesFilters({ initialStatus, initialPage }: TradesFiltersProps
   // ------------------------------------------------------------------
 
   return (
-    <>
-      {/* Action bar */}
-      <div className="flex items-center justify-end gap-2 mb-6">
-        <div className="hidden md:flex items-center gap-2 mr-2 border-r border-border-default pr-4">
-          <button
-            type="button"
-            onClick={() => addToast({ type: "success", title: "Success", message: "Trade completed successfully!" })}
-            className="px-3 py-1.5 rounded-md bg-status-success/10 border border-status-success/30 text-status-success text-xs font-medium hover:bg-status-success/20 transition-colors"
-          >
-            Success
-          </button>
-          <button
-            type="button"
-            onClick={() => addToast({ type: "error", title: "Error", message: "Failed to complete trade." })}
-            className="px-3 py-1.5 rounded-md bg-status-danger/10 border border-status-danger/30 text-status-danger text-xs font-medium hover:bg-status-danger/20 transition-colors"
-          >
-            Error
-          </button>
-          <button
-            type="button"
-            onClick={() => addToast({ type: "warning", title: "Warning", message: "Trade is disputed." })}
-            className="px-3 py-1.5 rounded-md bg-status-warning/10 border border-status-warning/30 text-status-warning text-xs font-medium hover:bg-status-warning/20 transition-colors"
-          >
-            Warning
-          </button>
-          <button
-            type="button"
-            onClick={() => addToast({ type: "info", title: "Info", message: "New message received." })}
-            className="px-3 py-1.5 rounded-md bg-status-info/10 border border-status-info/30 text-status-info text-xs font-medium hover:bg-status-info/20 transition-colors"
-          >
-            Info
-          </button>
+    <div className="space-y-6">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((f) => (
+            <Button
+              key={f.value}
+              variant={currentStatus === f.value ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => handleFilter(f.value)}
+            >
+              {f.label}
+            </Button>
+          ))}
         </div>
+
         <Button
-          type="button"
           variant="secondary"
+          size="sm"
           onClick={handleExport}
-          disabled={!token || loading}
+          disabled={exporting || trades.length === 0}
         >
-          Export CSV
+          {exporting ? "Exporting…" : "Export CSV"}
         </Button>
-        <Link href="/trades/create">
-          <Button variant="primary">Create Trade</Button>
-        </Link>
       </div>
-
-      {/* Filter tabs */}
-      <div className="mb-6" role="tablist" aria-label="Trade filters">
-        <div className="flex items-center gap-2">
-          {FILTERS.map((filter) => {
-            const isActive = currentStatus === filter.value;
-            return (
-              <NavButton
-                key={filter.value}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => handleFilter(filter.value)}
-                isActive={isActive}
-              >
-                {filter.label}
-              </NavButton>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Loading */}
-      {loading && <TradesTableSkeleton />}
 
       {/* Error */}
-      {error && !loading && (
-        <div className="rounded-lg border border-status-danger/40 bg-status-danger/15 px-4 py-3 text-center">
-          <p className="text-status-danger text-sm">{error}</p>
+      {error && (
+        <div className="rounded-lg border border-status-danger/20 bg-status-danger/10 px-4 py-3 text-sm text-status-danger">
+          {error}
         </div>
       )}
 
-      {/* Results */}
-      {!loading && !error && (
-        <>
-          {trades.length === 0 ? (
-            <div className="rounded-lg border border-border-default bg-surface-1 py-20 px-6 text-center shadow-elev-1">
-              <div className="flex justify-center mb-6">
-                <div className="w-16 h-16 rounded-lg bg-surface-2 border border-border-default flex items-center justify-center">
-                  <svg
-                    className="w-8 h-8 text-text-muted"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth="1.5"
+      {/* Table */}
+      {loading ? (
+        <TradesTableSkeleton />
+      ) : trades.length === 0 ? (
+        <div className="rounded-lg border border-border-default bg-surface-0 px-6 py-12 text-center">
+          <p className="text-sm text-text-secondary">No trades found.</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">
+          <div className="border-b border-border-default bg-surface-1 px-4 py-3">
+            <div className="grid grid-cols-5 gap-4 text-xs font-medium uppercase tracking-wide text-text-tertiary">
+              <span>Trade</span>
+              <span>Counterparty</span>
+              <span>Amount</span>
+              <span>Status</span>
+              <span>Date</span>
+            </div>
+          </div>
+          <div className="divide-y divide-border-default bg-surface-0">
+            {trades.map((trade) => (
+              <Link
+                key={trade.id}
+                href={`/trades/${trade.id}`}
+                className="grid grid-cols-5 gap-4 px-4 py-4 text-sm transition-colors hover:bg-surface-1"
+              >
+                <span className="font-mono text-text-primary">
+                  {formatAddress(trade.id)}
+                </span>
+                <span className="font-mono text-text-secondary">
+                  {formatAddress(trade.counterparty ?? "—")}
+                </span>
+                <span className="text-text-primary">
+                  {trade.amountUsdc} USDC
+                </span>
+                <span>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      STATUS_STYLES[trade.status?.toLowerCase()] ?? STATUS_STYLES.draft
+                    }`}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-              </div>
-              <h3 className="text-xl font-semibold text-text-primary mb-3">No trades yet</h3>
-              <p className="text-text-secondary text-sm mb-8 max-w-sm mx-auto leading-relaxed">
-                Get started by creating your first trade to begin settling
-                agricultural transactions securely on the blockchain.
-              </p>
-              <Link href="/trades/create">
-                <Button variant="primary" size="lg">Create Your First Trade</Button>
+                    {trade.status}
+                  </span>
+                </span>
+                <span className="text-text-secondary">
+                  {formatDate(trade.createdAt)}
+                </span>
               </Link>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border-default bg-surface-1">
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">ID</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Counterparty</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Amount</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Status</th>
-                    <th className="text-left px-4 py-3 text-text-muted font-medium">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map((trade, i) => (
-                    <tr
-                      key={trade.tradeId}
-                      className={`border-b border-border-default last:border-0 hover:bg-surface-2 hover:shadow-elev-2 transition-colors ${
-                        i % 2 === 0 ? "bg-surface-0" : "bg-surface-1"
-                      }`}
-                    >
-                      <td className="px-4 py-3 text-gold font-mono">
-                        <Link
-                          href={`/trades/${trade.tradeId}`}
-                          className="hover:underline underline-offset-4"
-                        >
-                          {trade.tradeId.slice(0, 8)}...
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary font-mono">
-                        {formatAddress(trade.sellerAddress)}
-                      </td>
-                      <td className="px-4 py-3 text-text-primary">
-                        {trade.amountCngn} cNGN
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                            STATUS_STYLES[trade.status] ?? "text-text-muted"
-                          }`}
-                        >
-                          {trade.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary">
-                        {formatDate(trade.createdAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6 text-sm text-text-secondary">
-              <span>Page {currentPage} of {totalPages}</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handlePage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 rounded-md border border-border-default hover:border-border-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => handlePage(Math.min(totalPages, currentPage + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 rounded-md border border-border-default hover:border-border-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+            ))}
+          </div>
+        </div>
       )}
-    </>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <NavButton
+            direction="prev"
+            disabled={currentPage <= 1}
+            onClick={() => handlePage(currentPage - 1)}
+          />
+          <span className="text-sm text-text-secondary">
+            Page {currentPage} of {totalPages}
+          </span>
+          <NavButton
+            direction="next"
+            disabled={currentPage >= totalPages}
+            onClick={() => handlePage(currentPage + 1)}
+          />
+        </div>
+      )}
+    </div>
   );
 }
