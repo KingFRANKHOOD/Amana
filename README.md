@@ -107,9 +107,9 @@ Path-aware execution is enabled to avoid unnecessary runtime. If a stack has no 
 
 For the protected branch (`main`), set these required status checks:
 
-- `Frontend Required Gate`
-- `Backend Required Gate`
-- `Contracts Required Gate`
+- `frontend CI`
+- `backend CI`
+- `contracts CI`
 
 ---
 
