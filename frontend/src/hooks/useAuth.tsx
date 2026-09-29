@@ -18,6 +18,7 @@ import {
 } from "@stellar/freighter-api";
 import { api, ApiError } from "@/lib/api";
 import { trackAuthEvent } from "@/lib/analytics";
+import { refreshIdentityStore } from "./useFreighterIdentity";
 
 // Compatibility marker for consumers that still gate requests on `token`.
 // This is not a credential and is never sent to the API.
@@ -140,6 +141,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isWalletDetected: true,
         isLoading: false,
       }));
+
+      // Sync the connection state with useFreighterIdentity's shared store
+      // so other components (like AppSidebar) see the updated wallet state immediately
+      await refreshIdentityStore();
+
       trackAuthEvent("connect_wallet", "success", { connected: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to connect wallet";
