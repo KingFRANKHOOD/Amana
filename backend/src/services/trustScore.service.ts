@@ -58,6 +58,7 @@ interface TrustScoreConfig {
   tradeCompletionDiminishingRate: number;
   volumeThresholds: { minTrades: number; bonus: number }[];
   disputeInitiatedPenalty: number;
+  /** Reserved: only applicable once disputes persist an explicit outcome. */
   disputeLostPenalty: number;
   decayHalfLifeDays: number;
   minScore: number;
@@ -412,24 +413,29 @@ export class TrustScoreService {
     }
 
     for (const dispute of disputes.slice(0, 5)) {
-      const lost = dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED;
+      // The Dispute model does not record an outcome (winner/loser), only a
+      // lifecycle status. A RESOLVED/CLOSED status says nothing about whether the
+      // initiator won, so every dispute is treated as initiated-only here. The
+      // harsher `disputeLostPenalty` / "dispute_lost" event must only be applied
+      // once an explicit outcome is persisted.
       const timestamp = dispute.createdAt.toISOString();
       const ageMs = now - dispute.createdAt.getTime();
       const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
-      const rawImpact = lost
-        ? -this.config.disputeLostPenalty
-        : -this.config.disputeInitiatedPenalty;
+      const rawImpact = -this.config.disputeInitiatedPenalty;
       const decayedImpact = Math.round(rawImpact * decayFactor * 10) / 10;
+      const tradeRef = `${dispute.tradeId.slice(0, 8)}...`;
+      const terminal =
+        dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED;
 
       events.push({
         id: `dispute-${dispute.id}`,
-        event: lost
-          ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved against you`
-          : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
+        event: terminal
+          ? `Initiated dispute on trade ${tradeRef} (${dispute.status.toLowerCase()})`
+          : `Initiated dispute on trade ${tradeRef}`,
         impact: rawImpact,
         impactLabel: `${rawImpact}`,
         timestamp,
-        type: lost ? "dispute_lost" : "dispute_initiated",
+        type: "dispute_initiated",
         decayedImpact,
       });
     }
