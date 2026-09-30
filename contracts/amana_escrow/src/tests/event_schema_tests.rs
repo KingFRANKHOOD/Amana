@@ -34,7 +34,7 @@ mod event_schema_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         token::StellarAssetClient::new(env, &usdc_id).mint(&buyer, &amount);
-        client.initialize(&admin, &usdc_id, &treasury, &fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         (contract_id, usdc_id, buyer, seller, treasury)
     }
 
@@ -56,7 +56,7 @@ mod event_schema_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         token::StellarAssetClient::new(env, &ngn_id).mint(&buyer, &amount);
-        client.initialize(&admin, &cngn_id, &treasury, &fee_bps, &ngn_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &cngn_id, &treasury, &fee_bps, &ngn_id);
         (contract_id, buyer, seller, treasury, cngn_id, ngn_id)
     }
 
@@ -392,7 +392,7 @@ mod event_schema_tests {
             .address();
         let treasury2 = Address::generate(&env);
         token::StellarAssetClient::new(&env, &usdc2).mint(&buyer, &10_000_i128);
-        c2.initialize(&admin2, &usdc2, &treasury2, &100_u32, &usdc2);
+        c2.initialize(&soroban_sdk::Vec::from_array(&env, [admin2.clone()]), &1_u32, &usdc2, &treasury2, &100_u32, &usdc2);
         c2.set_mediator(&mediator);
         let tid = c2.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
         c2.deposit(&tid);
