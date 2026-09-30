@@ -15,10 +15,14 @@ export class ClassifiedServiceError extends AppError {
     public readonly service: "stellar" | "database" | "ipfs" | "cache",
     options: ClassifiedServiceErrorOptions,
   ) {
-    super(options.code, options.message, options.httpStatus, {
-      service,
-      retryable: options.retryable,
-      ...(options.details ?? {}),
+    super(options.message, {
+      code: options.code,
+      statusCode: options.httpStatus,
+      details: {
+        service,
+        retryable: options.retryable,
+        ...(options.details ?? {}),
+      },
     });
     this.name = this.constructor.name;
     this.retryable = options.retryable;

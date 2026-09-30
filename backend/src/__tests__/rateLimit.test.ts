@@ -223,3 +223,78 @@ describe('auth route wiring', () => {
     expect((refreshCall![0] as RateLimiterOptions).max).toBe(RATE_LIMIT_CONFIG.authRefresh.max);
   });
 });
+
+describe('breach tracker bounds (issue #1206)', () => {
+  type RateLimitModule = typeof import('../lib/rateLimit');
+
+  let rateLimitModule: RateLimitModule;
+  let handler: RateLimiterOptions['handler'];
+
+  const createRes = () =>
+    ({
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    }) as unknown as Response;
+
+  const breachFrom = (ip: string) => {
+    const req = {
+      headers: {},
+      ip,
+      socket: { remoteAddress: ip },
+      path: '/auth/challenge',
+      method: 'POST',
+    } as unknown as Request;
+    handler(req, createRes(), jest.fn(), { windowMs: 60_000, max: 1 });
+  };
+
+  beforeEach(() => {
+    jest.resetModules();
+    mockRateLimit.mockClear();
+    jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00Z') });
+
+    jest.isolateModules(() => {
+      const { appLogger } = require('../middleware/logger');
+      jest.spyOn(appLogger, 'info').mockImplementation(() => undefined);
+      jest.spyOn(appLogger, 'warn').mockImplementation(() => undefined);
+      rateLimitModule = require('../lib/rateLimit');
+    });
+
+    rateLimitModule.resetBreachTracker();
+    rateLimitModule.createIpRateLimiter({ windowMs: 60_000, max: 1, message: 'slow down' });
+    handler = firstRateLimitOptions().handler;
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('caps the number of tracked keys under high unique-IP load', () => {
+    const max = rateLimitModule.BREACH_TRACKER_MAX_ENTRIES;
+    for (let i = 0; i < max + 500; i++) {
+      breachFrom(`10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`);
+    }
+
+    expect(rateLimitModule.getBreachTrackerSize()).toBeLessThanOrEqual(max);
+  });
+
+  it('evicts entries whose breach window has expired', () => {
+    for (let i = 0; i < 100; i++) {
+      breachFrom(`192.0.2.${i}`);
+    }
+    expect(rateLimitModule.getBreachTrackerSize()).toBe(100);
+
+    jest.setSystemTime(new Date('2026-01-01T00:16:00Z'));
+    breachFrom('198.51.100.1');
+
+    expect(rateLimitModule.getBreachTrackerSize()).toBe(1);
+  });
+
+  it('keeps counting repeated breaches from the same key within the window', () => {
+    for (let i = 0; i < 5; i++) {
+      breachFrom('203.0.113.7');
+    }
+
+    expect(rateLimitModule.getBreachTrackerSize()).toBe(1);
+  });
+});

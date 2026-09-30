@@ -11,7 +11,7 @@ mod fee_update_tests {
         let token = Address::generate(env);
         let treasury = Address::generate(env);
         EscrowContractClient::new(env, &contract_id)
-            .initialize(&admin, &token, &treasury, &100u32, &token);
+            .initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &100u32, &token);
         (contract_id, admin, token)
     }
 

@@ -7,6 +7,10 @@ import { CircuitBreaker, CircuitBreakerOpenError } from "../lib/circuitBreaker";
 import { AppError } from "../errors/appError";
 import { ErrorCode } from "../errors/errorCodes";
 
+function isNativeAssetCode(code: string): boolean {
+  return code === "XLM" || code === "native";
+}
+
 function isHorizonInfraError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as any;
@@ -53,16 +57,23 @@ export class PathPaymentService {
     sourceAssetCode: string,
     sourceAssetIssuer?: string
   ): Promise<any[]> {
+    // On Stellar an asset is identified by the (code, issuer) pair, so a
+    // non-native asset without an issuer is ambiguous. Never guess one.
+    if (!isNativeAssetCode(sourceAssetCode) && !sourceAssetIssuer) {
+      throw new AppError(
+        ErrorCode.VALIDATION_ERROR,
+        "sourceAssetIssuer is required for non-native source assets",
+        400,
+        { sourceAsset: sourceAssetCode },
+      );
+    }
+
     try {
       const server = this.stellarService.getServer();
 
-      const sourceAsset =
-        sourceAssetCode === "XLM" || sourceAssetCode === "native"
-          ? StellarSdk.Asset.native()
-          : new StellarSdk.Asset(
-              sourceAssetCode,
-              sourceAssetIssuer || "GASIVS63V6PAKAMW3ZYEX2RNNB3Q4UMRKDIQHNMH3LRNTSWVHXMTANKE"
-            );
+      const sourceAsset = isNativeAssetCode(sourceAssetCode)
+        ? StellarSdk.Asset.native()
+        : new StellarSdk.Asset(sourceAssetCode, sourceAssetIssuer as string);
 
       const network = this.stellarService.getNetworkPassphrase();
       const usdcIssuer =

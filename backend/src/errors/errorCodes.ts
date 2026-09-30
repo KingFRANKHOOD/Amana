@@ -1,87 +1,90 @@
 /**
- * Canonical application error codes.
+ * Canonical error codes and HTTP status mapping for the backend.
  *
- * Every code maps to a default HTTP status so callers can
- * surface consistent, auditable responses.  Add new codes
- * here rather than sprinkling numeric status literals across
- * services.
+ * NOTE: `AppError`, `isAppError` and `StructuredErrorPayload` live in
+ * `./appError` but are re-exported here for backwards compatibility with the
+ * many consumers that import them from `../errors/errorCodes`.
  */
 export enum ErrorCode {
-  // ── Authentication / Authorization ──────────────────────────────────────
-  /** 401 — The request lacks valid authentication credentials. */
-  UNAUTHORIZED = 'UNAUTHORIZED',
-  /** 403 — The authenticated caller does not have permission. */
-  FORBIDDEN = 'FORBIDDEN',
-  /** 401 — Generic authentication failure (legacy alias). */
+  // Auth
   AUTH_ERROR = 'AUTH_ERROR',
+  UNAUTHORIZED = 'UNAUTHORIZED',
+  FORBIDDEN = 'FORBIDDEN',
+  TOKEN_EXPIRED = 'TOKEN_EXPIRED',
+  INVALID_TOKEN = 'INVALID_TOKEN',
 
-  // ── Trade / Domain ─────────────────────────────────────────────────────
-  TRADE_NOT_FOUND = 'TRADE_NOT_FOUND',
-  TRADE_ACCESS_DENIED = 'TRADE_ACCESS_DENIED',
-  TRADE_INVALID_STATE = 'TRADE_INVALID_STATE',
-  TRADE_INVALID_STATUS = 'TRADE_INVALID_STATUS',
+  // Validation
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
+  INVALID_INPUT = 'INVALID_INPUT',
+  MISSING_FIELD = 'MISSING_FIELD',
+
+  // Resources
+  NOT_FOUND = 'NOT_FOUND',
+  CONFLICT = 'CONFLICT',
+  ALREADY_EXISTS = 'ALREADY_EXISTS',
+
+  // Rate limiting
+  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+
+  // Domain / infrastructure
+  DOMAIN_ERROR = 'DOMAIN_ERROR',
+  INFRA_ERROR = 'INFRA_ERROR',
+
+  // Trades
   TRADE_BUILD_FAILED = 'TRADE_BUILD_FAILED',
-  DISPUTE_NOT_FOUND = 'DISPUTE_NOT_FOUND',
+  TRADE_INVALID_STATUS = 'TRADE_INVALID_STATUS',
+
+  // Disputes
   DISPUTE_INVALID_CATEGORY = 'DISPUTE_INVALID_CATEGORY',
   DISPUTE_STATUS_TRANSITION_INVALID = 'DISPUTE_STATUS_TRANSITION_INVALID',
   DISPUTE_STATUS_CONFLICT = 'DISPUTE_STATUS_CONFLICT',
 
-  // ── Validation / Client ────────────────────────────────────────────────
-  VALIDATION_ERROR = 'VALIDATION_ERROR',
-  NOT_FOUND = 'NOT_FOUND',
-  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
-  DUPLICATE_REQUEST = 'DUPLICATE_REQUEST',
-
-  // ── Payment Provider ───────────────────────────────────────────────────
+  // Payments
   PAYMENT_PROVIDER_ERROR = 'PAYMENT_PROVIDER_ERROR',
   PAYMENT_PROVIDER_TIMEOUT = 'PAYMENT_PROVIDER_TIMEOUT',
   PAYMENT_INSUFFICIENT_FUNDS = 'PAYMENT_INSUFFICIENT_FUNDS',
 
-  // ── Server / Infrastructure ────────────────────────────────────────────
+  // Generic
   INTERNAL_ERROR = 'INTERNAL_ERROR',
-  INFRA_ERROR = 'INFRA_ERROR',
   SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
-  DOMAIN_ERROR = 'DOMAIN_ERROR',
 }
 
-/**
- * Default HTTP status for every {@link ErrorCode}.
- *
- * Individual handlers may override this via `AppError` constructor
- * but the mapping below is the source of truth for automatic
- * serialization.
- */
 export const ERROR_STATUS_MAP: Record<ErrorCode, number> = {
-  // Auth
+  [ErrorCode.AUTH_ERROR]: 401,
   [ErrorCode.UNAUTHORIZED]: 401,
   [ErrorCode.FORBIDDEN]: 403,
-  [ErrorCode.AUTH_ERROR]: 401,
+  [ErrorCode.TOKEN_EXPIRED]: 401,
+  [ErrorCode.INVALID_TOKEN]: 401,
 
-  // Trade / Domain
-  [ErrorCode.TRADE_NOT_FOUND]: 404,
-  [ErrorCode.TRADE_ACCESS_DENIED]: 403,
-  [ErrorCode.TRADE_INVALID_STATE]: 409,
-  [ErrorCode.TRADE_INVALID_STATUS]: 400,
-  [ErrorCode.TRADE_BUILD_FAILED]: 500,
-  [ErrorCode.DISPUTE_NOT_FOUND]: 404,
+  [ErrorCode.VALIDATION_ERROR]: 400,
+  [ErrorCode.INVALID_INPUT]: 400,
+  [ErrorCode.MISSING_FIELD]: 400,
+
+  [ErrorCode.NOT_FOUND]: 404,
+  [ErrorCode.CONFLICT]: 409,
+  [ErrorCode.ALREADY_EXISTS]: 409,
+
+  [ErrorCode.RATE_LIMIT_EXCEEDED]: 429,
+
+  [ErrorCode.DOMAIN_ERROR]: 400,
+  [ErrorCode.INFRA_ERROR]: 500,
+
+  [ErrorCode.TRADE_BUILD_FAILED]: 400,
+  [ErrorCode.TRADE_INVALID_STATUS]: 409,
+
   [ErrorCode.DISPUTE_INVALID_CATEGORY]: 400,
-  [ErrorCode.DISPUTE_STATUS_TRANSITION_INVALID]: 422,
+  [ErrorCode.DISPUTE_STATUS_TRANSITION_INVALID]: 409,
   [ErrorCode.DISPUTE_STATUS_CONFLICT]: 409,
 
-  // Validation / Client
-  [ErrorCode.VALIDATION_ERROR]: 400,
-  [ErrorCode.NOT_FOUND]: 404,
-  [ErrorCode.RATE_LIMIT_EXCEEDED]: 429,
-  [ErrorCode.DUPLICATE_REQUEST]: 409,
-
-  // Payment Provider
-  [ErrorCode.PAYMENT_PROVIDER_ERROR]: 503,
+  [ErrorCode.PAYMENT_PROVIDER_ERROR]: 502,
   [ErrorCode.PAYMENT_PROVIDER_TIMEOUT]: 504,
   [ErrorCode.PAYMENT_INSUFFICIENT_FUNDS]: 402,
 
-  // Server
   [ErrorCode.INTERNAL_ERROR]: 500,
-  [ErrorCode.INFRA_ERROR]: 503,
   [ErrorCode.SERVICE_UNAVAILABLE]: 503,
-  [ErrorCode.DOMAIN_ERROR]: 500,
 };
+
+// Re-export the canonical error primitives so existing imports from
+// `../errors/errorCodes` keep resolving (issue #1393).
+export { AppError, isAppError } from './appError';
+export type { StructuredErrorPayload } from './appError';

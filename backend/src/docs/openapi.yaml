@@ -131,6 +131,7 @@ components:
     PathPaymentSourceAssetIssuer:
       in: query
       name: sourceAssetIssuer
+      description: Issuer of the source asset. Required for every non-native asset (anything other than XLM); omitting it returns 400.
       required: false
       schema:
         type: string
