@@ -5,7 +5,7 @@ import {
   EventListenerConfig,
 } from "../config/eventListener.config";
 import { EventType, ParsedEvent, EVENT_TOPIC_MAP } from "../types/events";
-import { dispatchEvent } from "./eventHandlers";
+import { dispatchEvent, MissingTradeError } from "./eventHandlers";
 import { appLogger } from "../middleware/logger";
 import { CircuitBreaker, CircuitBreakerOpenError } from "../lib/circuitBreaker";
 
@@ -16,6 +16,8 @@ type OutboxRecord = {
   status: OutboxStatus;
   attempts: number;
   nextAttemptAt: Date;
+  tradeId: string;
+  ledgerSequence: number;
 };
 
 type ChainEventOutboxDelegate = PrismaClient["chainEventOutbox"];
@@ -51,6 +53,22 @@ export function isPrismaUniqueConstraintError(err: unknown): boolean {
   return (
     err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002"
   );
+}
+
+/**
+ * Returns true when the handler failed because the trade row does not exist
+ * yet (MissingTradeError from eventHandlers). This signals an ordering gap —
+ * the predecessor (usually TradeCreated) has not committed — not a poison
+ * event, so callers must defer rather than count towards dead-letter.
+ */
+export function isMissingTradeError(err: unknown): boolean {
+  try {
+    if (typeof MissingTradeError === "function" && err instanceof MissingTradeError) return true;
+  } catch {
+    /* mocked module may not export the class — fall through to name check */
+  }
+  if (err instanceof Error && err.name === "MissingTradeError") return true;
+  return false;
 }
 
 /**
@@ -299,6 +317,20 @@ export class EventListenerService {
       return;
     }
 
+    // Per-trade ordering guard (issue #1404): if an earlier event for the same
+    // trade is still PENDING/RETRYING/DEAD_LETTER, defer this event without
+    // consuming a retry attempt. This prevents a later event (e.g. TradeFunded)
+    // from being attempted — and potentially dead-lettered — before an earlier
+    // event (e.g. TradeCreated) succeeds within the same poll batch.
+    if (await this.hasBlockingPredecessor(outbox, parsed)) {
+      await this.deferEventForPredecessor(outbox);
+      appLogger.warn(
+        { outboxId: outbox.id, tradeId: parsed.tradeId, eventType: parsed.eventType },
+        "[EventListener] Deferring event until earlier event for same trade succeeds",
+      );
+      return;
+    }
+
     try {
       await this.processOutboxEventAtomically(outbox.id, parsed);
       this.cacheProcessedEvent(cacheKey, ledgerSequence);
@@ -306,6 +338,10 @@ export class EventListenerService {
       if (ledgerSequence > this.lastLedger) {
         this.lastLedger = ledgerSequence;
       }
+      // Re-drive any successors that dead-lettered while waiting for this
+      // predecessor (e.g. TradeFunded that exhausted retries while TradeCreated
+      // was still failing). Without this, the trade would stay stranded.
+      await this.requeueDeadLetterSuccessors(parsed.tradeId);
       appLogger.debug(
         {
           eventType: parsed.eventType,
@@ -315,6 +351,16 @@ export class EventListenerService {
         "[EventListener] Processed event",
       );
     } catch (error) {
+      if (isMissingTradeError(error)) {
+        // Dependency gap, not a poison event: back off without consuming a
+        // dead-letter attempt so the event survives until TradeCreated lands.
+        await this.recordDeferredFailure(outbox, error);
+        appLogger.warn(
+          { error, eventId, tradeId: parsed.tradeId },
+          "[EventListener] Missing trade — deferring event until predecessor arrives",
+        );
+        return;
+      }
       await this.recordOutboxFailure(outbox, error);
       appLogger.error(
         { error, eventId },
@@ -361,9 +407,18 @@ export class EventListenerService {
         status: true,
         attempts: true,
         nextAttemptAt: true,
+        tradeId: true,
+        ledgerSequence: true,
       },
     });
-    return record as OutboxRecord;
+    // Older test doubles may not return tradeId/ledgerSequence from the upsert
+    // select — fall back to the in-memory event values so ordering guards work.
+    return {
+      ...(record as OutboxRecord),
+      tradeId: (record as Partial<OutboxRecord>).tradeId ?? event.tradeId,
+      ledgerSequence:
+        (record as Partial<OutboxRecord>).ledgerSequence ?? event.ledgerSequence,
+    };
   }
 
   private isOutboxReadyForAttempt(outbox: OutboxRecord): boolean {
@@ -382,6 +437,121 @@ export class EventListenerService {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Returns true when another outbox record for the same tradeId must be
+   * processed first (smaller ledger, or same ledger with smaller id) and is
+   * still unprocessed (PENDING / RETRYING / DEAD_LETTER).
+   *
+   * This enforces per-trade FIFO across independent retries so a transient
+   * TradeCreated failure cannot be overtaken by TradeFunded in the same batch.
+   */
+  private async hasBlockingPredecessor(
+    outbox: OutboxRecord,
+    event: ParsedEvent,
+  ): Promise<boolean> {
+    const delegate = this.prisma.chainEventOutbox as unknown as {
+      findMany?: (args: unknown) => Promise<Array<{
+        id: number;
+        ledgerSequence: number;
+        status: OutboxStatus;
+      }>>;
+    };
+    if (typeof delegate.findMany !== "function") return false;
+    try {
+      const candidates = await delegate.findMany({
+        where: {
+          tradeId: event.tradeId,
+          status: { in: ["PENDING", "RETRYING", "DEAD_LETTER"] },
+          NOT: { id: outbox.id },
+        },
+        orderBy: [{ ledgerSequence: "asc" }, { id: "asc" }],
+        take: 10,
+      });
+      return candidates.some(
+        (row) =>
+          row.ledgerSequence < event.ledgerSequence ||
+          (row.ledgerSequence === event.ledgerSequence && row.id < outbox.id),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Postpone the current event without consuming a retry attempt — it is not
+   * failing, it is simply waiting for its predecessor. Keeps status stable and
+   * pushes nextAttemptAt into the future to avoid a hot poll loop.
+   */
+  private async deferEventForPredecessor(outbox: OutboxRecord): Promise<void> {
+    try {
+      const delayMs = this.computeRetryDelay(Math.max(outbox.attempts, 1));
+      await this.prisma.chainEventOutbox.update({
+        where: { id: outbox.id },
+        data: {
+          status: outbox.status === "PENDING" ? "PENDING" : "RETRYING",
+          nextAttemptAt: new Date(Date.now() + delayMs),
+        },
+      });
+    } catch {
+      /* best-effort: next poll will retry anyway */
+    }
+  }
+
+  /**
+   * Record a MissingTradeError without moving towards DEAD_LETTER. The event
+   * stays RETRYING with exponential backoff until its TradeCreated predecessor
+   * commits, no matter how many ticks pass.
+   */
+  private async recordDeferredFailure(
+    outbox: OutboxRecord,
+    error: unknown,
+  ): Promise<void> {
+    const retryDelayMs = this.computeRetryDelay(outbox.attempts + 1);
+    const message = error instanceof Error ? error.message : String(error);
+    await this.prisma.chainEventOutbox.update({
+      where: { id: outbox.id },
+      data: {
+        status: "RETRYING",
+        // Do NOT increment attempts — dependency gaps must never exhaust
+        // EVENT_OUTBOX_MAX_ATTEMPTS on their own.
+        nextAttemptAt: new Date(Date.now() + retryDelayMs),
+        lastError: message.slice(0, 2000),
+        deadLetteredAt: null,
+      },
+    });
+  }
+
+  /**
+   * After a predecessor commits, re-drive successors for the same trade that
+   * previously dead-lettered with a missing-trade error. Without this, a trade
+   * whose TradeFunded exhausted retries before TradeCreated succeeded would be
+   * stranded at CREATED forever.
+   */
+  private async requeueDeadLetterSuccessors(tradeId: string): Promise<void> {
+    const delegate = this.prisma.chainEventOutbox as unknown as {
+      updateMany?: (args: unknown) => Promise<unknown>;
+    };
+    if (typeof delegate.updateMany !== "function") return;
+    try {
+      await delegate.updateMany({
+        where: {
+          tradeId,
+          status: "DEAD_LETTER",
+          lastError: { contains: "not found for event" },
+        },
+        data: {
+          status: "PENDING",
+          attempts: 0,
+          nextAttemptAt: new Date(),
+          lastError: null,
+          deadLetteredAt: null,
+        },
+      });
+    } catch {
+      /* best-effort: admin can replay dead letters manually */
+    }
   }
 
   private async processOutboxEventAtomically(
