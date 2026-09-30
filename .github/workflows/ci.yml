@@ -19,6 +19,9 @@ on:
       - 'routes-d/**'
       - 'scripts/**'
       - 'infra/**'
+      - 'grafana/**'
+      - 'loki/**'
+      - 'promtail/**'
       - 'pnpm-lock.yaml'
   pull_request:
     branches:
@@ -609,3 +612,66 @@ jobs:
           path: frontend/tests/pact/pacts/*.json
           if-no-files-found: error
           retention-days: 14
+
+  # Issue #1457: loki/config.yml and promtail/config.yml were both committed as
+  # the 7-byte literal "content". Neither tool had a usable config, nothing
+  # validated them, and the staging containers fell back to image defaults
+  # without failing loudly. The Node check asserts the configs are real and
+  # consistent with docs/LOGGING_STANDARDS.md; the two container steps then hand
+  # the same files to the real Loki and Promtail binaries, so a config that
+  # parses as YAML but is rejected by the tools cannot land either.
+  observability-config:
+    name: Observability config validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Loki and Promtail configs
+        run: pnpm test:config
+
+      - name: Verify Loki config with the Loki binary
+        # Pinned to a real patch tag. docker-compose.yml asks for the bare
+        # grafana/loki:3.0, which is not a published tag, so the images are
+        # named explicitly here rather than copied from the compose file.
+        run: |
+          docker run --rm \
+            -v "$PWD/loki/config.yml:/etc/loki/config.yml:ro" \
+            grafana/loki:3.0.0 \
+            -config.file=/etc/loki/config.yml \
+            -verify-config=true
+
+      - name: Verify Promtail config with the Promtail binary
+        # Promtail has no --verify-config, so it is started against the real
+        # config and only a config error (or a non-timeout exit) fails the step.
+        # A still-running process at the timeout means the config loaded.
+        run: |
+          set +e
+          output=$(timeout 20 docker run --rm \
+            -v "$PWD/promtail/config.yml:/etc/promtail/promtail.yaml:ro" \
+            grafana/promtail:3.0.0 \
+            -config.file=/etc/promtail/promtail.yaml 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if echo "$output" | grep -iE 'error loading config|error parsing config|cannot unmarshal|field .* not found'; then
+            echo "::error file=promtail/config.yml::Promtail rejected the config"
+            exit 1
+          fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+            echo "::error file=promtail/config.yml::Promtail exited with status $status"
+            exit 1
+          fi
