@@ -157,7 +157,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Send Slack notification
-        if: env.SECURITY_AUDIT_SLACK_WEBHOOK != ''
+        if: ${{ secrets.SECURITY_AUDIT_SLACK_WEBHOOK != '' }}
         env:
           SECURITY_AUDIT_SLACK_WEBHOOK: ${{ secrets.SECURITY_AUDIT_SLACK_WEBHOOK }}
         run: |
