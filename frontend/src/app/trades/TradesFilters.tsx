@@ -11,12 +11,17 @@ import { useTradeStream } from "@/hooks/useTradeStream";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { NavButton } from "@/components/ui/Navigation";
+import {
+  TRADE_FILTER_STATUSES,
+  toBackendStatus,
+  type TradeStatus,
+} from "./tradeStatusFilter";
+
+export type { TradeStatus };
 
 // ---------------------------------------------------------------------------
 // Types & constants
 // ---------------------------------------------------------------------------
-
-export type TradeStatus = "all" | "active" | "pending" | "completed" | "disputed";
 
 const FILTERS: { label: string; value: TradeStatus }[] = [
   { label: "All",       value: "all"       },
@@ -46,8 +51,7 @@ const PAGE_SIZE = 10;
 // ---------------------------------------------------------------------------
 
 function parseStatus(raw: string | null): TradeStatus {
-  const valid: TradeStatus[] = ["active", "pending", "completed", "disputed"];
-  return valid.includes(raw as TradeStatus) ? (raw as TradeStatus) : "all";
+  return TRADE_FILTER_STATUSES.includes(raw as TradeStatus) ? (raw as TradeStatus) : "all";
 }
 
 function parsePage(raw: string | null): number {
@@ -66,17 +70,6 @@ function formatDate(dateString: string) {
 function formatAddress(address: string) {
   if (address.length <= 12) return address;
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function toExportStatus(status: TradeStatus): string | undefined {
-  const statusMap: Partial<Record<TradeStatus, string>> = {
-    active: "FUNDED",
-    pending: "PENDING_SIGNATURE",
-    completed: "COMPLETED",
-    disputed: "DISPUTED",
-  };
-
-  return statusMap[status];
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -202,7 +195,7 @@ export function TradesFilters({ initialStatus, initialPage }: TradesFiltersProps
 
     try {
       const response = await api.trades.list(token, {
-        status: currentStatus === "all" ? undefined : currentStatus,
+        status: toBackendStatus(currentStatus),
         page:   currentPage,
         limit:  PAGE_SIZE,
       });

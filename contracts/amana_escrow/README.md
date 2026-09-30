@@ -6,8 +6,8 @@ This crate contains the Soroban escrow contract used by Amana.
 
 ### Migration behavior
 
-- The contract already supports any Stellar token contract address passed to `initialize(admin, usdc_contract, treasury, fee_bps)`.
-- For backward-compatibility, the storage key name remains `DataKey::UsdcContract`.
+- The contract already supports any Stellar token contract address passed to `initialize(admin, cngn_contract, treasury, fee_bps, source_token)`.
+- The token contract address is stored under `DataKey::CngnContract`. Soroban keys storage entries by variant name, so this name is part of the on-chain layout and must not be renamed.
 - Trades are token-bound at creation time (`Trade.token`), so existing trades keep their original token address and settlement path.
 - The contract is single-initialize; it does not support in-place token switching after initialization.
 
@@ -16,7 +16,7 @@ This crate contains the Soroban escrow contract used by Amana.
 For production upgrades, these compatibility expectations must remain stable:
 
 - `DataKey` variants and serialized layout remain unchanged, especially:
-  - `UsdcContract`
+  - `CngnContract`
   - `Trade(u64)`
   - `Mediator` and `MediatorRegistry(Address)`
   - `DisputeData(u64)`, `EvidenceList(u64)`, `VideoProof(u64)`, `Manifest(u64)`

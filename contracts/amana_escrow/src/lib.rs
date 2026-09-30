@@ -1704,6 +1704,13 @@ impl EscrowContract {
             dest_amount >= intent.dest_min,
             "Path payment: dest_amount below dest_min"
         );
+        // The swap output becomes the trade amount, so it must satisfy the same
+        // bounds create_trade() enforces for every trade.
+        assert!(
+            dest_amount >= MIN_TRADE_AMOUNT,
+            "amount must be at least MIN_TRADE_AMOUNT"
+        );
+        assert!(dest_amount <= MAX_TRADE_VALUE, "TradeValueTooLarge");
 
         let now = env.ledger().timestamp();
         trade.amount = dest_amount;
