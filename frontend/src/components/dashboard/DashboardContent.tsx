@@ -18,6 +18,22 @@ import { useDraftForm } from "@/hooks/useDraftForm";
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { z } from "zod";
 
+const TRADE_STATUS_CLASSES: Record<string, string> = {
+  ACTIVE: "bg-status-success/20 text-status-success border border-status-success/30",
+  FUNDED: "bg-status-success/20 text-status-success border border-status-success/30",
+  PENDING: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  PENDING_SIGNATURE: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  CREATED: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  DELIVERED: "bg-status-info/10 text-status-info border border-status-info/20",
+  COMPLETED: "bg-bg-elevated text-text-secondary border border-border-default",
+  DISPUTED: "bg-status-danger/20 text-status-danger border border-status-danger/30",
+  CANCELLED: "bg-surface-1 text-text-muted border border-border-default",
+};
+
+function getTradeStatusClass(status: string): string {
+  return TRADE_STATUS_CLASSES[status.toUpperCase()] ?? "bg-bg-elevated text-text-secondary border border-border-default";
+}
+
 export function DashboardContent() {
   const { t } = useTranslation();
   const { token, isAuthenticated } = useAuth();
@@ -296,11 +312,7 @@ export function DashboardContent() {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2.5 py-1 text-xs font-medium rounded-full capitalize
-                          ${trade.status === 'active' ? 'bg-status-success/20 text-status-success border border-status-success/30' : 
-                            trade.status === 'completed' ? 'bg-bg-elevated text-text-secondary border border-border-default' :
-                            trade.status === 'pending' ? 'bg-status-warning/20 text-status-warning border border-status-warning/30' :
-                            'bg-status-danger/20 text-status-danger border border-status-danger/30'
-                          }
+                          ${getTradeStatusClass(trade.status)}
                         `}>
                           {trade.status}
                         </span>
