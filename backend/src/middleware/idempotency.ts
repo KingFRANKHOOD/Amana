@@ -88,7 +88,15 @@ export const idempotencyMiddleware = async (
       const replayResponse = await waitForCachedResponse(cacheKey);
       if (replayResponse) {
         appLogger.info({ key, path: req.path }, "Idempotency replay after in-flight request");
-        const { status, body, headers } = JSON.parse(replayResponse);
+        const { status, body, headers, requestBodyHash } = JSON.parse(replayResponse);
+
+        // Same body-hash guard as the cache-hit path: a concurrent request with
+        // the same key but a different body must not receive another request's result.
+        if (requestBodyHash !== undefined && requestBodyHash !== bodyHash(req.body)) {
+          return res.status(409).json({
+            error: "Idempotency key already used with a different request body",
+          });
+        }
 
         Object.entries(headers).forEach(([k, v]) => {
           res.setHeader(k, v as string);

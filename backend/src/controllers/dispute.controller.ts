@@ -30,13 +30,19 @@ const disputeIdParamSchema = z.object({
     ),
 });
 
-export { disputeIdParamSchema };
+export { disputeIdParamSchema, exportDisputesQuerySchema };
+
+const dateQueryParam = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "must be a valid date",
+  });
 
 const exportDisputesQuerySchema = z.object({
   format: z.enum(["csv"]).default("csv"),
   status: z.enum(["OPEN", "UNDER_REVIEW", "RESOLVED", "CLOSED"]).optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: dateQueryParam.optional(),
+  to: dateQueryParam.optional(),
 }).refine(
   (value) => !value.from || !value.to || new Date(value.from) <= new Date(value.to),
   { message: "from must be before or equal to to", path: ["from"] },
