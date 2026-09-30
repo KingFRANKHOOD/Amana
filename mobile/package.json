@@ -26,7 +26,7 @@
     "axios": "^1.20.0",
     "expo": "^57.0.19",
     "expo-background-fetch": "~57.0.14",
-    "expo-device": "^6.0.2",
+    "expo-device": "^57.0.1",
     "expo-local-authentication": "~57.0.2",
     "expo-network": "~57.0.1",
     "expo-notifications": "^57.0.16",
