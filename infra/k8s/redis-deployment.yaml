@@ -23,11 +23,11 @@ spec:
           command:
             - redis-server
             - --requirepass
-			- $(REDIS_PASSWORD)
+            - $(REDIS_PASSWORD)
           ports:
             - containerPort: 6379
               name: redis
-          environment:
+          env:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
