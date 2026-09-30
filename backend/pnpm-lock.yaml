@@ -60,8 +60,8 @@ importers:
         specifier: 2.116.0
         version: 2.116.0(@opentelemetry/api@1.9.0)
       '@types/helmet':
-        specifier: 0.0.48
-        version: 0.0.48
+        specifier: 4.0.0
+        version: 4.0.0
       axios:
         specifier: 1.13.6
         version: 1.13.6
@@ -1599,8 +1599,9 @@ packages:
   '@types/express@5.0.6':
     resolution: {integrity: sha512-sKYVuV7Sv9fbPIt/442koC7+IIwK5olP1KWeD88e/idgoJqDm3JV/YUiPwkoKK92ylff2MGxSz1CSjsXelx0YA==}
 
-  '@types/helmet@0.0.48':
-    resolution: {integrity: sha512-C7MpnvSDrunS1q2Oy1VWCY7CDWHozqSnM8P4tFeRTuzwqni+PYOjEredwcqWG+kLpYcgLsgcY3orHB54gbx2Jw==}
+  '@types/helmet@4.0.0':
+    resolution: {integrity: sha512-ONIn/nSNQA57yRge3oaMQESef/6QhoeX7llWeDli0UZIfz8TQMkfNPTXA8VnnyeA1WUjG2pGqdjEIueYonMdfQ==}
+    deprecated: This is a stub types definition. helmet provides its own type definitions, so you do not need this installed.
 
   '@types/http-assert@1.5.6':
     resolution: {integrity: sha512-TTEwmtjgVbYAzZYWyeHPrrtWnfVkm8tQkP8P21uQifPgMRgjrow3XDEYqucuC8SKZJT7pUnhU/JymvjggxO9vw==}
@@ -5824,9 +5825,9 @@ snapshots:
       '@types/express-serve-static-core': 5.1.1
       '@types/serve-static': 2.2.0
 
-  '@types/helmet@0.0.48':
+  '@types/helmet@4.0.0':
     dependencies:
-      '@types/express': 5.0.6
+      helmet: 8.3.0
 
   '@types/http-assert@1.5.6': {}
 
