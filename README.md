@@ -63,7 +63,6 @@ pnpm run dev
 ```bash
 cd backend
 cp .env.example .env
-cp .env.tracing.example .env.tracing  # for distributed tracing configuration
 pnpm install
 pnpm run dev
 ```
@@ -163,7 +162,7 @@ Amana includes comprehensive distributed tracing with OpenTelemetry for end-to-e
 
 ### Quick Start
 
-1. Configure tracing environment variables (see `backend/.env.tracing.example`)
+1. Configure tracing environment variables in `.env` (see the `Distributed tracing (optional)` section in `backend/.env.example`)
 2. Start Jaeger for trace visualization: `docker run -p 16686:16686 jaegertracing/all-in-one`
 3. View traces at `http://localhost:16686`
 4. Check metrics at `http://localhost:9464/metrics`
