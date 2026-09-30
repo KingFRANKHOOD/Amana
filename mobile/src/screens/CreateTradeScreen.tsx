@@ -14,6 +14,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../types/navigation';
 import { useTradeStore } from '../stores/tradeStore';
 import { offlineQueue } from '../services/offline-queue';
+import { computeTradeAmount } from '../utils/amount';
 
 type Props = StackScreenProps<RootStackParamList, 'CreateTrade'>;
 
@@ -330,9 +331,7 @@ export default function CreateTradeScreen({ navigation }: Props) {
   }, []);
 
   const buildPayload = () => {
-    const qty = parseFloat(data.quantity);
-    const price = parseFloat(data.pricePerUnit);
-    const amountCngn = !isNaN(qty) && !isNaN(price) ? String(qty * price) : '0';
+    const amountCngn = computeTradeAmount(data.quantity, data.pricePerUnit);
 
     return {
       sellerAddress: data.sellerAddress,

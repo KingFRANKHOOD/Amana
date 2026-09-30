@@ -12,10 +12,13 @@ Welcome to the Amana project! This guide will help you get started with the code
 
 2. **Install Dependencies**
    ```bash
-   npm install
-   cd backend && npm install && cd ..
-   cd frontend && npm install && cd ..
+   corepack enable   # activates the pnpm version pinned in package.json
+   pnpm install      # installs every workspace package (backend, frontend, mobile, ...)
    ```
+
+   > Amana uses **pnpm only**. A root `npm install` / `yarn install` is rejected by
+   > `scripts/enforce-package-manager.cjs`. The one exception is `routes-d/`, which
+   > is outside the pnpm workspace and uses `npm ci` (see below).
 
 3. **Set Up Environment**
    ```bash
@@ -121,16 +124,16 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cd backend
 
 # Install dependencies
-npm install
+pnpm install
 
 # Copy environment file
 cp .env.example .env
 
 # Run migrations
-npx prisma migrate dev
+pnpm exec prisma migrate dev
 
 # Start development server
-npm run dev
+pnpm run dev
 
 # Server runs on http://localhost:4000
 ```
@@ -151,13 +154,13 @@ See [backend/.env.example](../backend/.env.example) for all variables.
 cd frontend
 
 # Install dependencies
-npm install
+pnpm install
 
 # Copy environment file
 cp .env.example .env.local
 
 # Start development server
-npm run dev
+pnpm run dev
 
 # App runs on http://localhost:3000
 ```
@@ -175,13 +178,13 @@ See [frontend/.env.example](../frontend/.env.example) for all variables.
 cd mobile
 
 # Install dependencies
-npm install
+pnpm install
 
 # Copy environment file
 cp .env.example .env.local
 
 # Start Expo dev server
-npm start
+pnpm start
 
 # Scan QR code with Expo Go app
 ```
@@ -207,7 +210,7 @@ cargo build --features wasm --release
 cd routes-d
 
 # Install dependencies
-npm install
+npm ci
 
 # Run tests (Vitest, 80% coverage threshold)
 npm test
@@ -317,16 +320,16 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `infra`
 cd backend
 
 # Run all tests
-npm test
+pnpm test
 
 # Run specific test file
-npm test -- src/__tests__/trades.test.ts
+pnpm test src/__tests__/trades.test.ts
 
 # Watch mode
-npm test -- --watch
+pnpm test --watch
 
 # Coverage report
-npm test -- --coverage
+pnpm test --coverage
 ```
 
 ### Frontend Tests
@@ -335,19 +338,19 @@ npm test -- --coverage
 cd frontend
 
 # Run unit tests
-npm test
+pnpm test
 
 # Watch mode
-npm test -- --watch
+pnpm test --watch
 
 # Visual regression tests
-npm run test:visual
+pnpm run test:visual
 
 # Update snapshots (if intentional design changes)
-npm run test:visual:update
+pnpm run test:visual:update
 
 # Coverage report
-npm test -- --coverage
+pnpm test --coverage
 ```
 
 ### Contract Tests
@@ -382,21 +385,22 @@ required.
 Run locally what CI runs on your PR:
 
 ```bash
+# Install (repo root, same as CI)
+pnpm install --frozen-lockfile
+
 # Backend
 cd backend
-npm ci
-npm run build
-npm test
+pnpm run build
+pnpm test
 
 # Frontend
-cd frontend
-npm ci
-npm run build
-npm test
-npm run test:visual
+cd ../frontend
+pnpm run build
+pnpm test
+pnpm run test:visual
 
 # Contracts
-cd contracts/amana_escrow
+cd ../contracts/amana_escrow
 cargo test --locked
 cargo build --target wasm32-unknown-unknown --release
 ```
@@ -453,7 +457,7 @@ node --inspect-brk dist/index.js
 
 ```bash
 # Browser DevTools
-npm run dev
+pnpm run dev
 # Open http://localhost:3000 and press F12
 ```
 
@@ -463,13 +467,13 @@ npm run dev
 cd backend
 
 # Create new migration
-npx prisma migrate dev --name add_field_name
+pnpm exec prisma migrate dev --name add_field_name
 
 # Apply migrations
-npx prisma migrate dev
+pnpm exec prisma migrate dev
 
 # Reset database (development only!)
-npx prisma migrate reset
+pnpm exec prisma migrate reset
 ```
 
 ---
@@ -480,10 +484,10 @@ npx prisma migrate reset
 
 ```bash
 # Run linter
-npm run lint
+pnpm run lint
 
 # Fix auto-fixable issues
-npm run lint -- --fix
+pnpm run lint -- --fix
 ```
 
 **Key Rules** (from CONTRIBUTING.md):
@@ -529,8 +533,8 @@ npm run lint -- --fix
 ### Modifying the Database Schema
 
 1. **Update** `backend/prisma/schema.prisma`
-2. **Create migration** (`npx prisma migrate dev --name description`)
-3. **Test** locally with `npm test`
+2. **Create migration** (`pnpm exec prisma migrate dev --name description`)
+3. **Test** locally with `pnpm test`
 4. **Commit** migration file alongside code changes
 
 ### Deploying a Smart Contract Update
@@ -556,14 +560,15 @@ lsof -i :3000
 kill -9 <PID>
 
 # Or use a different port
-PORT=3001 npm run dev
+PORT=3001 pnpm run dev
 ```
 
 #### Node Modules Issues
 ```bash
 # Clear and reinstall
-rm -rf node_modules pnpm-lock.yaml
-npm install
+# (keep pnpm-lock.yaml — it is committed and CI installs with --frozen-lockfile)
+rm -rf node_modules */node_modules
+pnpm install
 ```
 
 #### Database Connection Error
@@ -573,7 +578,7 @@ npm install
 docker-compose restart db
 
 # Reset database
-cd backend && npx prisma migrate reset
+cd backend && pnpm exec prisma migrate reset
 ```
 
 #### Docker Compose Won't Start
