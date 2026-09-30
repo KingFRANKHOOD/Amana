@@ -1,4 +1,5 @@
 import { appLogger } from "../middleware/logger";
+import { prisma } from "../lib/prisma";
 
 export type AnalyticsEventName =
   | "trade.created"
@@ -18,7 +19,35 @@ export interface AnalyticsEvent {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * Storage backend for analytics events. Implementations must persist events
+ * durably; the service never silently drops events in production.
+ */
+export interface AnalyticsEventStore {
+  save(event: AnalyticsEvent): Promise<void>;
+}
+
+/**
+ * Postgres-backed store using Prisma. This is the default production path so
+ * analytics events are always written to a queryable table.
+ */
+export class PrismaAnalyticsEventStore implements AnalyticsEventStore {
+  async save(event: AnalyticsEvent): Promise<void> {
+    await prisma.analyticsEvent.create({
+      data: {
+        event: event.event,
+        timestamp: new Date(event.timestamp),
+        userId: event.userId,
+        tradeId: event.tradeId ?? null,
+        metadata: (event.metadata ?? {}) as object,
+      },
+    });
+  }
+}
+
 export class AnalyticsService {
+  constructor(private readonly store: AnalyticsEventStore = new PrismaAnalyticsEventStore()) {}
+
   /**
    * Fire-and-forget event tracking. Never throws — errors are logged only.
    */
@@ -39,19 +68,18 @@ export class AnalyticsService {
     // Structured log — picked up by any log aggregator
     appLogger.info({ analytics: payload }, "analytics_event");
 
-    // Optional Postgres persistence (best-effort, override persistEvent to enable)
+    // Persist to the configured store (Postgres by default).
     this.persistEvent(payload).catch((err: unknown) =>
       appLogger.warn({ err, event }, "analytics_event: db write failed"),
     );
   }
 
   /**
-   * Override in production to persist to Postgres once an AnalyticsEvent
-   * table exists in the schema. The default is a no-op so the service works
-   * without a DB migration.
+   * Persist an event via the configured store. The default store writes to
+   * Postgres, so production events are never silently dropped.
    */
-  protected async persistEvent(_event: AnalyticsEvent): Promise<void> {
-    // no-op by default
+  protected async persistEvent(event: AnalyticsEvent): Promise<void> {
+    await this.store.save(event);
   }
 }
 

@@ -75,17 +75,14 @@ resource "aws_rds_cluster" "this" {
   preferred_backup_window = var.preferred_backup_window
   db_subnet_group_name    = aws_db_subnet_group.this.name
   vpc_security_group_ids  = [aws_security_group.this.id]
+  port                    = var.port
   skip_final_snapshot     = var.skip_final_snapshot
   deletion_protection     = var.deletion_protection
   storage_encrypted       = var.storage_encrypted
-  kms_key_id             = var.storage_encrypted ? var.kms_key_id : null
+  kms_key_id              = var.storage_encrypted ? var.kms_key_id : null
   backtrack_window        = var.backtrack_window
   copy_tags_to_snapshot   = true
   enable_http_endpoint    = false
-
-  # Encryption at rest — required for financial data protection
-  storage_encrypted = true
-  kms_key_id        = aws_kms_key.rds.arn
 
   tags = {
     Name        = "${var.project_name}-rds-cluster"

@@ -1,6 +1,6 @@
 extern crate std;
 
-use amana_escrow::{EscrowContract, EscrowContractClient, TradeStatus, MAX_FEE_BPS, MIN_FEE_BPS};
+use amana_escrow::{EscrowContract, EscrowContractClient, MAX_FEE_BPS, MIN_FEE_BPS, TradeStatus};
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
 use soroban_sdk::{Address, Env, String as SStr, testutils::Address as _, token};
@@ -25,7 +25,7 @@ impl FuzzEnv {
             .address();
         let contract_id = env.register(EscrowContract, ());
         EscrowContractClient::new(&env, &contract_id)
-            .initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+            .initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         FuzzEnv {
             env,
             contract_id,
@@ -232,7 +232,7 @@ fn prop_resolve_dispute_fuzz(
 ) -> TestResult {
     let amount = valid_amount(raw_amount);
     let seller_gets_bps = valid_bps(raw_seller_gets_bps);
-    let fee_bps = valid_fee_bps(raw_fee_bps);
+    let fee_bps = valid_bps(raw_fee_bps);
 
     if !(1..=500).contains(&fee_bps) {
         return TestResult::discard();

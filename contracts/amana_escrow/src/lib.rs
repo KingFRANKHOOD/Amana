@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 use soroban_sdk::{
-    Address, BytesN, Env, String, Symbol, Vec, contract, contractevent, contractimpl,
+    Address, Bytes, BytesN, Env, String, Symbol, Vec, contract, contractevent, contractimpl,
     contracttype, symbol_short, token,
 };
 
@@ -55,6 +55,11 @@ pub const MAX_EVENT_DATA_LEN: u32 = 256;
 /// Soroban persistent storage while still capturing the full lifecycle of any
 /// realistic trade flow (typical happy-path trades generate ≤ 10 events).
 pub const MAX_HISTORY_LEN: u32 = 100;
+
+/// Seconds after which a pending path payment that was never finalized is
+/// considered stale. A stale intent may be cleared by anyone (refunding the
+/// buyer's source tokens) so that it cannot block the path-payment slot forever.
+pub const PATH_PAYMENT_TIMEOUT_SECS: u64 = 3_600;
 
 fn checked_fee_amount(amount: i128, fee_bps: u32) -> i128 {
     amount
@@ -183,35 +188,6 @@ pub struct VideoProofSubmittedEvent {
     pub timestamp: u64,
 }
 
-/// Emitted when a buyer reclaims funds from a trade whose delivery deadline passed.
-#[contractevent(topics = ["TRDEXP"])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TradeExpiredEvent {
-    pub trade_id: u64,
-    pub refund_amount: i128,
-    pub caller: Address,
-}
-
-/// Emitted when buyer and seller mutually extend a funded trade's delivery deadline.
-#[contractevent(topics = ["DEDEXT"])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DeadlineExtendedEvent {
-    pub trade_id: u64,
-    pub old_deadline: u64,
-    pub new_deadline: u64,
-}
-
-/// Emitted when the seller submits the delivery manifest (hashed driver details).
-#[contractevent(topics = ["MNFST"])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ManifestSubmittedEvent {
-    pub trade_id: u64,
-    pub seller: Address,
-    pub driver_name_hash: String,
-    pub driver_id_hash: String,
-    pub timestamp: u64,
-}
-
 /// Emitted when a mediator address is added to the registry by the admin.
 #[contractevent(topics = ["MEDADD"])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -264,6 +240,28 @@ pub struct PathPaymentExecutedEvent {
     pub source_amount: i128,
     pub dest_token: Address,
     pub dest_amount: i128,
+}
+
+/// Emitted when a pending path payment is cleared without being finalized
+/// (cancelled by the buyer, expired, or its trade cancelled). The buyer's
+/// source tokens are refunded.
+#[contractevent(topics = ["PTHCLR"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathPaymentClearedEvent {
+    pub trade_id: u64,
+    pub buyer: Address,
+    pub source_amount: i128,
+}
+
+/// Emitted when a governance proposal (fee update, mediator change, fee
+/// withdrawal) is created by an admin.
+#[contractevent(topics = ["amana", "GOVPRP"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GovernanceProposedEvent {
+    pub proposal_id: u32,
+    pub proposer: Address,
+    pub operation: ProposalOperation,
+    pub deadline: u64,
 }
 
 /// Emitted when an upgrade proposal is created by an admin.
@@ -521,6 +519,18 @@ pub enum DataKey {
     /// disturbing any existing key. Appended last so the XDR encoding of every
     /// pre-existing variant is unchanged (variants are keyed by name).
     SchemaVersion,
+    /// Running net total of cNGN the contract has credited to trades (inbound
+    /// escrow deposits and finalized path payments) minus every cNGN amount it
+    /// has paid out. Path-payment finalization measures its proceeds as the
+    /// change in `balance - CommittedBalance`, so cNGN deposited for other
+    /// trades during the pending window is never attributed to the path payment.
+    /// Only deltas of this value are meaningful, so instances upgraded with
+    /// funds already in escrow need no migration.
+    CommittedBalance,
+    /// `(trade_id, initiated_at)` of the single path payment currently pending.
+    /// Only one path payment may be in flight at a time so two intents can never
+    /// both claim the same inbound cNGN.
+    ActivePathPayment,
 }
 
 #[contracttype]
@@ -530,6 +540,9 @@ pub struct PathPaymentIntent {
     pub source_amount: i128,
     pub dest_min: i128,
     pub path: Vec<Address>,
+    /// Snapshot of the contract's *unattributed* cNGN
+    /// (`balance - CommittedBalance`) when the intent was recorded — not the raw
+    /// contract balance, which is a pool shared by every trade.
     pub cngn_balance_before: i128,
 }
 
@@ -609,7 +622,7 @@ impl EscrowContract {
     /// For multi-mediator support, prefer `add_mediator()`.
     /// Emits `MediatorAdded` so governance indexers see every registration path.
     pub fn set_mediator(env: Env, admin: Address, mediator: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         env.storage().instance().set(&DataKey::Mediator, &mediator);
         // Also register in the per-address registry so is_mediator() reflects this.
         env.storage()
@@ -628,9 +641,10 @@ impl EscrowContract {
     // -----------------------------------------------------------------------
 
     /// Add `mediator_address` to the approved mediator registry.
-    /// Admin only. Emits `MediatorAdded`.
+    /// Admin only, and only when the multisig threshold is 1; otherwise use
+    /// `propose_add_mediator`. Emits `MediatorAdded`.
     pub fn add_mediator(env: Env, admin: Address, mediator_address: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         env.storage()
             .persistent()
             .set(&DataKey::MediatorRegistry(mediator_address.clone()), &true);
@@ -645,9 +659,10 @@ impl EscrowContract {
     /// Remove `mediator_address` from the approved mediator registry.
     /// Also clears the legacy single-mediator slot if it holds the same address,
     /// ensuring revocation is complete regardless of which registration path was used.
-    /// Admin only. Emits `MediatorRemoved`.
+    /// Admin only, and only when the multisig threshold is 1; otherwise use
+    /// `propose_remove_mediator`. Emits `MediatorRemoved`.
     pub fn remove_mediator(env: Env, admin: Address, mediator_address: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
 
         // Clear registry slot (add_mediator / set_mediator dual-writes here)
         env.storage()
@@ -694,11 +709,12 @@ impl EscrowContract {
             .unwrap_or(CURRENT_SCHEMA_VERSION)
     }
 
-    /// Update the platform fee rate. Admin only.
+    /// Update the platform fee rate. Admin only, and only when the multisig
+    /// threshold is 1; otherwise use `propose_fee_update`.
     /// `new_fee_bps` must be within [`MIN_FEE_BPS`, `MAX_FEE_BPS`].
     /// Emits `FeeRateUpdated(old, new)`.
     pub fn update_fee_bps(env: Env, admin: Address, new_fee_bps: u32) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         assert!(
             (MIN_FEE_BPS..=MAX_FEE_BPS).contains(&new_fee_bps),
             "fee_bps out of range"
@@ -715,10 +731,11 @@ impl EscrowContract {
     }
 
     /// Withdraw accrued platform fees from the contract to `destination`.
-    /// Only an admin may call this. Reverts if `amount` is zero or exceeds
-    /// the currently accrued fees. Emits `FeesWithdrawn`.
+    /// Only an admin may call this, and only when the multisig threshold is 1;
+    /// otherwise use `propose_withdraw_fees`. Reverts if `amount` is zero or
+    /// exceeds the currently accrued fees. Emits `FeesWithdrawn`.
     pub fn withdraw_fees(env: Env, admin: Address, amount: i128, destination: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         assert!(amount > 0, "amount must be greater than zero");
         let accrued_fees: i128 = env
             .storage()
@@ -731,11 +748,13 @@ impl EscrowContract {
             .instance()
             .get(&DataKey::CngnContract)
             .expect("Not initialized");
-        let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&env.current_contract_address(), &destination, &amount);
+        // Effects before interaction: debit the fee ledger before the transfer.
         env.storage()
             .instance()
             .set(&DataKey::AccruedFees, &(accrued_fees - amount));
+        Self::adjust_committed_balance(&env, -amount);
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer(&env.current_contract_address(), &destination, &amount);
         FeesWithdrawnEvent {
             amount,
             destination,
@@ -864,6 +883,115 @@ impl EscrowContract {
             deadline,
         }
         .publish(&env);
+        proposal_id
+    }
+
+    /// Propose a platform fee change. Executes once the multisig threshold of
+    /// admins has approved it via `approve_proposal`.
+    pub fn propose_fee_update(env: Env, admin: Address, new_fee_bps: u32, deadline: u64) -> u32 {
+        assert!(
+            (MIN_FEE_BPS..=MAX_FEE_BPS).contains(&new_fee_bps),
+            "fee_bps out of range"
+        );
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::UpdateFeeBps(new_fee_bps),
+            deadline,
+        )
+    }
+
+    /// Propose adding `mediator` to the mediator registry. Executes once the
+    /// multisig threshold of admins has approved it.
+    pub fn propose_add_mediator(env: Env, admin: Address, mediator: Address, deadline: u64) -> u32 {
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::AddMediator(mediator),
+            deadline,
+        )
+    }
+
+    /// Propose removing `mediator` from the mediator registry. Executes once
+    /// the multisig threshold of admins has approved it.
+    pub fn propose_remove_mediator(
+        env: Env,
+        admin: Address,
+        mediator: Address,
+        deadline: u64,
+    ) -> u32 {
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::RemoveMediator(mediator),
+            deadline,
+        )
+    }
+
+    /// Propose withdrawing `amount` of accrued fees to `destination`. Executes
+    /// once the multisig threshold of admins has approved it.
+    pub fn propose_withdraw_fees(
+        env: Env,
+        admin: Address,
+        amount: i128,
+        destination: Address,
+        deadline: u64,
+    ) -> u32 {
+        assert!(amount > 0, "amount must be greater than zero");
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::WithdrawFees(amount, destination),
+            deadline,
+        )
+    }
+
+    fn create_governance_proposal(
+        env: &Env,
+        admin: Address,
+        operation: ProposalOperation,
+        deadline: u64,
+    ) -> u32 {
+        Self::require_admin(env, admin.clone());
+        assert!(
+            deadline > env.ledger().timestamp(),
+            "deadline must be in the future"
+        );
+        let proposal_id: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextProposalId)
+            .unwrap_or(1);
+        let config: MultisigConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::MultisigConfig)
+            .expect("Not initialized");
+        let proposal = Proposal {
+            id: proposal_id,
+            operation: operation.clone(),
+            proposer: admin.clone(),
+            deadline,
+            executed: false,
+            threshold_snapshot: config.threshold,
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::NextProposalId, &(proposal_id + 1));
+        env.storage()
+            .instance()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ProposalApprovals(proposal_id), &Vec::<Address>::new(env));
+        GovernanceProposedEvent {
+            proposal_id,
+            proposer: admin,
+            operation,
+            deadline,
+        }
+        .publish(env);
+        Self::bump_instance_ttl(env);
         proposal_id
     }
 
@@ -1011,15 +1139,16 @@ impl EscrowContract {
                     .instance()
                     .get(&DataKey::CngnContract)
                     .expect("Not initialized");
+                env.storage()
+                    .instance()
+                    .set(&DataKey::AccruedFees, &(accrued_fees - amount));
+                Self::adjust_committed_balance(env, -*amount);
                 let token_client = token::Client::new(env, &token);
                 token_client.transfer(
                     &env.current_contract_address(),
                     destination,
                     amount,
                 );
-                env.storage()
-                    .instance()
-                    .set(&DataKey::AccruedFees, &(accrued_fees - amount));
                 FeesWithdrawnEvent {
                     amount: *amount,
                     destination: destination.clone(),
@@ -1048,7 +1177,6 @@ impl EscrowContract {
 
     /// Upgrade the contract WASM (direct call, requires M-of-N via proposals).
     /// This is the multisig-guarded upgrade entry point.
-    /// Emits `ContractUpgradedEvent`.
     pub fn upgrade(env: Env, wasm_hash: BytesN<32>) {
         let config: MultisigConfig = env
             .storage()
@@ -1059,15 +1187,7 @@ impl EscrowContract {
         for a in config.admins.iter() {
             a.require_auth();
         }
-        env.deployer().update_current_contract_wasm(wasm_hash.clone());
-
-        ContractUpgradedEvent {
-            admin: config.admins.first().unwrap(),
-            new_wasm_hash: wasm_hash,
-        }
-        .publish(&env);
-
-        Self::bump_instance_ttl(&env);
+        env.deployer().update_current_contract_wasm(wasm_hash);
     }
 
     // -----------------------------------------------------------------------
@@ -1118,6 +1238,96 @@ impl EscrowContract {
         }
         assert!(found, "Unauthorized admin");
         admin
+    }
+
+    /// Like `require_admin`, but additionally requires the multisig threshold
+    /// to be 1. Sensitive operations with a direct single-admin entry point
+    /// (fee changes, fee withdrawals, mediator registry changes) must go through
+    /// the proposal system whenever the deployment requires more than one
+    /// approval, so a single admin key can never act unilaterally.
+    fn require_unilateral_admin(env: &Env, admin: Address) -> Address {
+        let admin = Self::require_admin(env, admin);
+        assert!(
+            Self::multisig_threshold(env) <= 1,
+            "multisig threshold > 1: use a proposal"
+        );
+        admin
+    }
+
+    fn multisig_threshold(env: &Env) -> u32 {
+        env.storage()
+            .instance()
+            .get::<_, MultisigConfig>(&DataKey::MultisigConfig)
+            .map(|c| c.threshold)
+            .unwrap_or(1)
+    }
+
+    /// True when `addr` is an admin AND a single admin is allowed to act alone
+    /// (threshold == 1). Used for admin-override branches on trade funds.
+    fn is_unilateral_admin(env: &Env, addr: &Address) -> bool {
+        Self::is_admin(env, addr) && Self::multisig_threshold(env) <= 1
+    }
+
+    fn committed_balance(env: &Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::CommittedBalance)
+            .unwrap_or(0)
+    }
+
+    /// Record cNGN credited to (`delta > 0`) or paid out of (`delta < 0`) the
+    /// escrow ledger. Must be called at every cNGN transfer site.
+    fn adjust_committed_balance(env: &Env, delta: i128) {
+        let updated = Self::committed_balance(env)
+            .checked_add(delta)
+            .expect("committed balance overflow");
+        env.storage()
+            .instance()
+            .set(&DataKey::CommittedBalance, &updated);
+    }
+
+    /// cNGN held by the contract that is not attributed to any trade or to
+    /// accrued fees.
+    fn unattributed_balance(env: &Env, token: &Address) -> i128 {
+        let balance = token::Client::new(env, token).balance(&env.current_contract_address());
+        balance
+            .checked_sub(Self::committed_balance(env))
+            .expect("unattributed balance underflow")
+    }
+
+    /// Drop a pending path payment without finalizing it and return the
+    /// buyer's source tokens.
+    fn clear_path_payment(env: &Env, trade_id: u64) {
+        let intent_key = DataKey::PathPaymentIntent(trade_id);
+        let intent: Option<PathPaymentIntent> = env.storage().persistent().get(&intent_key);
+        if let Some(intent) = intent {
+            env.storage().persistent().remove(&intent_key);
+            if let Some((active_id, _)) = env
+                .storage()
+                .instance()
+                .get::<_, (u64, u64)>(&DataKey::ActivePathPayment)
+            {
+                if active_id == trade_id {
+                    env.storage().instance().remove(&DataKey::ActivePathPayment);
+                }
+            }
+            let source_token: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::SourceToken)
+                .expect("SourceToken not configured");
+            token::Client::new(env, &source_token).transfer(
+                &env.current_contract_address(),
+                &intent.buyer,
+                &intent.source_amount,
+            );
+            PathPaymentClearedEvent {
+                trade_id,
+                buyer: intent.buyer,
+                source_amount: intent.source_amount,
+            }
+            .publish(env);
+        }
     }
 
     /// Returns true if `addr` is in the current admin set.
@@ -1301,6 +1511,7 @@ impl EscrowContract {
         trade.buyer.require_auth();
         let token_client = token::Client::new(&env, &trade.token);
         token_client.transfer(&trade.buyer, env.current_contract_address(), &trade.amount);
+        Self::adjust_committed_balance(&env, trade.amount);
         let now = env.ledger().timestamp();
         trade.status = TradeStatus::Funded;
         trade.funded_at = Some(now);
@@ -1353,18 +1564,33 @@ impl EscrowContract {
             .get(&DataKey::SourceToken)
             .expect("SourceToken not configured");
 
-        let source_client = token::Client::new(&env, &source_token);
-        let contract_addr = env.current_contract_address();
-
-        source_client.transfer(&trade.buyer, &contract_addr, &source_amount);
-        let cngn_client = token::Client::new(&env, &trade.token);
-        let cngn_before = cngn_client.balance(&contract_addr);
-
         let intent_key = DataKey::PathPaymentIntent(trade_id);
         assert!(
             !env.storage().persistent().has(&intent_key),
             "Path payment already pending"
         );
+
+        // Only one path payment may be pending contract-wide. A stale one is
+        // cleared (refunding its buyer) so it cannot block the slot forever.
+        let now = env.ledger().timestamp();
+        if let Some((active_id, initiated_at)) = env
+            .storage()
+            .instance()
+            .get::<_, (u64, u64)>(&DataKey::ActivePathPayment)
+        {
+            assert!(
+                now >= initiated_at.saturating_add(PATH_PAYMENT_TIMEOUT_SECS),
+                "Another path payment is pending"
+            );
+            Self::clear_path_payment(&env, active_id);
+        }
+
+        let source_client = token::Client::new(&env, &source_token);
+        let contract_addr = env.current_contract_address();
+
+        source_client.transfer(&trade.buyer, &contract_addr, &source_amount);
+        // Snapshot only the cNGN not already owed to other trades or fees.
+        let cngn_before = Self::unattributed_balance(&env, &trade.token);
 
         let intent = PathPaymentIntent {
             buyer: buyer.clone(),
@@ -1375,8 +1601,11 @@ impl EscrowContract {
         };
 
         env.storage().persistent().set(&intent_key, &intent);
+        env.storage()
+            .instance()
+            .set(&DataKey::ActivePathPayment, &(trade_id, now));
 
-        trade.updated_at = env.ledger().timestamp();
+        trade.updated_at = now;
         Self::save_trade(&env, &key, &trade);
 
         PathPaymentInitiatedEvent {
@@ -1456,15 +1685,17 @@ impl EscrowContract {
             "Trade must be in Created status"
         );
 
-        let caller_is_admin = Self::is_admin(&env, &caller);
+        let caller_is_admin = Self::is_unilateral_admin(&env, &caller);
         assert!(
             caller == intent.buyer || caller_is_admin,
             "Unauthorized path payment finalization"
         );
 
-        let contract_addr = env.current_contract_address();
-        let cngn_client = token::Client::new(&env, &trade.token);
-        let cngn_after = cngn_client.balance(&contract_addr);
+        // Proceeds are the growth of *unattributed* cNGN since the intent was
+        // recorded. Deposits for other trades raise CommittedBalance by the same
+        // amount they raise the balance, so they cancel out and can never be
+        // counted as this trade's swap proceeds.
+        let cngn_after = Self::unattributed_balance(&env, &trade.token);
         let dest_amount = cngn_after
             .checked_sub(intent.cngn_balance_before)
             .expect("cNGN balance underflow");
@@ -1473,6 +1704,13 @@ impl EscrowContract {
             dest_amount >= intent.dest_min,
             "Path payment: dest_amount below dest_min"
         );
+        // The swap output becomes the trade amount, so it must satisfy the same
+        // bounds create_trade() enforces for every trade.
+        assert!(
+            dest_amount >= MIN_TRADE_AMOUNT,
+            "amount must be at least MIN_TRADE_AMOUNT"
+        );
+        assert!(dest_amount <= MAX_TRADE_VALUE, "TradeValueTooLarge");
 
         let now = env.ledger().timestamp();
         trade.amount = dest_amount;
@@ -1480,8 +1718,10 @@ impl EscrowContract {
         trade.funded_at = Some(now);
         trade.updated_at = now;
         Self::save_trade(&env, &key, &trade);
+        Self::adjust_committed_balance(&env, dest_amount);
 
         env.storage().persistent().remove(&intent_key);
+        env.storage().instance().remove(&DataKey::ActivePathPayment);
 
         PathPaymentExecutedEvent {
             trade_id,
@@ -1500,6 +1740,33 @@ impl EscrowContract {
         Self::bump_instance_ttl(&env);
     }
 
+    /// Abandon a pending path payment and refund the buyer's source tokens.
+    /// The buyer may call this at any time; anyone may call it once the intent
+    /// is older than `PATH_PAYMENT_TIMEOUT_SECS`.
+    pub fn cancel_path_payment(env: Env, trade_id: u64, caller: Address) {
+        caller.require_auth();
+        let intent: PathPaymentIntent = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PathPaymentIntent(trade_id))
+            .expect("No pending path payment");
+        if caller != intent.buyer {
+            let (active_id, initiated_at): (u64, u64) = env
+                .storage()
+                .instance()
+                .get(&DataKey::ActivePathPayment)
+                .expect("No pending path payment");
+            assert!(
+                active_id != trade_id
+                    || env.ledger().timestamp()
+                        >= initiated_at.saturating_add(PATH_PAYMENT_TIMEOUT_SECS),
+                "Path payment has not timed out"
+            );
+        }
+        Self::clear_path_payment(&env, trade_id);
+        Self::bump_instance_ttl(&env);
+    }
+
     pub fn cancel_trade(env: Env, trade_id: u64, caller: Address) {
         let key = DataKey::Trade(trade_id);
         let mut trade: Trade = Self::load_trade(&env, &key);
@@ -1515,7 +1782,9 @@ impl EscrowContract {
             Self::execute_cancellation(&env, &mut trade, 0, caller);
         } else if matches!(trade.status, TradeStatus::Funded) {
             let amount = trade.amount;
-            if caller_is_admin {
+            // Force-refunding a funded trade without mutual consent is only
+            // allowed for a lone admin; multisig deployments need both parties.
+            if Self::is_unilateral_admin(&env, &caller) {
                 Self::execute_cancellation(&env, &mut trade, amount, caller);
             } else {
                 assert!(
@@ -1627,14 +1896,8 @@ impl EscrowContract {
 
         let refund_amount = trade.amount;
 
-        // Return funds to buyer
-        let token_client = token::Client::new(&env, &trade.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &trade.buyer,
-            &refund_amount,
-        );
-
+        // Effects: persist the terminal status before any external call so a
+        // reentrant call observes `Cancelled` and fails the status guard.
         trade.status = TradeStatus::Cancelled;
         trade.updated_at = now;
         Self::save_trade(&env, &key, &trade);
@@ -1644,6 +1907,15 @@ impl EscrowContract {
             sequence.expired_at = Some(at);
             sequence.cancelled_at = Some(at);
         });
+        Self::adjust_committed_balance(&env, -refund_amount);
+
+        // Interaction: return funds to buyer
+        let token_client = token::Client::new(&env, &trade.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &trade.buyer,
+            &refund_amount,
+        );
 
         TradeExpiredEvent {
             trade_id,
@@ -1704,7 +1976,18 @@ impl EscrowContract {
     }
 
     fn execute_cancellation(env: &Env, trade: &mut Trade, refund_amount: i128, caller: Address) {
+        // Effects: persist the terminal status before any external call so a
+        // reentrant call observes `Cancelled` and fails the status guard.
+        trade.status = TradeStatus::Cancelled;
+        trade.updated_at = env.ledger().timestamp();
+        Self::save_trade(env, &DataKey::Trade(trade.trade_id), trade);
+        Self::update_release_sequence(env, trade, |sequence, at| {
+            sequence.cancelled_at = Some(at);
+        });
+
+        // Interactions
         if refund_amount > 0 {
+            Self::adjust_committed_balance(env, -refund_amount);
             let token_client = token::Client::new(env, &trade.token);
             token_client.transfer(
                 &env.current_contract_address(),
@@ -1712,13 +1995,9 @@ impl EscrowContract {
                 &refund_amount,
             );
         }
-
-        trade.status = TradeStatus::Cancelled;
-        trade.updated_at = env.ledger().timestamp();
-        Self::save_trade(env, &DataKey::Trade(trade.trade_id), trade);
-        Self::update_release_sequence(env, trade, |sequence, at| {
-            sequence.cancelled_at = Some(at);
-        });
+        // A pending path payment on a cancelled trade can never be finalized;
+        // return the buyer's source tokens and free the path-payment slot.
+        Self::clear_path_payment(env, trade.trade_id);
 
         Self::record_trade_event(
             env,
@@ -1780,7 +2059,7 @@ impl EscrowContract {
 
         caller.require_auth();
 
-        let caller_is_admin = Self::is_admin(&env, &caller);
+        let caller_is_admin = Self::is_unilateral_admin(&env, &caller);
         assert!(
             caller == trade.buyer || caller_is_admin,
             "Unauthorized caller"
@@ -1795,12 +2074,16 @@ impl EscrowContract {
         );
         assert!(seller_amount >= 0, "seller_amount must be non-negative");
         assert!(fee_amount >= 0, "fee_amount must be non-negative");
-        let token_client = token::Client::new(&env, &trade.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &trade.seller,
-            &seller_amount,
-        );
+
+        // Effects: persist the terminal status and fee accrual before the
+        // external token call so a reentrant release observes `Completed`.
+        let now = env.ledger().timestamp();
+        trade.status = TradeStatus::Completed;
+        trade.updated_at = now;
+        Self::save_trade(&env, &key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.released_at = Some(at);
+        });
         if fee_amount > 0 {
             let accrued_fees: i128 = env
                 .storage()
@@ -1811,13 +2094,15 @@ impl EscrowContract {
                 .instance()
                 .set(&DataKey::AccruedFees, &(accrued_fees + fee_amount));
         }
-        let now = env.ledger().timestamp();
-        trade.status = TradeStatus::Completed;
-        trade.updated_at = now;
-        Self::save_trade(&env, &key, &trade);
-        Self::update_release_sequence(&env, &trade, |sequence, at| {
-            sequence.released_at = Some(at);
-        });
+        Self::adjust_committed_balance(&env, -seller_amount);
+
+        // Interaction
+        let token_client = token::Client::new(&env, &trade.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &trade.seller,
+            &seller_amount,
+        );
         Self::record_trade_event(
             &env,
             trade_id,
@@ -2030,27 +2315,8 @@ impl EscrowContract {
             "resolve_dispute: cNGN conservation invariant violated"
         );
 
-        // 5. Execute three atomic transfers
-        let token_client = token::Client::new(&env, &trade.token);
-
-        if seller_net > 0 {
-            token_client.transfer(&env.current_contract_address(), &trade.seller, &seller_net);
-        }
-        if fee > 0 {
-            let accrued_fees: i128 = env
-                .storage()
-                .instance()
-                .get(&DataKey::AccruedFees)
-                .unwrap_or(0);
-            env.storage()
-                .instance()
-                .set(&DataKey::AccruedFees, &(accrued_fees + fee));
-        }
-        if buyer_refund > 0 {
-            token_client.transfer(&env.current_contract_address(), &trade.buyer, &buyer_refund);
-        }
-
-        // 6. Update trade state
+        // 5. Update trade state before any external call so a reentrant
+        //    resolve_dispute observes `Completed` and fails the status guard.
         let now = env.ledger().timestamp();
         trade.status = TradeStatus::Completed;
         trade.updated_at = now;
@@ -2068,6 +2334,28 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalResolved, &(total_resolved + 1));
+
+        if fee > 0 {
+            let accrued_fees: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccruedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccruedFees, &(accrued_fees + fee));
+        }
+        Self::adjust_committed_balance(&env, -(seller_net + buyer_refund));
+
+        // 6. Execute transfers
+        let token_client = token::Client::new(&env, &trade.token);
+
+        if seller_net > 0 {
+            token_client.transfer(&env.current_contract_address(), &trade.seller, &seller_net);
+        }
+        if buyer_refund > 0 {
+            token_client.transfer(&env.current_contract_address(), &trade.buyer, &buyer_refund);
+        }
 
         // 7. Emit event
         DisputeResolvedEvent {
@@ -2164,12 +2452,8 @@ impl EscrowContract {
             .persistent()
             .set(&evidence_key, &evidence_list);
 
-        // For backward compatibility with legacy get_evidence API, store
-        // a Bytes representation of the IPFS hash.
-        let evidence_hash_bytes = Bytes::from_slice(&env, ipfs_hash.as_bytes());
-        env.storage()
-            .persistent()
-            .set(&DataKey::Evidence(trade_id, caller.clone()), &evidence_hash_bytes);
+        // Preserve the original Bytes payload in the event for legacy consumers.
+        let evidence_hash_bytes = ipfs_hash.to_bytes();
         // Store a legacy sentinel for the old get_evidence() API so existing callers
         // are not broken. Clients should use get_evidence_list() for the full record.
         env.storage()
@@ -2404,6 +2688,27 @@ impl EscrowContract {
         env.storage().persistent().set(&key, &history);
     }
 
+    /// Upgrade the contract WASM. Admin only.
+    /// Emits `ContractUpgradedEvent`.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        admin.require_auth();
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgradedEvent {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
+
+        Self::bump_instance_ttl(&env);
+    }
+
     pub fn get_contract_metrics(env: Env) -> (u64, u64, u64) {
         let total_trades: u64 = env
             .storage()
@@ -2457,7 +2762,7 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -2492,13 +2797,11 @@ mod test {
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
-        let buyer = Address::generate(&env);
-        let seller = Address::generate(&env);
         let treasury = Address::generate(&env);
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 1000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -2532,7 +2835,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let trade_id =
             client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
@@ -2557,7 +2860,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 1000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -2581,7 +2884,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let trade_id_1 =
             client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &None);
@@ -2613,7 +2916,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 1000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -2649,7 +2952,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -2681,7 +2984,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 1000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -2748,7 +3051,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -2817,7 +3120,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         // Test 50/50 split
         let trade_id_1 =
@@ -2882,7 +3185,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         assert_eq!(
             env.deployer().get_contract_instance_ttl(&contract_id),
@@ -2921,7 +3224,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         // This should panic: 5000 + 4000 = 9000 ≠ 10000
         client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &4000_u32, &None);
@@ -2941,7 +3244,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         // This should panic: 5001 + 5001 = 10002 > 10000
         client.create_trade(&buyer, &seller, &1000_i128, &5001_u32, &5001_u32, &None);
@@ -3142,7 +3445,7 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -3201,7 +3504,7 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -3260,7 +3563,7 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -3315,7 +3618,7 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -3365,7 +3668,7 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -3448,7 +3751,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -3489,7 +3792,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -3527,7 +3830,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         // create_trade but NO deposit — trade is still Created
         let trade_id =
@@ -3552,7 +3855,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -3583,7 +3886,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -3613,7 +3916,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -3645,7 +3948,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -3700,7 +4003,7 @@ mod test {
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(env, &contract_id);
         let treasury = Address::generate(env);
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
         (contract_id, admin, usdc_id)
     }
 
@@ -3810,40 +4113,9 @@ mod test {
     // Input validation tests (#190)
     // -----------------------------------------------------------------------
 
-    /// There must be exactly one `upgrade` entry point and it must read the
-    /// multisig config written by initialize(), not the legacy DataKey::Admin
-    /// slot (which is never written).
-    #[test]
-    #[should_panic(expected = "Not initialized")]
-    fn test_upgrade_requires_multisig_config() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(EscrowContract, ());
-        let client = EscrowContractClient::new(&env, &contract_id);
-        client.upgrade(&BytesN::from_array(&env, &[0u8; 32]));
-    }
-
-    #[test]
-    fn test_initialize_does_not_write_legacy_admin_key() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(EscrowContract, ());
-        let client = EscrowContractClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        let usdc_id = env
-            .register_stellar_asset_contract_v2(admin.clone())
-            .address();
-        let treasury = Address::generate(&env);
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
-        env.as_contract(&contract_id, || {
-            assert!(!env.storage().instance().has(&DataKey::Admin));
-            assert!(env.storage().instance().has(&DataKey::MultisigConfig));
-        });
-    }
-
     #[test]
     #[should_panic(expected = "fee_bps out of range")]
-    fn test_initialize_rejects_fee_bps_over_max() {
+    fn test_initialize_rejects_fee_bps_over_maximum() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register(EscrowContract, ());
@@ -3853,11 +4125,11 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         let treasury = Address::generate(&env);
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &(MAX_FEE_BPS + 1), &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &(MAX_FEE_BPS + 1), &usdc_id);
     }
 
     #[test]
-    fn test_initialize_accepts_fee_bps_at_max_boundary() {
+    fn test_initialize_accepts_fee_bps_at_maximum() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register(EscrowContract, ());
@@ -3867,39 +4139,8 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         let treasury = Address::generate(&env);
-        // MAX_FEE_BPS is the maximum allowed — must not panic
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &MAX_FEE_BPS, &usdc_id);
-    }
-
-    #[test]
-    #[should_panic(expected = "fee_bps out of range")]
-    fn test_initialize_rejects_zero_fee_bps() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(EscrowContract, ());
-        let client = EscrowContractClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        let usdc_id = env
-            .register_stellar_asset_contract_v2(admin.clone())
-            .address();
-        let treasury = Address::generate(&env);
-        // fee_bps below MIN_FEE_BPS must be rejected, same as update_fee_bps()
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &0_u32, &usdc_id);
-    }
-
-    #[test]
-    fn test_initialize_accepts_fee_bps_at_min_boundary() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(EscrowContract, ());
-        let client = EscrowContractClient::new(&env, &contract_id);
-        let admin = Address::generate(&env);
-        let usdc_id = env
-            .register_stellar_asset_contract_v2(admin.clone())
-            .address();
-        let treasury = Address::generate(&env);
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
-        assert_eq!(client.get_fee_bps(), MIN_FEE_BPS);
+        // MAX_FEE_BPS is the maximum allowed — must not panic.
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &MAX_FEE_BPS, &usdc_id);
     }
 
     #[test]
@@ -3915,7 +4156,7 @@ mod test {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         let treasury = Address::generate(&env);
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         client.create_trade(&actor, &actor, &1_000_i128, &5000_u32, &5000_u32, &None);
     }
 
@@ -3934,7 +4175,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
         let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32, &None);
@@ -3958,7 +4199,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
         let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32, &None);
@@ -3989,7 +4230,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         let token_mint = token::StellarAssetClient::new(env, &usdc_id);
         token_mint.mint(&buyer, &amount);
         let trade_id = client.create_trade(
@@ -4142,7 +4383,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
         // Trade is Created (not Funded)
         let trade_id =
             client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
@@ -4211,7 +4452,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
         let trade_id =
             client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
         let stranger = Address::generate(&env);
@@ -4231,7 +4472,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let trade_id =
             client.create_trade(&buyer, &seller, &1_000_i128, &5000_u32, &5000_u32, &None);
@@ -4269,7 +4510,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
         let token_mint = token::StellarAssetClient::new(&env, &usdc_id);
         token_mint.mint(&buyer, &amount);
         let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32, &None);
@@ -4324,7 +4565,7 @@ mod test {
         let ngn_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &cngn_id, &treasury, &init_fee_bps, &ngn_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &cngn_id, &treasury, &init_fee_bps, &ngn_id);
         (contract_id, admin, buyer, seller, treasury, cngn_id, ngn_id)
     }
 
@@ -4677,7 +4918,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -4711,7 +4952,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         env.ledger().with_mut(|li| li.timestamp = 5000);
         client.create_trade(&buyer, &seller, &1000_i128, &5000_u32, &5000_u32, &Some(1000));
@@ -4731,7 +4972,7 @@ mod test {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
         client.create_trade(&buyer, &seller, &0_i128, &5000_u32, &5000_u32, &None);
     }
 
@@ -4924,7 +5165,7 @@ mod integration_tests {
             let mint_client = token::StellarAssetClient::new(&env, &usdc_id);
             mint_client.mint(&buyer, &amount);
 
-            client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+            client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
             client.set_mediator(&mediator);
 
             Setup {
@@ -5507,7 +5748,7 @@ mod integration_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -5567,7 +5808,7 @@ mod integration_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 50_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -5681,7 +5922,7 @@ mod integration_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         // Use a small amount to test rounding behavior
         let amount = 100_i128;
@@ -5747,7 +5988,7 @@ mod integration_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         let client = EscrowContractClient::new(env, &contract_id);
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
         (contract_id, admin, usdc_id, treasury)
     }
 
@@ -6427,7 +6668,7 @@ mod property_tests {
         buyer_loss_bps: u32,  // Buyer's loss share (0 to 10000)
         seller_loss_bps: u32, // Seller's loss share (0 to 10000)
         seller_gets_bps: u32, // Seller payout ratio (0 to 10000)
-        fee_bps: u32,         // Platform fee (0 to 1000)
+        fee_bps: u32,         // Platform fee (MIN_FEE_BPS to MAX_FEE_BPS)
     }
 
     impl Arbitrary for DisputeTestCase {
@@ -6437,7 +6678,7 @@ mod property_tests {
             let buyer_loss_bps = u32::arbitrary(g) % 10_001;
             let seller_loss_bps = u32::arbitrary(g) % 10_001;
             let seller_gets_bps = u32::arbitrary(g) % 10_001;
-            let fee_bps = u32::arbitrary(g) % 1_001;
+            let fee_bps = MIN_FEE_BPS + u32::arbitrary(g) % (MAX_FEE_BPS - MIN_FEE_BPS + 1);
 
             DisputeTestCase {
                 total_amount,
@@ -6703,7 +6944,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -6741,7 +6982,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -6801,7 +7042,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -6850,7 +7091,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -6901,7 +7142,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -6918,72 +7159,34 @@ mod property_tests {
         client.resolve_dispute(&trade_id, &mediator, &10_000_u32);
 
         let token = token::Client::new(&env, &usdc_id);
-        // fee = 10_000 * MIN_FEE_BPS / 10_000 = 1
         assert_eq!(
             token.balance(&seller),
             amount - 1,
-            "seller gets full amount minus the minimum fee with no loss"
+            "seller gets amount less the minimum fee"
         );
         assert_eq!(token.balance(&buyer), 0, "buyer gets nothing with no loss");
         assert_eq!(token.balance(&treasury), 1, "treasury gets the minimum fee");
     }
 
-    /// Edge case: minimum platform fee (MIN_FEE_BPS) rounds down to zero on small payouts
+    /// Initialization rejects a fee below the documented minimum.
     #[test]
-    fn test_edge_case_min_fee() {
+    #[should_panic(expected = "fee_bps out of range")]
+    fn test_edge_case_zero_fee_is_rejected() {
         let env = Env::default();
         env.mock_all_auths();
 
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
-        let buyer = Address::generate(&env);
-        let seller = Address::generate(&env);
         let treasury = Address::generate(&env);
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id); // Minimum fee
-
-        let amount = 10_000_i128;
-        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
-        token_client.mint(&buyer, &amount);
-
-        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32, &None);
-        client.deposit(&trade_id);
-        client.initiate_dispute(&trade_id, &buyer, &String::from_str(&env, "reason"));
-
-        let mediator = Address::generate(&env);
-        client.set_mediator(&mediator);
-
-        // 50% for seller (50% loss)
-        client.resolve_dispute(&trade_id, &mediator, &5_000_u32);
-
-        let token = token::Client::new(&env, &usdc_id);
-        // loss = 50% = 5000
-        // seller bears: 5000 * 50% = 2500
-        // seller_raw = 10000 - 2500 = 7500
-        // fee = 7500 * 1 / 10000 = 0 (MIN_FEE_BPS rounds down)
-        // seller_net = 7500
-        // buyer_refund = 2500
-        assert_eq!(
-            token.balance(&seller),
-            7_500,
-            "seller gets 75% with 50% loss and 50% loss sharing"
-        );
-        assert_eq!(token.balance(&buyer), 2_500, "buyer gets 25% refund");
-        assert_eq!(
-            token.balance(&treasury),
-            0,
-            "treasury gets nothing when the minimum fee rounds down"
-        );
-
-        // Verify conservation
-        assert_eq!((7_500 + 2_500), amount, "conservation must hold");
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &0, &usdc_id);
     }
 
-    /// Edge case: fee = 1000 (10% fee - maximum typical fee)
+    /// Edge case: the configured maximum fee is applied to the seller payout.
     #[test]
     fn test_edge_case_max_typical_fee() {
         let env = Env::default();
@@ -6999,7 +7202,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &1_000, &usdc_id); // 10% fee
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &MAX_FEE_BPS, &usdc_id);
 
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
@@ -7019,23 +7222,23 @@ mod property_tests {
         // loss = 50% = 5000
         // seller bears: 5000 * 50% = 2500
         // seller_raw = 10000 - 2500 = 7500
-        // fee = 7500 * 10% = 750
-        // seller_net = 7500 - 750 = 6750
+        // fee = 7500 * MAX_FEE_BPS / 10_000 = 375
+        // seller_net = 7500 - 375 = 7125
         // buyer_refund = 2500
         assert_eq!(
             token.balance(&seller),
-            6_750,
-            "seller gets 67.5% with 50% loss, 50% sharing, 10% fee"
+            7_125,
+            "seller gets 71.25% with 50% loss, 50% sharing, and the maximum fee"
         );
         assert_eq!(token.balance(&buyer), 2_500, "buyer gets 25% refund");
         assert_eq!(
             token.balance(&treasury),
-            750,
-            "treasury gets 10% fee on seller portion"
+            375,
+            "treasury gets the maximum fee on seller portion"
         );
 
         // Verify conservation
-        assert_eq!(6_750 + 2_500 + 750, amount, "conservation must hold");
+        assert_eq!(7_125 + 2_500 + 375, amount, "conservation must hold");
     }
 
     /// Comprehensive randomized test: 10+ random scenarios
@@ -7056,8 +7259,8 @@ mod property_tests {
             let treasury = Address::generate(&env);
 
             // Random fee between 0 and 1000 bps
-            let fee_bps = (i % 1001) as u32;
-            client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+            let fee_bps = MIN_FEE_BPS + (i % (MAX_FEE_BPS - MIN_FEE_BPS + 1) as usize) as u32;
+            client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
 
             let buyer = Address::generate(&env);
             let seller = Address::generate(&env);
@@ -7127,7 +7330,7 @@ mod property_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
         let trade_id =
@@ -7170,7 +7373,7 @@ mod property_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
         let trade_id =
@@ -7206,7 +7409,7 @@ mod property_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
         let trade_id =
@@ -7250,7 +7453,7 @@ mod property_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &10_000_i128);
         let trade_id =
@@ -7306,7 +7509,7 @@ mod property_tests {
             let seller_loss_bps = 10_000 - buyer_loss_bps;
             Self {
                 amount,
-                fee_bps: u32::arbitrary(g) % 10_001,
+                fee_bps: MIN_FEE_BPS + u32::arbitrary(g) % (MAX_FEE_BPS - MIN_FEE_BPS + 1),
                 buyer_loss_bps,
                 seller_loss_bps,
                 seller_gets_bps: u32::arbitrary(g) % 10_001,
@@ -7346,7 +7549,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &case.fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &case.fee_bps, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &case.amount);
@@ -7432,7 +7635,7 @@ mod property_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &case.fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &case.fee_bps, &usdc_id);
 
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &case.amount);
@@ -7519,7 +7722,7 @@ mod fee_and_evidence_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         let token_client = token::StellarAssetClient::new(env, &usdc_id);
         token_client.mint(&buyer, &amount);
         let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32, &None);
@@ -7575,19 +7778,19 @@ mod fee_and_evidence_tests {
         assert_eq!(tok.balance(&client.address), 0);
     }
 
-    /// Zero fee (fee_bps = 0) → seller gets full amount.
+    /// Minimum fee (fee_bps = MIN_FEE_BPS) → valid minimum platform fee is collected.
     #[test]
     fn test_fee_zero_bps_seller_gets_all() {
         let env = Env::default();
         env.mock_all_auths();
         let (contract_id, buyer, seller, treasury, usdc_id, trade_id) =
-            setup_fee_trade(&env, 10_000, 0);
+            setup_fee_trade(&env, 10_000, MIN_FEE_BPS);
         let client = EscrowContractClient::new(&env, &contract_id);
         client.confirm_delivery(&trade_id);
         client.release_funds(&trade_id, &buyer);
         let tok = token::Client::new(&env, &usdc_id);
-        assert_eq!(tok.balance(&seller), 10_000);
-        assert_eq!(tok.balance(&treasury), 0);
+        assert_eq!(tok.balance(&seller), 9_999);
+        assert_eq!(tok.balance(&treasury), 1);
         assert_eq!(tok.balance(&client.address), 0);
     }
 
@@ -7638,9 +7841,9 @@ mod fee_and_evidence_tests {
     fn test_fee_never_exceeds_original_amount() {
         let env = Env::default();
         env.mock_all_auths();
-        // Use max fee_bps = 10000 (100%)
+        // Use the configured maximum fee.
         let (contract_id, buyer, _seller, treasury, usdc_id, trade_id) =
-            setup_fee_trade(&env, 100, 10_000);
+            setup_fee_trade(&env, 100, MAX_FEE_BPS);
         let client = EscrowContractClient::new(&env, &contract_id);
         client.confirm_delivery(&trade_id);
         client.release_funds(&trade_id, &buyer);
@@ -7669,7 +7872,7 @@ mod fee_and_evidence_tests {
     #[test]
     fn test_release_fee_bps_boundaries_at_max_safe_amount() {
         let max_safe_amount = i128::MAX / BPS_DIVISOR;
-        let fee_bps_cases = [0_u32, 1, 9_999, 10_000];
+        let fee_bps_cases = [MIN_FEE_BPS, 2, MAX_FEE_BPS - 1, MAX_FEE_BPS];
 
         for fee_bps in fee_bps_cases {
             let env = Env::default();
@@ -7699,9 +7902,9 @@ mod fee_and_evidence_tests {
     fn test_release_fee_panics_above_max_safe_amount() {
         let env = Env::default();
         env.mock_all_auths();
-        let overflowing_amount = (i128::MAX / BPS_DIVISOR) + 1;
+        let overflowing_amount = (i128::MAX / MAX_FEE_BPS as i128) + 1;
         let (contract_id, buyer, _seller, _treasury, _usdc_id, trade_id) =
-            setup_fee_trade(&env, overflowing_amount, 10_000);
+            setup_fee_trade(&env, overflowing_amount, MAX_FEE_BPS);
         let client = EscrowContractClient::new(&env, &contract_id);
 
         client.confirm_delivery(&trade_id);
@@ -7711,7 +7914,7 @@ mod fee_and_evidence_tests {
     #[test]
     fn test_dispute_payout_bps_boundaries_at_max_safe_amount() {
         let max_safe_amount = i128::MAX / (BPS_DIVISOR * BPS_DIVISOR);
-        let fee_bps_cases = [0_u32, 1, 9_999, 10_000];
+        let fee_bps_cases = [MIN_FEE_BPS, 2, MAX_FEE_BPS - 1, MAX_FEE_BPS];
         let seller_gets_bps_cases = [0_u32, 1, 9_999, 10_000];
 
         for fee_bps in fee_bps_cases {
@@ -7766,7 +7969,7 @@ mod fee_and_evidence_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &10_000, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &10_000, &usdc_id);
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &overflowing_amount);
         let trade_id = client.create_trade(
@@ -7801,7 +8004,7 @@ mod fee_and_evidence_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let amount = 10_000_i128;
         let tok_client = token::StellarAssetClient::new(&env, &usdc_id);
         tok_client.mint(&buyer, &amount);
@@ -7841,7 +8044,7 @@ mod fee_and_evidence_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &100_u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
         let amount = 10_000_i128;
         let tok_client = token::StellarAssetClient::new(&env, &usdc_id);
         tok_client.mint(&buyer, &amount);
@@ -7931,7 +8134,7 @@ mod fee_and_evidence_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         client.add_mediator(&mediator);
         let tok = token::StellarAssetClient::new(env, &usdc_id);
         tok.mint(&buyer, &amount);
@@ -8214,25 +8417,24 @@ mod fee_and_evidence_tests {
         assert_eq!(list.get(0).unwrap().ipfs_hash, ipfs);
     }
 
-    /// Dispute resolution with zero fee: seller_net > 0, fee == 0, buyer_refund > 0.
-    /// Verifies the zero-fee transfer branch is skipped without panicking.
+    /// Dispute resolution at the minimum fee preserves payout conservation.
     #[test]
     fn test_dispute_resolution_zero_fee_skip() {
         let env = Env::default();
         env.mock_all_auths();
         let (contract_id, buyer, seller, treasury, usdc_id, trade_id) =
-            setup_fee_trade(&env, 10_000, 0);
+            setup_fee_trade(&env, 10_000, MIN_FEE_BPS);
         let client = EscrowContractClient::new(&env, &contract_id);
         let reason = String::from_str(&env, "QmZeroFee");
         client.initiate_dispute(&trade_id, &buyer, &reason);
         let mediator = Address::generate(&env);
         client.set_mediator(&mediator);
         // seller_gets_bps = 10_000 → no loss
-        // seller_raw = 10_000, fee = 0 (fee_bps=0), seller_net = 10_000, buyer_refund = 0
+        // seller_raw = 10_000, fee = 1, seller_net = 9_999, buyer_refund = 0
         client.resolve_dispute(&trade_id, &mediator, &10_000_u32);
         let tok = token::Client::new(&env, &usdc_id);
-        assert_eq!(tok.balance(&seller), 10_000);
-        assert_eq!(tok.balance(&treasury), 0, "fee must be zero");
+        assert_eq!(tok.balance(&seller), 9_999);
+        assert_eq!(tok.balance(&treasury), 1, "minimum fee is collected");
         assert_eq!(tok.balance(&buyer), 0);
         assert_eq!(tok.balance(&client.address), 0);
         #[allow(clippy::identity_op)]
@@ -8241,9 +8443,9 @@ mod fee_and_evidence_tests {
         }
     }
 
-    /// Dispute resolution where seller gets zero (seller_net == 0):
-    /// buyer_loss_bps = 0, seller_loss_bps = 10000, seller_gets_bps = 0, fee_bps = 0.
-    /// seller_loss = 10_000, seller_raw = 0, fee = 0, seller_net = 0, buyer_refund = 10_000.
+    /// Dispute resolution where seller gets zero (seller_net == 0).
+    /// buyer_loss_bps = 0, seller_loss_bps = 10000, seller_gets_bps = 0.
+    /// seller_loss = 10_000, seller_raw = 0, seller_net = 0, buyer_refund = 10_000.
     #[test]
     fn test_dispute_resolution_zero_seller_net_skip() {
         let env = Env::default();
@@ -8257,8 +8459,7 @@ mod fee_and_evidence_tests {
         let usdc_id = env
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
-        // fee_bps = MIN_FEE_BPS; fee on a zero seller payout is still zero
-        client.initialize(&soroban_sdk::vec![admin.env(), admin.clone()], &1u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &MIN_FEE_BPS, &usdc_id);
         let amount = 10_000_i128;
         let token_client = token::StellarAssetClient::new(&env, &usdc_id);
         token_client.mint(&buyer, &amount);
@@ -8272,7 +8473,7 @@ mod fee_and_evidence_tests {
         // seller_gets_bps = 0 → loss_bps = 10_000 (100% loss)
         // seller_loss = 10_000 * 10_000 * 10_000 / 100_000_000 = 10_000
         // seller_raw = 10_000 - 10_000 = 0
-        // fee = 0 * 1 / 10_000 = 0
+        // fee = 0 * MIN_FEE_BPS / 10_000 = 0
         // seller_net = 0, buyer_refund = 10_000
         client.resolve_dispute(&trade_id, &mediator, &0_u32);
         let tok = token::Client::new(&env, &usdc_id);

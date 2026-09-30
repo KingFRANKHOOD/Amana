@@ -19,11 +19,13 @@ The backend listens on `PORT` (default `4000`), with all routes mounted at
 the root:
 
 ```
-http://localhost:4000
+http://localhost:4000/api/v1
 ```
 
-There is no versioned URL prefix (e.g. no `/v1`) today - all paths in this
-guide are relative to the base URL above.
+All paths in this guide are relative to the base URL above. The `/api/v1`
+prefix is the canonical path. The legacy unprefixed paths (e.g. `/trades`)
+are deprecated and will be removed after the sunset date (see response
+headers).
 
 ## Authentication
 
@@ -131,9 +133,9 @@ curl 'http://localhost:4000/trades?status=FUNDED&page=2&limit=50&sort=createdAt:
   -b amana.cookies
 ```
 
-Responses return the page of items under `items`; there is no total count or
-next-page cursor in the payload today, so clients should keep requesting
-increasing `page` values until a page comes back shorter than `limit`.
+Responses return the page of items under `items` along with a `pagination`
+object containing `page`, `limit`, `total`, and `totalPages` for building
+proper pagination UI.
 
 ## Idempotency
 

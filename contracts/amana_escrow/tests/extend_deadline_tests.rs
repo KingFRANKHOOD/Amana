@@ -111,7 +111,7 @@ impl H {
 
     fn init(&self) {
         self.c()
-            .initialize(&soroban_sdk::vec![self.admin.env(), self.admin.clone()], &1u32, &self.token, &self.admin, &1u32, &self.token);
+            .initialize(&soroban_sdk::Vec::from_array(&self.env, [self.admin.clone()]), &1_u32, &self.token, &self.admin, &1u32, &self.token);
     }
 
     fn now(&self) -> u64 {
