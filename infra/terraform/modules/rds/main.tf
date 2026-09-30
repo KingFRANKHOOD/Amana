@@ -75,6 +75,7 @@ resource "aws_rds_cluster" "this" {
   preferred_backup_window = var.preferred_backup_window
   db_subnet_group_name    = aws_db_subnet_group.this.name
   vpc_security_group_ids  = [aws_security_group.this.id]
+  port                    = var.port
   skip_final_snapshot     = var.skip_final_snapshot
   deletion_protection     = var.deletion_protection
   storage_encrypted       = var.storage_encrypted
