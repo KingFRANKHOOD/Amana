@@ -5,7 +5,12 @@ import { AppError } from '../errors/appError';
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
+const SALT_LENGTH = 16;
+const PBKDF2_ITERATIONS = 200_000;
+const PBKDF2_KEY_LENGTH = 32;
+const PBKDF2_DIGEST = "sha256";
 const DEFAULT_KEY_VERSION = "v1";
+const SUPPORTED_KEY_VERSIONS = new Set(["v1", "v2"]);
 
 export class EncryptionService {
   constructor(private readonly masterSecret: string = env.TRADE_NOTES_ENCRYPTION_KEY ?? "") {
@@ -18,8 +23,10 @@ export class EncryptionService {
     }
   }
 
-  encrypt(plaintext: string, tradeId: string, keyVersion: string = DEFAULT_KEY_VERSION): string {
-    const key = this.deriveKey(tradeId, keyVersion);
+  async encrypt(plaintext: string, tradeId: string, keyVersion: string = DEFAULT_KEY_VERSION): Promise<string> {
+    this.assertSupportedKeyVersion(keyVersion);
+    const salt = crypto.randomBytes(SALT_LENGTH);
+    const key = await this.deriveKey(salt, keyVersion);
     const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
     const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
@@ -27,16 +34,18 @@ export class EncryptionService {
 
     return [
       keyVersion,
-      this.saltFor(tradeId, keyVersion).toString("hex"),
+      salt.toString("hex"),
       iv.toString("hex"),
       encrypted.toString("hex"),
       tag.toString("hex"),
     ].join(":");
   }
 
-  decrypt(ciphertext: string, tradeId: string): string {
+  async decrypt(ciphertext: string, tradeId: string): Promise<string> {
     const payload = this.parsePayload(ciphertext);
-    const key = this.deriveKey(tradeId, payload.keyVersion);
+    this.assertSupportedKeyVersion(payload.keyVersion);
+    const salt = Buffer.from(payload.saltHex, "hex");
+    const key = await this.deriveKey(salt, payload.keyVersion);
     const iv = Buffer.from(payload.ivHex, "hex");
     const tag = Buffer.from(payload.tagHex, "hex");
     const cipherText = Buffer.from(payload.ciphertextHex, "hex");
@@ -47,22 +56,43 @@ export class EncryptionService {
     return Buffer.concat([decipher.update(cipherText), decipher.final()]).toString("utf8");
   }
 
-  rotateCiphertext(ciphertext: string, tradeId: string, newVersion: string = "v2"): string {
+  async rotateCiphertext(ciphertext: string, tradeId: string, newVersion: string = "v2"): Promise<string> {
+    this.assertSupportedKeyVersion(newVersion);
     if (!this.isEncryptedPayload(ciphertext)) {
       return this.encrypt(ciphertext, tradeId, newVersion);
     }
 
-    const plaintext = this.decrypt(ciphertext, tradeId);
+    const plaintext = await this.decrypt(ciphertext, tradeId);
     return this.encrypt(plaintext, tradeId, newVersion);
   }
 
-  private deriveKey(tradeId: string, keyVersion: string): Buffer {
-    const salt = this.saltFor(tradeId, keyVersion);
-    return crypto.pbkdf2Sync(this.masterSecret, salt, 200_000, 32, "sha256");
+  private deriveKey(salt: Buffer, keyVersion: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      crypto.pbkdf2(
+        this.masterSecret,
+        salt,
+        PBKDF2_ITERATIONS,
+        PBKDF2_KEY_LENGTH,
+        PBKDF2_DIGEST,
+        (err, derivedKey) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(derivedKey);
+        },
+      );
+    });
   }
 
-  private saltFor(tradeId: string, keyVersion: string): Buffer {
-    return crypto.createHash("sha256").update(`${this.masterSecret}:${tradeId}:${keyVersion}`).digest();
+  private assertSupportedKeyVersion(keyVersion: string): void {
+    if (!SUPPORTED_KEY_VERSIONS.has(keyVersion)) {
+      throw new AppError(
+        ErrorCode.VALIDATION_ERROR,
+        `Unsupported encryption key version: ${keyVersion}`,
+        400,
+      );
+    }
   }
 
   private parsePayload(ciphertext: string): {

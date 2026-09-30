@@ -1,7 +1,7 @@
 import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
-import { loadOptions, STELLAR_RPC_URL } from './options.js';
+import { STELLAR_RPC_URL } from './options.js';
 
 export const options = {
   stages: [

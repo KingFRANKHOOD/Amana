@@ -10,7 +10,7 @@ flow, and how to test it.
   builds a `NodeSDK` with auto-instrumentation for Node core modules/HTTP, plus
   optional Jaeger, Zipkin, and Prometheus exporters controlled by
   `JAEGER_ENDPOINT`, `ZIPKIN_ENDPOINT`, and `PROMETHEUS_PORT` (see
-  [`.env.tracing.example`](.env.tracing.example)).
+  the `Distributed tracing (optional)` section in [`.env.example`](.env.example)).
 - Every inbound HTTP request gets a server span from
   [`tracingMiddleware`](src/middleware/tracing.middleware.ts), which also tags
   the span with correlation IDs, HTTP method/route/status, and response size.

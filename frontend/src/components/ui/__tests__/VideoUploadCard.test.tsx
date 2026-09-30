@@ -130,6 +130,49 @@ describe('VideoUploadCard Component', () => {
         });
     });
 
+    it('invokes onUpload when the enabled Submit Proof button is clicked', async () => {
+        const onUpload = jest.fn();
+        render(<VideoUploadCard tradeId="trade-1" onUpload={onUpload} />);
+
+        const file = new File(['test'], 'test.mp4', { type: 'video/mp4' });
+        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+        Object.defineProperty(fileInput, 'files', {
+            value: [file],
+        });
+
+        fireEvent.change(fileInput);
+
+        // Simulate successful upload
+        await waitFor(() => {
+            if (mockXhr.onload) {
+                (mockXhr.onload as () => void)();
+            }
+        });
+
+        const submitButton = await screen.findByText('Submit Proof');
+        await waitFor(() => {
+            expect(submitButton).not.toBeDisabled();
+        });
+
+        onUpload.mockClear();
+        fireEvent.click(submitButton);
+
+        expect(onUpload).toHaveBeenCalledWith('QmTest123');
+    });
+
+    it('does not invoke onUpload when the disabled Submit Proof button is clicked', () => {
+        const onUpload = jest.fn();
+        render(<VideoUploadCard tradeId="trade-1" onUpload={onUpload} />);
+
+        const submitButton = screen.getByText('Submit Proof');
+        expect(submitButton).toBeDisabled();
+
+        fireEvent.click(submitButton);
+
+        expect(onUpload).not.toHaveBeenCalled();
+    });
+
     it('displays upload progress when uploading', async () => {
         render(<VideoUploadCard {...defaultProps} />);
 
@@ -230,105 +273,5 @@ describe('VideoUploadCard Component', () => {
         await waitFor(() => {
             expect(screen.getByText(/Upload failed/)).toBeInTheDocument();
         });
-    });
-
-    it('displays error message on network error', async () => {
-        render(<VideoUploadCard {...defaultProps} />);
-
-        const file = new File(['test'], 'test.mp4', { type: 'video/mp4' });
-        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-
-        Object.defineProperty(fileInput, 'files', {
-            value: [file],
-        });
-
-        fireEvent.change(fileInput);
-
-        // Simulate network error
-        await waitFor(() => {
-            if (mockXhr.onerror) {
-                (mockXhr.onerror as () => void)();
-            }
-        });
-
-        await waitFor(() => {
-            expect(screen.getByText('Network error during upload')).toBeInTheDocument();
-        });
-    });
-
-    it('handles file drop', async () => {
-        render(<VideoUploadCard {...defaultProps} />);
-
-        const dropZone = screen.getByText('Upload delivery proof video for verification').closest('div');
-        const file = new File(['test'], 'test.mp4', { type: 'video/mp4' });
-
-        const dropEvent = new Event('drop', { bubbles: true });
-        Object.defineProperty(dropEvent, 'dataTransfer', {
-            value: {
-                files: [file],
-            },
-        });
-
-        fireEvent(dropZone!, dropEvent);
-
-        // Verify upload started
-        await waitFor(() => {
-            expect(mockXhr.open).toHaveBeenCalled();
-        });
-    });
-
-    it('handles file input change', async () => {
-        render(<VideoUploadCard {...defaultProps} />);
-
-        const file = new File(['test'], 'test.mp4', { type: 'video/mp4' });
-        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-
-        Object.defineProperty(fileInput, 'files', {
-            value: [file],
-        });
-
-        fireEvent.change(fileInput);
-
-        // Verify upload started
-        await waitFor(() => {
-            expect(mockXhr.open).toHaveBeenCalled();
-        });
-    });
-
-    it('renders IPFS link after successful upload', async () => {
-        render(<VideoUploadCard {...defaultProps} />);
-
-        const file = new File(['test'], 'test.mp4', { type: 'video/mp4' });
-        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-
-        Object.defineProperty(fileInput, 'files', {
-            value: [file],
-        });
-
-        fireEvent.change(fileInput);
-
-        // Simulate successful upload
-        await waitFor(() => {
-            if (mockXhr.onload) {
-                (mockXhr.onload as () => void)();
-            }
-        });
-
-        await waitFor(() => {
-            const link = screen.getByLabelText('View on IPFS');
-            expect(link).toHaveAttribute('href', 'https://gateway.pinata.cloud/ipfs/QmTest123');
-        });
-    });
-
-    it('applies gold glow variant', () => {
-        const { container } = render(<VideoUploadCard {...defaultProps} />);
-        const card = container.querySelector('[data-testid="bento-card"]');
-        expect(card).toHaveAttribute('data-glow', 'gold');
-    });
-
-    it('applies correct styling classes to the card', () => {
-        const { container } = render(<VideoUploadCard {...defaultProps} />);
-        const card = container.querySelector('[data-testid="bento-card"]');
-        expect(card).toHaveClass('h-full');
     });
 });

@@ -18,16 +18,21 @@ import { useDraftForm } from "@/hooks/useDraftForm";
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { z } from "zod";
 
-// Backend TradeStatus enum values (backend/prisma/schema.prisma) are the source of truth.
-const STATUS_BADGE_STYLES: Record<string, string> = {
-  PENDING_SIGNATURE: "bg-status-warning/10 text-status-warning",
-  CREATED: "bg-status-info/10 text-status-info",
-  FUNDED: "bg-status-info/10 text-status-info",
-  DELIVERED: "bg-status-warning/10 text-status-warning",
-  COMPLETED: "bg-status-success/10 text-status-success",
-  DISPUTED: "bg-status-danger/10 text-status-danger",
-  CANCELLED: "bg-status-danger/10 text-status-danger",
+const TRADE_STATUS_CLASSES: Record<string, string> = {
+  ACTIVE: "bg-status-success/20 text-status-success border border-status-success/30",
+  FUNDED: "bg-status-success/20 text-status-success border border-status-success/30",
+  PENDING: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  PENDING_SIGNATURE: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  CREATED: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  DELIVERED: "bg-status-info/10 text-status-info border border-status-info/20",
+  COMPLETED: "bg-bg-elevated text-text-secondary border border-border-default",
+  DISPUTED: "bg-status-danger/20 text-status-danger border border-status-danger/30",
+  CANCELLED: "bg-surface-1 text-text-muted border border-border-default",
 };
+
+function getTradeStatusClass(status: string): string {
+  return TRADE_STATUS_CLASSES[status.toUpperCase()] ?? "bg-bg-elevated text-text-secondary border border-border-default";
+}
 
 export function DashboardContent() {
   const { t } = useTranslation();
@@ -262,35 +267,53 @@ export function DashboardContent() {
             {t("dashboard.noTrades")}
           </div>
         ) : (
-          <div className="divide-y divide-border-default">
-            {recentTrades.map((trade) => (
-              <Link
-                key={trade.id}
-                href={`/trades/${trade.id}`}
-                className="flex items-center justify-between p-4 hover:bg-bg-elevated transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-bg-elevated flex items-center justify-center">
-                    <CreditCard className="w-5 h-5 text-text-secondary" />
-                  </div>
-                  <div>
-                    <div className="font-medium text-text-primary">
-                      {trade.amount} {trade.currency}
-                    </div>
-                    <div className="text-sm text-text-secondary">
-                      {new Date(trade.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                </div>
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    STATUS_BADGE_STYLES[trade.status] ?? "text-text-muted"
-                  }`}
-                >
-                  {trade.status}
-                </span>
-              </Link>
-            ))}
+          <div className="bg-bg-card border border-border-default rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-text-muted uppercase bg-bg-elevated/50 border-b border-border-default">
+                  <tr>
+                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.tradeId")}</th>
+                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.counterparty")}</th>
+                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.amount")}</th>
+                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.status")}</th>
+                    <th scope="col" className="px-6 py-4 font-medium">{t("dashboard.recentTrades.table.date")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentTrades.map((trade, idx) => (
+                    <tr
+                      key={trade.tradeId}
+                      className={`
+                        border-b border-border-default hover:bg-bg-elevated/40 transition-colors
+                        ${idx === recentTrades.length - 1 ? 'border-b-0' : ''}
+                      `}
+                    >
+                      <td className="px-6 py-4 font-mono text-gold">
+                        <Link href={`/trades/${trade.tradeId}`} className="hover:underline">
+                          {trade.tradeId.substring(0, 8)}...
+                        </Link>
+                      </td>
+                      <td className="px-6 py-4 text-text-secondary font-mono">
+                        {trade.sellerAddress.substring(0, 6)}...{trade.sellerAddress.substring(trade.sellerAddress.length - 4)}
+                      </td>
+                      <td className="px-6 py-4 text-text-primary font-medium">
+                        {trade.amountCngn} cNGN
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 text-xs font-medium rounded-full capitalize
+                          ${getTradeStatusClass(trade.status)}
+                        `}>
+                          {trade.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-text-secondary">
+                        {new Date(trade.createdAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

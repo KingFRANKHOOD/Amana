@@ -66,7 +66,7 @@ Paginated list of trades where the caller is buyer or seller. See
 
 | Param | Type | Notes |
 |---|---|---|
-| `status` | enum | `CREATED`, `FUNDED`, `DELIVERED`, `RELEASED`, `DISPUTED`, `RESOLVED` |
+| `status` | enum | `PENDING_SIGNATURE`, `CREATED`, `FUNDED`, `DELIVERED`, `COMPLETED`, `DISPUTED`, `CANCELLED` |
 | `page` | integer | default `1` |
 | `limit` | integer | default `20`, max `100` |
 | `sort` | string | e.g. `createdAt:desc` |
