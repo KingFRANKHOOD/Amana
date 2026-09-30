@@ -178,6 +178,28 @@ describe("PathPaymentService network resilience", () => {
     expect(sourceAsset.getIssuer()).toBe(issuer);
   });
 
+  it("rejects non-native source assets without an issuer instead of substituting one", async () => {
+    const { ErrorCode } = require("../errors/errorCodes");
+    const service = new PathPaymentService();
+
+    await expect(service.getPathPaymentQuote("100", "NGN")).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      statusCode: 400,
+      message: "sourceAssetIssuer is required for non-native source assets",
+    });
+    expect(strictSendPathsMock).not.toHaveBeenCalled();
+  });
+
+  it("does not require an issuer for native XLM", async () => {
+    strictSendPathsCall.mockResolvedValue({ records: [] });
+
+    const service = new PathPaymentService();
+    await service.getPathPaymentQuote("100", "XLM");
+
+    const sourceAsset = strictSendPathsMock.mock.calls[0][0] as StellarSdk.Asset;
+    expect(sourceAsset.isNative()).toBe(true);
+  });
+
   it("fails after exhausting retries on repeated 5xx errors", async () => {
     strictSendPathsCall.mockRejectedValue({ response: { status: 502 } });
 

@@ -56,6 +56,11 @@ pub const MAX_EVENT_DATA_LEN: u32 = 256;
 /// realistic trade flow (typical happy-path trades generate ≤ 10 events).
 pub const MAX_HISTORY_LEN: u32 = 100;
 
+/// Seconds after which a pending path payment that was never finalized is
+/// considered stale. A stale intent may be cleared by anyone (refunding the
+/// buyer's source tokens) so that it cannot block the path-payment slot forever.
+pub const PATH_PAYMENT_TIMEOUT_SECS: u64 = 3_600;
+
 fn checked_fee_amount(amount: i128, fee_bps: u32) -> i128 {
     amount
         .checked_mul(fee_bps as i128)
@@ -235,6 +240,28 @@ pub struct PathPaymentExecutedEvent {
     pub source_amount: i128,
     pub dest_token: Address,
     pub dest_amount: i128,
+}
+
+/// Emitted when a pending path payment is cleared without being finalized
+/// (cancelled by the buyer, expired, or its trade cancelled). The buyer's
+/// source tokens are refunded.
+#[contractevent(topics = ["PTHCLR"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathPaymentClearedEvent {
+    pub trade_id: u64,
+    pub buyer: Address,
+    pub source_amount: i128,
+}
+
+/// Emitted when a governance proposal (fee update, mediator change, fee
+/// withdrawal) is created by an admin.
+#[contractevent(topics = ["amana", "GOVPRP"])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GovernanceProposedEvent {
+    pub proposal_id: u32,
+    pub proposer: Address,
+    pub operation: ProposalOperation,
+    pub deadline: u64,
 }
 
 /// Emitted when an upgrade proposal is created by an admin.
@@ -492,6 +519,18 @@ pub enum DataKey {
     /// disturbing any existing key. Appended last so the XDR encoding of every
     /// pre-existing variant is unchanged (variants are keyed by name).
     SchemaVersion,
+    /// Running net total of cNGN the contract has credited to trades (inbound
+    /// escrow deposits and finalized path payments) minus every cNGN amount it
+    /// has paid out. Path-payment finalization measures its proceeds as the
+    /// change in `balance - CommittedBalance`, so cNGN deposited for other
+    /// trades during the pending window is never attributed to the path payment.
+    /// Only deltas of this value are meaningful, so instances upgraded with
+    /// funds already in escrow need no migration.
+    CommittedBalance,
+    /// `(trade_id, initiated_at)` of the single path payment currently pending.
+    /// Only one path payment may be in flight at a time so two intents can never
+    /// both claim the same inbound cNGN.
+    ActivePathPayment,
 }
 
 #[contracttype]
@@ -501,6 +540,9 @@ pub struct PathPaymentIntent {
     pub source_amount: i128,
     pub dest_min: i128,
     pub path: Vec<Address>,
+    /// Snapshot of the contract's *unattributed* cNGN
+    /// (`balance - CommittedBalance`) when the intent was recorded — not the raw
+    /// contract balance, which is a pool shared by every trade.
     pub cngn_balance_before: i128,
 }
 
@@ -580,7 +622,7 @@ impl EscrowContract {
     /// For multi-mediator support, prefer `add_mediator()`.
     /// Emits `MediatorAdded` so governance indexers see every registration path.
     pub fn set_mediator(env: Env, admin: Address, mediator: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         env.storage().instance().set(&DataKey::Mediator, &mediator);
         // Also register in the per-address registry so is_mediator() reflects this.
         env.storage()
@@ -599,9 +641,10 @@ impl EscrowContract {
     // -----------------------------------------------------------------------
 
     /// Add `mediator_address` to the approved mediator registry.
-    /// Admin only. Emits `MediatorAdded`.
+    /// Admin only, and only when the multisig threshold is 1; otherwise use
+    /// `propose_add_mediator`. Emits `MediatorAdded`.
     pub fn add_mediator(env: Env, admin: Address, mediator_address: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         env.storage()
             .persistent()
             .set(&DataKey::MediatorRegistry(mediator_address.clone()), &true);
@@ -616,9 +659,10 @@ impl EscrowContract {
     /// Remove `mediator_address` from the approved mediator registry.
     /// Also clears the legacy single-mediator slot if it holds the same address,
     /// ensuring revocation is complete regardless of which registration path was used.
-    /// Admin only. Emits `MediatorRemoved`.
+    /// Admin only, and only when the multisig threshold is 1; otherwise use
+    /// `propose_remove_mediator`. Emits `MediatorRemoved`.
     pub fn remove_mediator(env: Env, admin: Address, mediator_address: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
 
         // Clear registry slot (add_mediator / set_mediator dual-writes here)
         env.storage()
@@ -665,11 +709,12 @@ impl EscrowContract {
             .unwrap_or(CURRENT_SCHEMA_VERSION)
     }
 
-    /// Update the platform fee rate. Admin only.
+    /// Update the platform fee rate. Admin only, and only when the multisig
+    /// threshold is 1; otherwise use `propose_fee_update`.
     /// `new_fee_bps` must be within [`MIN_FEE_BPS`, `MAX_FEE_BPS`].
     /// Emits `FeeRateUpdated(old, new)`.
     pub fn update_fee_bps(env: Env, admin: Address, new_fee_bps: u32) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         assert!(
             (MIN_FEE_BPS..=MAX_FEE_BPS).contains(&new_fee_bps),
             "fee_bps out of range"
@@ -686,10 +731,11 @@ impl EscrowContract {
     }
 
     /// Withdraw accrued platform fees from the contract to `destination`.
-    /// Only an admin may call this. Reverts if `amount` is zero or exceeds
-    /// the currently accrued fees. Emits `FeesWithdrawn`.
+    /// Only an admin may call this, and only when the multisig threshold is 1;
+    /// otherwise use `propose_withdraw_fees`. Reverts if `amount` is zero or
+    /// exceeds the currently accrued fees. Emits `FeesWithdrawn`.
     pub fn withdraw_fees(env: Env, admin: Address, amount: i128, destination: Address) {
-        Self::require_admin(&env, admin);
+        Self::require_unilateral_admin(&env, admin);
         assert!(amount > 0, "amount must be greater than zero");
         let accrued_fees: i128 = env
             .storage()
@@ -702,11 +748,13 @@ impl EscrowContract {
             .instance()
             .get(&DataKey::CngnContract)
             .expect("Not initialized");
-        let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&env.current_contract_address(), &destination, &amount);
+        // Effects before interaction: debit the fee ledger before the transfer.
         env.storage()
             .instance()
             .set(&DataKey::AccruedFees, &(accrued_fees - amount));
+        Self::adjust_committed_balance(&env, -amount);
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer(&env.current_contract_address(), &destination, &amount);
         FeesWithdrawnEvent {
             amount,
             destination,
@@ -835,6 +883,115 @@ impl EscrowContract {
             deadline,
         }
         .publish(&env);
+        proposal_id
+    }
+
+    /// Propose a platform fee change. Executes once the multisig threshold of
+    /// admins has approved it via `approve_proposal`.
+    pub fn propose_fee_update(env: Env, admin: Address, new_fee_bps: u32, deadline: u64) -> u32 {
+        assert!(
+            (MIN_FEE_BPS..=MAX_FEE_BPS).contains(&new_fee_bps),
+            "fee_bps out of range"
+        );
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::UpdateFeeBps(new_fee_bps),
+            deadline,
+        )
+    }
+
+    /// Propose adding `mediator` to the mediator registry. Executes once the
+    /// multisig threshold of admins has approved it.
+    pub fn propose_add_mediator(env: Env, admin: Address, mediator: Address, deadline: u64) -> u32 {
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::AddMediator(mediator),
+            deadline,
+        )
+    }
+
+    /// Propose removing `mediator` from the mediator registry. Executes once
+    /// the multisig threshold of admins has approved it.
+    pub fn propose_remove_mediator(
+        env: Env,
+        admin: Address,
+        mediator: Address,
+        deadline: u64,
+    ) -> u32 {
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::RemoveMediator(mediator),
+            deadline,
+        )
+    }
+
+    /// Propose withdrawing `amount` of accrued fees to `destination`. Executes
+    /// once the multisig threshold of admins has approved it.
+    pub fn propose_withdraw_fees(
+        env: Env,
+        admin: Address,
+        amount: i128,
+        destination: Address,
+        deadline: u64,
+    ) -> u32 {
+        assert!(amount > 0, "amount must be greater than zero");
+        Self::create_governance_proposal(
+            &env,
+            admin,
+            ProposalOperation::WithdrawFees(amount, destination),
+            deadline,
+        )
+    }
+
+    fn create_governance_proposal(
+        env: &Env,
+        admin: Address,
+        operation: ProposalOperation,
+        deadline: u64,
+    ) -> u32 {
+        Self::require_admin(env, admin.clone());
+        assert!(
+            deadline > env.ledger().timestamp(),
+            "deadline must be in the future"
+        );
+        let proposal_id: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextProposalId)
+            .unwrap_or(1);
+        let config: MultisigConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::MultisigConfig)
+            .expect("Not initialized");
+        let proposal = Proposal {
+            id: proposal_id,
+            operation: operation.clone(),
+            proposer: admin.clone(),
+            deadline,
+            executed: false,
+            threshold_snapshot: config.threshold,
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::NextProposalId, &(proposal_id + 1));
+        env.storage()
+            .instance()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ProposalApprovals(proposal_id), &Vec::<Address>::new(env));
+        GovernanceProposedEvent {
+            proposal_id,
+            proposer: admin,
+            operation,
+            deadline,
+        }
+        .publish(env);
+        Self::bump_instance_ttl(env);
         proposal_id
     }
 
@@ -982,15 +1139,16 @@ impl EscrowContract {
                     .instance()
                     .get(&DataKey::CngnContract)
                     .expect("Not initialized");
+                env.storage()
+                    .instance()
+                    .set(&DataKey::AccruedFees, &(accrued_fees - amount));
+                Self::adjust_committed_balance(env, -*amount);
                 let token_client = token::Client::new(env, &token);
                 token_client.transfer(
                     &env.current_contract_address(),
                     destination,
                     amount,
                 );
-                env.storage()
-                    .instance()
-                    .set(&DataKey::AccruedFees, &(accrued_fees - amount));
                 FeesWithdrawnEvent {
                     amount: *amount,
                     destination: destination.clone(),
@@ -1080,6 +1238,96 @@ impl EscrowContract {
         }
         assert!(found, "Unauthorized admin");
         admin
+    }
+
+    /// Like `require_admin`, but additionally requires the multisig threshold
+    /// to be 1. Sensitive operations with a direct single-admin entry point
+    /// (fee changes, fee withdrawals, mediator registry changes) must go through
+    /// the proposal system whenever the deployment requires more than one
+    /// approval, so a single admin key can never act unilaterally.
+    fn require_unilateral_admin(env: &Env, admin: Address) -> Address {
+        let admin = Self::require_admin(env, admin);
+        assert!(
+            Self::multisig_threshold(env) <= 1,
+            "multisig threshold > 1: use a proposal"
+        );
+        admin
+    }
+
+    fn multisig_threshold(env: &Env) -> u32 {
+        env.storage()
+            .instance()
+            .get::<_, MultisigConfig>(&DataKey::MultisigConfig)
+            .map(|c| c.threshold)
+            .unwrap_or(1)
+    }
+
+    /// True when `addr` is an admin AND a single admin is allowed to act alone
+    /// (threshold == 1). Used for admin-override branches on trade funds.
+    fn is_unilateral_admin(env: &Env, addr: &Address) -> bool {
+        Self::is_admin(env, addr) && Self::multisig_threshold(env) <= 1
+    }
+
+    fn committed_balance(env: &Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::CommittedBalance)
+            .unwrap_or(0)
+    }
+
+    /// Record cNGN credited to (`delta > 0`) or paid out of (`delta < 0`) the
+    /// escrow ledger. Must be called at every cNGN transfer site.
+    fn adjust_committed_balance(env: &Env, delta: i128) {
+        let updated = Self::committed_balance(env)
+            .checked_add(delta)
+            .expect("committed balance overflow");
+        env.storage()
+            .instance()
+            .set(&DataKey::CommittedBalance, &updated);
+    }
+
+    /// cNGN held by the contract that is not attributed to any trade or to
+    /// accrued fees.
+    fn unattributed_balance(env: &Env, token: &Address) -> i128 {
+        let balance = token::Client::new(env, token).balance(&env.current_contract_address());
+        balance
+            .checked_sub(Self::committed_balance(env))
+            .expect("unattributed balance underflow")
+    }
+
+    /// Drop a pending path payment without finalizing it and return the
+    /// buyer's source tokens.
+    fn clear_path_payment(env: &Env, trade_id: u64) {
+        let intent_key = DataKey::PathPaymentIntent(trade_id);
+        let intent: Option<PathPaymentIntent> = env.storage().persistent().get(&intent_key);
+        if let Some(intent) = intent {
+            env.storage().persistent().remove(&intent_key);
+            if let Some((active_id, _)) = env
+                .storage()
+                .instance()
+                .get::<_, (u64, u64)>(&DataKey::ActivePathPayment)
+            {
+                if active_id == trade_id {
+                    env.storage().instance().remove(&DataKey::ActivePathPayment);
+                }
+            }
+            let source_token: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::SourceToken)
+                .expect("SourceToken not configured");
+            token::Client::new(env, &source_token).transfer(
+                &env.current_contract_address(),
+                &intent.buyer,
+                &intent.source_amount,
+            );
+            PathPaymentClearedEvent {
+                trade_id,
+                buyer: intent.buyer,
+                source_amount: intent.source_amount,
+            }
+            .publish(env);
+        }
     }
 
     /// Returns true if `addr` is in the current admin set.
@@ -1263,6 +1511,7 @@ impl EscrowContract {
         trade.buyer.require_auth();
         let token_client = token::Client::new(&env, &trade.token);
         token_client.transfer(&trade.buyer, env.current_contract_address(), &trade.amount);
+        Self::adjust_committed_balance(&env, trade.amount);
         let now = env.ledger().timestamp();
         trade.status = TradeStatus::Funded;
         trade.funded_at = Some(now);
@@ -1315,18 +1564,33 @@ impl EscrowContract {
             .get(&DataKey::SourceToken)
             .expect("SourceToken not configured");
 
-        let source_client = token::Client::new(&env, &source_token);
-        let contract_addr = env.current_contract_address();
-
-        source_client.transfer(&trade.buyer, &contract_addr, &source_amount);
-        let cngn_client = token::Client::new(&env, &trade.token);
-        let cngn_before = cngn_client.balance(&contract_addr);
-
         let intent_key = DataKey::PathPaymentIntent(trade_id);
         assert!(
             !env.storage().persistent().has(&intent_key),
             "Path payment already pending"
         );
+
+        // Only one path payment may be pending contract-wide. A stale one is
+        // cleared (refunding its buyer) so it cannot block the slot forever.
+        let now = env.ledger().timestamp();
+        if let Some((active_id, initiated_at)) = env
+            .storage()
+            .instance()
+            .get::<_, (u64, u64)>(&DataKey::ActivePathPayment)
+        {
+            assert!(
+                now >= initiated_at.saturating_add(PATH_PAYMENT_TIMEOUT_SECS),
+                "Another path payment is pending"
+            );
+            Self::clear_path_payment(&env, active_id);
+        }
+
+        let source_client = token::Client::new(&env, &source_token);
+        let contract_addr = env.current_contract_address();
+
+        source_client.transfer(&trade.buyer, &contract_addr, &source_amount);
+        // Snapshot only the cNGN not already owed to other trades or fees.
+        let cngn_before = Self::unattributed_balance(&env, &trade.token);
 
         let intent = PathPaymentIntent {
             buyer: buyer.clone(),
@@ -1337,8 +1601,11 @@ impl EscrowContract {
         };
 
         env.storage().persistent().set(&intent_key, &intent);
+        env.storage()
+            .instance()
+            .set(&DataKey::ActivePathPayment, &(trade_id, now));
 
-        trade.updated_at = env.ledger().timestamp();
+        trade.updated_at = now;
         Self::save_trade(&env, &key, &trade);
 
         PathPaymentInitiatedEvent {
@@ -1418,15 +1685,17 @@ impl EscrowContract {
             "Trade must be in Created status"
         );
 
-        let caller_is_admin = Self::is_admin(&env, &caller);
+        let caller_is_admin = Self::is_unilateral_admin(&env, &caller);
         assert!(
             caller == intent.buyer || caller_is_admin,
             "Unauthorized path payment finalization"
         );
 
-        let contract_addr = env.current_contract_address();
-        let cngn_client = token::Client::new(&env, &trade.token);
-        let cngn_after = cngn_client.balance(&contract_addr);
+        // Proceeds are the growth of *unattributed* cNGN since the intent was
+        // recorded. Deposits for other trades raise CommittedBalance by the same
+        // amount they raise the balance, so they cancel out and can never be
+        // counted as this trade's swap proceeds.
+        let cngn_after = Self::unattributed_balance(&env, &trade.token);
         let dest_amount = cngn_after
             .checked_sub(intent.cngn_balance_before)
             .expect("cNGN balance underflow");
@@ -1442,8 +1711,10 @@ impl EscrowContract {
         trade.funded_at = Some(now);
         trade.updated_at = now;
         Self::save_trade(&env, &key, &trade);
+        Self::adjust_committed_balance(&env, dest_amount);
 
         env.storage().persistent().remove(&intent_key);
+        env.storage().instance().remove(&DataKey::ActivePathPayment);
 
         PathPaymentExecutedEvent {
             trade_id,
@@ -1462,6 +1733,33 @@ impl EscrowContract {
         Self::bump_instance_ttl(&env);
     }
 
+    /// Abandon a pending path payment and refund the buyer's source tokens.
+    /// The buyer may call this at any time; anyone may call it once the intent
+    /// is older than `PATH_PAYMENT_TIMEOUT_SECS`.
+    pub fn cancel_path_payment(env: Env, trade_id: u64, caller: Address) {
+        caller.require_auth();
+        let intent: PathPaymentIntent = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PathPaymentIntent(trade_id))
+            .expect("No pending path payment");
+        if caller != intent.buyer {
+            let (active_id, initiated_at): (u64, u64) = env
+                .storage()
+                .instance()
+                .get(&DataKey::ActivePathPayment)
+                .expect("No pending path payment");
+            assert!(
+                active_id != trade_id
+                    || env.ledger().timestamp()
+                        >= initiated_at.saturating_add(PATH_PAYMENT_TIMEOUT_SECS),
+                "Path payment has not timed out"
+            );
+        }
+        Self::clear_path_payment(&env, trade_id);
+        Self::bump_instance_ttl(&env);
+    }
+
     pub fn cancel_trade(env: Env, trade_id: u64, caller: Address) {
         let key = DataKey::Trade(trade_id);
         let mut trade: Trade = Self::load_trade(&env, &key);
@@ -1477,7 +1775,9 @@ impl EscrowContract {
             Self::execute_cancellation(&env, &mut trade, 0, caller);
         } else if matches!(trade.status, TradeStatus::Funded) {
             let amount = trade.amount;
-            if caller_is_admin {
+            // Force-refunding a funded trade without mutual consent is only
+            // allowed for a lone admin; multisig deployments need both parties.
+            if Self::is_unilateral_admin(&env, &caller) {
                 Self::execute_cancellation(&env, &mut trade, amount, caller);
             } else {
                 assert!(
@@ -1589,14 +1889,8 @@ impl EscrowContract {
 
         let refund_amount = trade.amount;
 
-        // Return funds to buyer
-        let token_client = token::Client::new(&env, &trade.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &trade.buyer,
-            &refund_amount,
-        );
-
+        // Effects: persist the terminal status before any external call so a
+        // reentrant call observes `Cancelled` and fails the status guard.
         trade.status = TradeStatus::Cancelled;
         trade.updated_at = now;
         Self::save_trade(&env, &key, &trade);
@@ -1606,6 +1900,15 @@ impl EscrowContract {
             sequence.expired_at = Some(at);
             sequence.cancelled_at = Some(at);
         });
+        Self::adjust_committed_balance(&env, -refund_amount);
+
+        // Interaction: return funds to buyer
+        let token_client = token::Client::new(&env, &trade.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &trade.buyer,
+            &refund_amount,
+        );
 
         TradeExpiredEvent {
             trade_id,
@@ -1666,7 +1969,18 @@ impl EscrowContract {
     }
 
     fn execute_cancellation(env: &Env, trade: &mut Trade, refund_amount: i128, caller: Address) {
+        // Effects: persist the terminal status before any external call so a
+        // reentrant call observes `Cancelled` and fails the status guard.
+        trade.status = TradeStatus::Cancelled;
+        trade.updated_at = env.ledger().timestamp();
+        Self::save_trade(env, &DataKey::Trade(trade.trade_id), trade);
+        Self::update_release_sequence(env, trade, |sequence, at| {
+            sequence.cancelled_at = Some(at);
+        });
+
+        // Interactions
         if refund_amount > 0 {
+            Self::adjust_committed_balance(env, -refund_amount);
             let token_client = token::Client::new(env, &trade.token);
             token_client.transfer(
                 &env.current_contract_address(),
@@ -1674,13 +1988,9 @@ impl EscrowContract {
                 &refund_amount,
             );
         }
-
-        trade.status = TradeStatus::Cancelled;
-        trade.updated_at = env.ledger().timestamp();
-        Self::save_trade(env, &DataKey::Trade(trade.trade_id), trade);
-        Self::update_release_sequence(env, trade, |sequence, at| {
-            sequence.cancelled_at = Some(at);
-        });
+        // A pending path payment on a cancelled trade can never be finalized;
+        // return the buyer's source tokens and free the path-payment slot.
+        Self::clear_path_payment(env, trade.trade_id);
 
         Self::record_trade_event(
             env,
@@ -1742,7 +2052,7 @@ impl EscrowContract {
 
         caller.require_auth();
 
-        let caller_is_admin = Self::is_admin(&env, &caller);
+        let caller_is_admin = Self::is_unilateral_admin(&env, &caller);
         assert!(
             caller == trade.buyer || caller_is_admin,
             "Unauthorized caller"
@@ -1757,12 +2067,16 @@ impl EscrowContract {
         );
         assert!(seller_amount >= 0, "seller_amount must be non-negative");
         assert!(fee_amount >= 0, "fee_amount must be non-negative");
-        let token_client = token::Client::new(&env, &trade.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &trade.seller,
-            &seller_amount,
-        );
+
+        // Effects: persist the terminal status and fee accrual before the
+        // external token call so a reentrant release observes `Completed`.
+        let now = env.ledger().timestamp();
+        trade.status = TradeStatus::Completed;
+        trade.updated_at = now;
+        Self::save_trade(&env, &key, &trade);
+        Self::update_release_sequence(&env, &trade, |sequence, at| {
+            sequence.released_at = Some(at);
+        });
         if fee_amount > 0 {
             let accrued_fees: i128 = env
                 .storage()
@@ -1773,13 +2087,15 @@ impl EscrowContract {
                 .instance()
                 .set(&DataKey::AccruedFees, &(accrued_fees + fee_amount));
         }
-        let now = env.ledger().timestamp();
-        trade.status = TradeStatus::Completed;
-        trade.updated_at = now;
-        Self::save_trade(&env, &key, &trade);
-        Self::update_release_sequence(&env, &trade, |sequence, at| {
-            sequence.released_at = Some(at);
-        });
+        Self::adjust_committed_balance(&env, -seller_amount);
+
+        // Interaction
+        let token_client = token::Client::new(&env, &trade.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &trade.seller,
+            &seller_amount,
+        );
         Self::record_trade_event(
             &env,
             trade_id,
@@ -1992,27 +2308,8 @@ impl EscrowContract {
             "resolve_dispute: cNGN conservation invariant violated"
         );
 
-        // 5. Execute three atomic transfers
-        let token_client = token::Client::new(&env, &trade.token);
-
-        if seller_net > 0 {
-            token_client.transfer(&env.current_contract_address(), &trade.seller, &seller_net);
-        }
-        if fee > 0 {
-            let accrued_fees: i128 = env
-                .storage()
-                .instance()
-                .get(&DataKey::AccruedFees)
-                .unwrap_or(0);
-            env.storage()
-                .instance()
-                .set(&DataKey::AccruedFees, &(accrued_fees + fee));
-        }
-        if buyer_refund > 0 {
-            token_client.transfer(&env.current_contract_address(), &trade.buyer, &buyer_refund);
-        }
-
-        // 6. Update trade state
+        // 5. Update trade state before any external call so a reentrant
+        //    resolve_dispute observes `Completed` and fails the status guard.
         let now = env.ledger().timestamp();
         trade.status = TradeStatus::Completed;
         trade.updated_at = now;
@@ -2030,6 +2327,28 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalResolved, &(total_resolved + 1));
+
+        if fee > 0 {
+            let accrued_fees: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccruedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccruedFees, &(accrued_fees + fee));
+        }
+        Self::adjust_committed_balance(&env, -(seller_net + buyer_refund));
+
+        // 6. Execute transfers
+        let token_client = token::Client::new(&env, &trade.token);
+
+        if seller_net > 0 {
+            token_client.transfer(&env.current_contract_address(), &trade.seller, &seller_net);
+        }
+        if buyer_refund > 0 {
+            token_client.transfer(&env.current_contract_address(), &trade.buyer, &buyer_refund);
+        }
 
         // 7. Emit event
         DisputeResolvedEvent {
