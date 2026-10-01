@@ -55,6 +55,7 @@ import { EventIndexerService } from "./services/event-indexer";
 import { env } from "./config/env";
 import { validateEnvironment } from "./config/envValidator";
 import { csrfProtection } from "./middleware/csrf.middleware";
+import { sanitizeRequestInput } from "./middleware/sanitize.middleware";
 import { requestTimeoutMiddleware } from "./middleware/request-timeout.middleware";
 
 // Fail fast at boot if required environment variables are missing
@@ -169,6 +170,11 @@ export function createApp(
   app.use(loggerMiddleware);
   // Structured per-request logger: method, path, status, durationMs, correlationId, userId, userAgent, ip
   app.use(requestLoggerMiddleware);
+
+  // Normalize user-controlled input before controllers or Zod validators examine it.
+  // This protects request body/query/path/header values without touching auth tokens,
+  // signature verification data, or raw verification payloads.
+  app.use(sanitizeRequestInput());
 
   // Enhanced health check with deep introspection — not versioned (operational endpoint)
   app.use("/health", createHealthRouter());

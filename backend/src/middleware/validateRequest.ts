@@ -8,6 +8,25 @@ import { appLogger } from './logger';
 
 export const ERROR_CORRELATION_ID_HEADER = 'x-error-correlation-id';
 
+const CONTROL_CHARS_PATTERN = /[\u0000-\u001F\u007F]+/g;
+
+export function normalizeValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.replace(CONTROL_CHARS_PATTERN, " ").trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map(normalizeValue);
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = normalizeValue(entry);
+    }
+    return result;
+  }
+  return value;
+}
+
 export function validateRequest(schema: ZodTypeAny) {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse({
