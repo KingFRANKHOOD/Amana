@@ -78,6 +78,14 @@ npm run start
 npm test
 ```
 
+## Security & request input policy
+
+The backend uses a narrow global normalization layer before route handlers run. It strips dangerous prototype-pollution keys such as `__proto__`, `constructor`, and `prototype`, and it removes control characters from incoming string values. It does not HTML-escape ordinary JSON API strings or rewrite protocol/security-sensitive values.
+
+The actual business rules live at the route boundary via `validateRequest` plus Zod schemas. Params, query strings, and request bodies are validated where appropriate for identifiers, wallet addresses, asset codes, hashes, numeric IDs, and structured payloads. Free-form text is only rejected when the schema explicitly checks for script-like payloads in fields meant to be stored or displayed to users; valid user text remains accepted unless it violates the field contract.
+
+Sensitive headers and raw verification values are preserved exactly. This includes `Authorization`, cookies, JWTs, webhook/signature headers, API keys, hashes, and raw signed payloads. Those values are never normalized or HTML-escaped because they are protocol data, not rich text.
+
 ## Notes
 
 - `prisma/` contains schema and seed logic for the backend database.

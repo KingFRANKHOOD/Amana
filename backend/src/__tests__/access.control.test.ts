@@ -1,5 +1,5 @@
 /**
- * Tests for the shared access-control helpers (Issue #525, #1017)
+ * Tests for the shared access-control helpers (Issue #525, #1017, #1227)
  *
  * Validates that getMediatorAllowlist and isMediatorAddress correctly parse
  * ADMIN_STELLAR_PUBKEYS and enforce mediator/arbitrator route guards.
@@ -9,8 +9,12 @@
  * GET /trades/:id/schedule handler must only expose a trade's milestone
  * schedule to the buyer, seller, or a mediator — never to unrelated
  * authenticated users (IDOR).
+ *
+ * Issue #1227: also asserts that the trade service admin check agrees with
+ * the shared access-control allowlist so there is a single source of truth.
  */
 import { getMediatorAllowlist, isMediatorAddress, normalizeAddress } from "../lib/accessControl";
+import { isAdminPubkey, resetAdminPubkeys } from "../services/trade.service";
 
 const ADDR_A = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 const ADDR_B = "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
@@ -177,5 +181,40 @@ describe("escrow schedule access guard (Issue #1394)", () => {
   it("matches parties case-insensitively", () => {
     expect(canReadSchedule(trade, buyer.toLowerCase())).toBe(true);
     expect(canReadSchedule(trade, seller.toUpperCase())).toBe(true);
+  });
+});
+
+describe("admin allowlist consistency (Issue #1227)", () => {
+  afterEach(() => {
+    delete process.env.ADMIN_STELLAR_PUBKEYS;
+    resetAdminPubkeys();
+  });
+
+  it("trade service admin check agrees with the shared access-control allowlist", () => {
+    process.env.ADMIN_STELLAR_PUBKEYS = `${ADDR_A},${ADDR_B}`;
+    resetAdminPubkeys();
+
+    for (const addr of [ADDR_A, ADDR_B, ADDR_C]) {
+      expect(isAdminPubkey(addr)).toBe(isMediatorAddress(addr));
+    }
+  });
+
+  it("reflects env changes without a stale cache (no divergent cache lifetimes)", () => {
+    process.env.ADMIN_STELLAR_PUBKEYS = ADDR_A;
+    resetAdminPubkeys();
+    expect(isAdminPubkey(ADDR_A)).toBe(true);
+    expect(isAdminPubkey(ADDR_B)).toBe(false);
+
+    process.env.ADMIN_STELLAR_PUBKEYS = ADDR_B;
+    resetAdminPubkeys();
+    expect(isAdminPubkey(ADDR_A)).toBe(false);
+    expect(isAdminPubkey(ADDR_B)).toBe(true);
+  });
+
+  it("agrees on empty allowlist", () => {
+    delete process.env.ADMIN_STELLAR_PUBKEYS;
+    resetAdminPubkeys();
+    expect(isAdminPubkey(ADDR_A)).toBe(false);
+    expect(isAdminPubkey(ADDR_A)).toBe(isMediatorAddress(ADDR_A));
   });
 });

@@ -28,16 +28,32 @@ export function createExportWorker(): Worker<ExportJobData> {
     'exports',
     async (job: Job<ExportJobData>): Promise<ExportResult> => {
       const { requestedBy, format, tradeIds, filters } = job.data;
-      void filters;
-      const logger = getJobContextualLogger(job.id, undefined, { requestedBy, format });
+      if (!requestedBy || typeof requestedBy !== 'string' || requestedBy.trim() === '') {
+        throw new Error('Export job missing requestedBy: per-user scoping requires the requester wallet address');
+      }
+      // Normalize to lowercase — Trade.buyerAddress/sellerAddress are stored
+      // lowercase (see eventHandlers.normalizeAddress + lib/db hook), and the
+      // synchronous route (trade.export.routes.ts buildWhere) scopes with
+      // OR: [{ buyerAddress }, { sellerAddress }]. Matching that contract here
+      // prevents a full-table export when filters are empty.
+      const owner = requestedBy.trim().toLowerCase();
+      const logger = getJobContextualLogger(job.id, undefined, { requestedBy: owner, format });
       logger.info('Processing export job');
       const start = performance.now();
 
       try {
-        const where: Record<string, unknown> = { ...filters };
-        if (tradeIds?.length) {
-          where['tradeId'] = { in: tradeIds };
+        // Always scope to the requesting user. Filters are intersected via AND
+        // so a caller-supplied buyerAddress/sellerAddress/OR cannot broaden
+        // the query beyond the requester's own trades.
+        const andClauses: Record<string, unknown>[] = [];
+        if (filters && Object.keys(filters).length > 0) {
+          andClauses.push({ ...filters });
         }
+        if (tradeIds?.length) {
+          andClauses.push({ tradeId: { in: tradeIds } });
+        }
+        andClauses.push({ OR: [{ buyerAddress: owner }, { sellerAddress: owner }] });
+        const where: Record<string, unknown> = { AND: andClauses };
 
         const trades = await prisma.trade.findMany({ where });
 
@@ -49,7 +65,7 @@ export function createExportWorker(): Worker<ExportJobData> {
           data = JSON.stringify(trades, null, 2);
         }
 
-        const s3Key = `exports/${requestedBy}/${job.id}.${format}`;
+        const s3Key = `exports/${owner}/${job.id}.${format}`;
         const s3Uri = await uploadToS3(data, s3Key);
 
         bullJobDuration.record((performance.now() - start) / 1000, { queue: 'exports', job_type: format });

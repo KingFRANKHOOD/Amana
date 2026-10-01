@@ -23,32 +23,151 @@ const VALID_PREDECESSORS: Partial<Record<EventType, TradeStatus[]>> = {
   [EventType.DisputeResolved]: [TradeStatus.DISPUTED],
 };
 
+/** Typed error thrown when a non-create event arrives with no matching trade row. */
+export class MissingTradeError extends Error {
+  constructor(
+    public readonly tradeId: string,
+    public readonly eventType: EventType,
+  ) {
+    super(`Trade ${tradeId} not found for event ${eventType}`);
+    this.name = "MissingTradeError";
+  }
+}
+
+/** Typed error thrown when party addresses are absent or empty. */
+export class InvalidPartyAddressError extends Error {
+  constructor(
+    public readonly tradeId: string,
+    field: string,
+  ) {
+    super(`Trade ${tradeId}: ${field} is missing or empty`);
+    this.name = "InvalidPartyAddressError";
+  }
+}
+
+/**
+ * Validate and normalise a raw on-chain address.
+ *
+ * - Trims whitespace
+ * - Lowercases (Stellar addresses are case-insensitive but we store lowercase)
+ * - Throws InvalidPartyAddressError if the value is absent or empty
+ */
+function normalizeAddress(
+  raw: unknown,
+  field: string,
+  tradeId: string,
+): string {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw new InvalidPartyAddressError(tradeId, field);
+  }
+  return raw.trim().toLowerCase();
+}
+
 async function applyStatusTransition(
   tx: Prisma.TransactionClient,
   event: ParsedEvent,
   createPayload: TradeCreatePayload,
 ): Promise<void> {
-  const existing = await tx.trade.findUnique({ where: { tradeId: event.tradeId } });
+  const existing = await tx.trade.findUnique({
+    where: { tradeId: event.tradeId },
+  });
 
   if (!existing) {
+    // Only TradeCreated should legitimately create a new row.  All other
+    // event types that reach here without a trade row indicate a gap in
+    // processing — fail loudly rather than inserting garbage. Throwing
+    // MissingTradeError lets the outbox layer defer (not dead-letter) the
+    // event until its TradeCreated predecessor succeeds (issue #1404).
+    if (event.eventType !== EventType.TradeCreated) {
+      throw new MissingTradeError(event.tradeId, event.eventType);
+    }
+
+    // Validate that both party addresses are present and non-empty before
+    // creating the row, preventing FK violations (P2003) and stale records
+    // with blank addresses.
+    if (
+      !createPayload.buyerAddress ||
+      createPayload.buyerAddress.trim() === ""
+    ) {
+      throw new InvalidPartyAddressError(event.tradeId, "buyerAddress");
+    }
+    if (
+      !createPayload.sellerAddress ||
+      createPayload.sellerAddress.trim() === ""
+    ) {
+      throw new InvalidPartyAddressError(event.tradeId, "sellerAddress");
+    }
+
     await tx.trade.create({ data: createPayload });
     return;
   }
 
   const validPredecessors = VALID_PREDECESSORS[event.eventType];
-  if (!validPredecessors || !validPredecessors.includes(existing.status as TradeStatus)) {
+  if (
+    !validPredecessors ||
+    !validPredecessors.includes(existing.status as TradeStatus)
+  ) {
+    // Backfill path (issue #1404): a late-arriving TradeCreated must be able
+    // to repair a row that was created without real party addresses (legacy
+    // stub) instead of silently dropping. If the existing row is already
+    // CREATED but has empty buyer/seller, fill them from the creation event.
+    if (
+      event.eventType === EventType.TradeCreated &&
+      (existing as { buyerAddress?: string; sellerAddress?: string })
+        .buyerAddress === "" &&
+      (existing as { buyerAddress?: string; sellerAddress?: string })
+        .sellerAddress === ""
+    ) {
+      const buyerAddress = createPayload.buyerAddress?.trim() ?? "";
+      const sellerAddress = createPayload.sellerAddress?.trim() ?? "";
+      if (buyerAddress !== "" && sellerAddress !== "") {
+        const backfill = await tx.trade.updateMany({
+          where: {
+            tradeId: event.tradeId,
+            status: existing.status,
+            version: existing.version,
+          },
+          data: {
+            buyerAddress: buyerAddress.toLowerCase(),
+            sellerAddress: sellerAddress.toLowerCase(),
+            amountUsdc: createPayload.amountUsdc ?? "0",
+            updatedAt: new Date(),
+          },
+        });
+        if (backfill.count === 0) {
+          throw new Error("Concurrency conflict");
+        }
+      }
+    }
     return;
   }
 
   const newStatus = EVENT_TO_STATUS[event.eventType];
   if (!newStatus) return;
 
+  // TradeCreated arriving for a PENDING_SIGNATURE row carries the canonical
+  // on-chain party addresses — persist them along with the status transition
+  // so the off-chain row is never left with placeholder addresses.
+  const isTradeCreatedBackfill =
+    event.eventType === EventType.TradeCreated &&
+    (existing.status as TradeStatus) === TradeStatus.PENDING_SIGNATURE;
   const result = await tx.trade.updateMany({
-    where: { tradeId: event.tradeId, status: existing.status, version: existing.version },
+    where: {
+      tradeId: event.tradeId,
+      status: existing.status,
+      version: existing.version,
+    },
     data: {
       status: newStatus,
       version: { increment: 1 },
       updatedAt: new Date(),
+      ...(isTradeCreatedBackfill
+        ? {
+            buyerAddress: createPayload.buyerAddress.toLowerCase(),
+            sellerAddress: createPayload.sellerAddress.toLowerCase(),
+            amountUsdc: createPayload.amountUsdc ?? "0",
+          }
+        : {}),
     },
   });
 
@@ -57,11 +176,60 @@ async function applyStatusTransition(
   }
 }
 
-export async function handleTradeCreated(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
+// ---------------------------------------------------------------------------
+// Webhook dispatch helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Fire a webhook dispatch **outside** the DB transaction.
+ *
+ * Errors are caught and logged so a failed delivery never rolls back the
+ * committed state change or generates an unhandled promise rejection.
+ */
+function scheduleWebhook(
+  tradeId: string,
+  status: TradeStatus,
+  metadata: Record<string, unknown>,
+): void {
+  webhookService.dispatch(tradeId, status, metadata).catch((err: unknown) => {
+    appLogger.error(
+      { err, tradeId, status },
+      "[EventHandler] Webhook dispatch failed (post-commit)",
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Per-event handlers — each returns a post-commit thunk (or void)
+// ---------------------------------------------------------------------------
+//
+// IMPORTANT: handlers no longer call webhookService directly. They return a
+// () => void thunk that dispatchEvent fires *after* the surrounding Prisma
+// transaction commits.  This guarantees:
+//   1. No unawaited promise inside the transaction boundary.
+//   2. Webhook delivery cannot race the commit (it only starts after commit).
+//   3. A delivery failure cannot corrupt the committed state.
+// ---------------------------------------------------------------------------
+
+export async function handleTradeCreated(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
+  const buyerAddress = normalizeAddress(
+    event.data.buyer,
+    "buyerAddress",
+    event.tradeId,
+  );
+  const sellerAddress = normalizeAddress(
+    event.data.seller,
+    "sellerAddress",
+    event.tradeId,
+  );
+
   await applyStatusTransition(tx, event, {
     tradeId: event.tradeId,
-    buyerAddress: (event.data.buyer as string) || "",
-    sellerAddress: (event.data.seller as string) || "",
+    buyerAddress,
+    sellerAddress,
     amountUsdc: String(event.data.amount_usdc ?? "0"),
     status: EVENT_TO_STATUS[EventType.TradeCreated]!,
     version: 1,
@@ -72,17 +240,31 @@ export async function handleTradeCreated(tx: Prisma.TransactionClient, event: Pa
     toStatus: TradeStatus.CREATED,
     ledgerSequence: event.ledgerSequence,
     contractId: event.contractId,
-    actor: (event.data.buyer as string) || undefined,
-    amountUsdc: event.data.amount_usdc != null ? String(event.data.amount_usdc) : undefined,
-    extra: { seller: event.data.seller },
+    actor: buyerAddress,
+    amountUsdc:
+      event.data.amount_usdc != null
+        ? String(event.data.amount_usdc)
+        : undefined,
+    extra: { seller: sellerAddress },
   });
-  appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] TradeCreated");
-  webhookService.dispatch(event.tradeId, TradeStatus.CREATED, { ledger: event.ledgerSequence });
+  appLogger.debug(
+    { tradeId: event.tradeId, ledger: event.ledgerSequence },
+    "[EventHandler] TradeCreated",
+  );
+  return () =>
+    scheduleWebhook(event.tradeId, TradeStatus.CREATED, {
+      ledger: event.ledgerSequence,
+    });
 }
 
-export async function handleTradeFunded(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
+export async function handleTradeFunded(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
   await applyStatusTransition(tx, event, {
     tradeId: event.tradeId,
+    // TradeFunded does not carry party addresses — the trade row must already
+    // exist. applyStatusTransition will throw MissingTradeError if it does not.
     buyerAddress: "",
     sellerAddress: "",
     status: EVENT_TO_STATUS[EventType.TradeFunded]!,
@@ -94,22 +276,37 @@ export async function handleTradeFunded(tx: Prisma.TransactionClient, event: Par
     toStatus: TradeStatus.FUNDED,
     ledgerSequence: event.ledgerSequence,
     contractId: event.contractId,
-    amountUsdc: event.data.amount_usdc != null ? String(event.data.amount_usdc) : undefined,
+    amountUsdc:
+      event.data.amount_usdc != null
+        ? String(event.data.amount_usdc)
+        : undefined,
     extra: { note: "funds_locked_in_escrow" },
   });
-  appLogger.info({
-    requestId: undefined,
-    userId: undefined,
-    paymentId: event.tradeId,
-    provider: "stellar",
-    status: "authorization_approved",
-    timestamp: new Date().toISOString()
-  }, "Payment authorization approved");
-  appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] TradeFunded");
-  webhookService.dispatch(event.tradeId, TradeStatus.FUNDED, { ledger: event.ledgerSequence });
+  appLogger.info(
+    {
+      requestId: undefined,
+      userId: undefined,
+      paymentId: event.tradeId,
+      provider: "stellar",
+      status: "authorization_approved",
+      timestamp: new Date().toISOString(),
+    },
+    "Payment authorization approved",
+  );
+  appLogger.debug(
+    { tradeId: event.tradeId, ledger: event.ledgerSequence },
+    "[EventHandler] TradeFunded",
+  );
+  return () =>
+    scheduleWebhook(event.tradeId, TradeStatus.FUNDED, {
+      ledger: event.ledgerSequence,
+    });
 }
 
-export async function handleDeliveryConfirmed(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
+export async function handleDeliveryConfirmed(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
   await applyStatusTransition(tx, event, {
     tradeId: event.tradeId,
     buyerAddress: "",
@@ -124,11 +321,20 @@ export async function handleDeliveryConfirmed(tx: Prisma.TransactionClient, even
     ledgerSequence: event.ledgerSequence,
     contractId: event.contractId,
   });
-  appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DeliveryConfirmed");
-  webhookService.dispatch(event.tradeId, TradeStatus.DELIVERED, { ledger: event.ledgerSequence });
+  appLogger.debug(
+    { tradeId: event.tradeId, ledger: event.ledgerSequence },
+    "[EventHandler] DeliveryConfirmed",
+  );
+  return () =>
+    scheduleWebhook(event.tradeId, TradeStatus.DELIVERED, {
+      ledger: event.ledgerSequence,
+    });
 }
 
-export async function handleFundsReleased(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
+export async function handleFundsReleased(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
   await applyStatusTransition(tx, event, {
     tradeId: event.tradeId,
     buyerAddress: "",
@@ -137,9 +343,15 @@ export async function handleFundsReleased(tx: Prisma.TransactionClient, event: P
     version: 1,
   });
 
-  // Record the 1% platform fee for this completed trade
-  const amountUsdc = event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
-  await feeAccountingService.recordFee(tx, event.tradeId, amountUsdc, event.ledgerSequence);
+  // Record the platform fee (current on-chain fee_bps) for this completed trade
+  const amountUsdc =
+    event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
+  await feeAccountingService.recordFee(
+    tx,
+    event.tradeId,
+    amountUsdc,
+    event.ledgerSequence,
+  );
 
   await logEscrowEvent(tx, {
     tradeId: event.tradeId,
@@ -147,14 +359,26 @@ export async function handleFundsReleased(tx: Prisma.TransactionClient, event: P
     toStatus: TradeStatus.COMPLETED,
     ledgerSequence: event.ledgerSequence,
     contractId: event.contractId,
-    amountUsdc: event.data.amount_usdc != null ? String(event.data.amount_usdc) : undefined,
+    amountUsdc:
+      event.data.amount_usdc != null
+        ? String(event.data.amount_usdc)
+        : undefined,
     extra: { note: "funds_released_to_seller" },
   });
-  appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] FundsReleased");
-  webhookService.dispatch(event.tradeId, TradeStatus.COMPLETED, { ledger: event.ledgerSequence });
+  appLogger.debug(
+    { tradeId: event.tradeId, ledger: event.ledgerSequence },
+    "[EventHandler] FundsReleased",
+  );
+  return () =>
+    scheduleWebhook(event.tradeId, TradeStatus.COMPLETED, {
+      ledger: event.ledgerSequence,
+    });
 }
 
-export async function handleDisputeInitiated(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
+export async function handleDisputeInitiated(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
   await applyStatusTransition(tx, event, {
     tradeId: event.tradeId,
     buyerAddress: "",
@@ -171,11 +395,20 @@ export async function handleDisputeInitiated(tx: Prisma.TransactionClient, event
     actor: (event.data.initiator as string) || undefined,
     extra: { reason: event.data.reason },
   });
-  appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DisputeInitiated");
-  webhookService.dispatch(event.tradeId, TradeStatus.DISPUTED, { ledger: event.ledgerSequence });
+  appLogger.debug(
+    { tradeId: event.tradeId, ledger: event.ledgerSequence },
+    "[EventHandler] DisputeInitiated",
+  );
+  return () =>
+    scheduleWebhook(event.tradeId, TradeStatus.DISPUTED, {
+      ledger: event.ledgerSequence,
+    });
 }
 
-export async function handleDisputeResolved(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
+export async function handleDisputeResolved(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
   await applyStatusTransition(tx, event, {
     tradeId: event.tradeId,
     buyerAddress: "",
@@ -184,9 +417,15 @@ export async function handleDisputeResolved(tx: Prisma.TransactionClient, event:
     version: 1,
   });
 
-  // Record the 1% platform fee for dispute-resolved (completed) trades
-  const amountUsdc = event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
-  await feeAccountingService.recordFee(tx, event.tradeId, amountUsdc, event.ledgerSequence);
+  // Record the platform fee (current on-chain fee_bps) for dispute-resolved trades
+  const amountUsdc =
+    event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
+  await feeAccountingService.recordFee(
+    tx,
+    event.tradeId,
+    amountUsdc,
+    event.ledgerSequence,
+  );
 
   await logEscrowEvent(tx, {
     tradeId: event.tradeId,
@@ -197,13 +436,42 @@ export async function handleDisputeResolved(tx: Prisma.TransactionClient, event:
     actor: (event.data.resolver as string) || undefined,
     extra: { resolution: event.data.resolution },
   });
-  appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] DisputeResolved");
-  webhookService.dispatch(event.tradeId, TradeStatus.COMPLETED, { ledger: event.ledgerSequence });
+  appLogger.debug(
+    { tradeId: event.tradeId, ledger: event.ledgerSequence },
+    "[EventHandler] DisputeResolved",
+  );
+  return () =>
+    scheduleWebhook(event.tradeId, TradeStatus.COMPLETED, {
+      ledger: event.ledgerSequence,
+    });
 }
 
-/** Dispatch a parsed event to the correct handler */
-export async function dispatchEvent(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
-  const handlers: Record<EventType, (t: Prisma.TransactionClient, e: ParsedEvent) => Promise<void>> = {
+/**
+ * Keep fee accounting in sync with the contract's live fee_bps
+ * (admin update_fee_bps / multisig UpdateFeeBps both emit FEEUPD).
+ */
+export async function handleFeeRateUpdated(
+  _tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
+  const newFeeBps = Number(event.data.new_fee_bps);
+  feeAccountingService.setFeeBps(newFeeBps);
+  appLogger.debug(
+    { newFeeBps, ledger: event.ledgerSequence },
+    "[EventHandler] FeeRateUpdated",
+  );
+  return () => {};
+}
+
+/** Dispatch a parsed event to the correct handler, returning a post-commit thunk. */
+export async function dispatchEvent(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
+  const handlers: Record<
+    EventType,
+    (t: Prisma.TransactionClient, e: ParsedEvent) => Promise<() => void>
+  > = {
     [EventType.TradeCreated]: handleTradeCreated,
     [EventType.TradeFunded]: handleTradeFunded,
     [EventType.TradeCancelled]: handleTradeCancelled,
@@ -219,7 +487,7 @@ export async function dispatchEvent(tx: Prisma.TransactionClient, event: ParsedE
     [EventType.DeadlineExtended]: handleNoop,
     [EventType.MediatorAdded]: handleNoop,
     [EventType.MediatorRemoved]: handleNoop,
-    [EventType.FeeRateUpdated]: handleNoop,
+    [EventType.FeeRateUpdated]: handleFeeRateUpdated,
     [EventType.FeesWithdrawn]: handleNoop,
     [EventType.PathPaymentInitiated]: handleNoop,
     [EventType.PathPaymentExecuted]: handleNoop,
@@ -229,13 +497,20 @@ export async function dispatchEvent(tx: Prisma.TransactionClient, event: ParsedE
 
   const handler = handlers[event.eventType];
   if (handler) {
-    await handler(tx, event);
-  } else {
-    appLogger.warn({ eventType: event.eventType }, "[EventHandler] Unknown event type");
+    return handler(tx, event);
   }
+
+  appLogger.warn(
+    { eventType: event.eventType },
+    "[EventHandler] Unknown event type",
+  );
+  return noop;
 }
 
-async function handleTradeCancelled(tx: Prisma.TransactionClient, event: ParsedEvent): Promise<void> {
+async function handleTradeCancelled(
+  tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
   await applyStatusTransition(tx, event, {
     tradeId: event.tradeId,
     buyerAddress: "",
@@ -243,9 +518,20 @@ async function handleTradeCancelled(tx: Prisma.TransactionClient, event: ParsedE
     status: TradeStatus.CANCELLED,
     version: 1,
   });
-  appLogger.debug({ tradeId: event.tradeId, ledger: event.ledgerSequence }, "[EventHandler] TradeCancelled");
+  appLogger.debug(
+    { tradeId: event.tradeId, ledger: event.ledgerSequence },
+    "[EventHandler] TradeCancelled",
+  );
+  return noop;
 }
 
-async function handleNoop(_tx: Prisma.TransactionClient, _event: ParsedEvent): Promise<void> {
-  // no-op handler for informational events that don't require state transitions
+function noop(): void {
+  // no-op for informational events that don't require state transitions or webhooks
+}
+
+async function handleNoop(
+  _tx: Prisma.TransactionClient,
+  _event: ParsedEvent,
+): Promise<() => void> {
+  return noop;
 }

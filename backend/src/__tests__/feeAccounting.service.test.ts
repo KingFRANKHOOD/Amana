@@ -1,4 +1,8 @@
-import { FeeAccountingService, FEE_RATE } from "../services/feeAccounting.service";
+import {
+  FeeAccountingService,
+  DEFAULT_FEE_BPS,
+  BPS_DIVISOR,
+} from "../services/feeAccounting.service";
 
 // ─── Mock Prisma ────────────────────────────────────────────────────────────────
 
@@ -43,12 +47,36 @@ describe("FeeAccountingService", () => {
           data: expect.objectContaining({
             tradeId: "trade-001",
             tradeAmountUsdc: "100.00",
-            feeUsdc: (100 * FEE_RATE).toFixed(6),
+            feeUsdc: ((100 * DEFAULT_FEE_BPS) / BPS_DIVISOR).toFixed(6),
             ledgerSequence: 42,
           }),
         }),
       );
       expect(result.tradeId).toBe("trade-001");
+    });
+
+    it("uses the live fee rate after setFeeBps (e.g. admin raises fee to 3%)", async () => {
+      const tx = makeMockTx();
+      tx.platformFeeEvent.findUnique.mockResolvedValue(null);
+      tx.platformFeeEvent.create.mockResolvedValue({ tradeId: "trade-300" });
+
+      const svc = new FeeAccountingService({} as any);
+      svc.setFeeBps(300);
+      await svc.recordFee(tx as any, "trade-300", "100.00");
+
+      expect(tx.platformFeeEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ feeUsdc: "3.000000" }),
+        }),
+      );
+    });
+
+    it("ignores out-of-range fee_bps updates", () => {
+      const svc = new FeeAccountingService({} as any, 100);
+      svc.setFeeBps(0);
+      svc.setFeeBps(501);
+      svc.setFeeBps(NaN);
+      expect(svc.getFeeBps()).toBe(100);
     });
 
     it("is idempotent — returns existing record without re-creating", async () => {

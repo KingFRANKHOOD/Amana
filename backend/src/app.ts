@@ -55,6 +55,7 @@ import { EventIndexerService } from "./services/event-indexer";
 import { env } from "./config/env";
 import { validateEnvironment } from "./config/envValidator";
 import { csrfProtection } from "./middleware/csrf.middleware";
+import { sanitizeRequestInput } from "./middleware/sanitize.middleware";
 import { requestTimeoutMiddleware } from "./middleware/request-timeout.middleware";
 
 // Fail fast at boot if required environment variables are missing
@@ -170,6 +171,11 @@ export function createApp(
   // Structured per-request logger: method, path, status, durationMs, correlationId, userId, userAgent, ip
   app.use(requestLoggerMiddleware);
 
+  // Normalize user-controlled input before controllers or Zod validators examine it.
+  // This protects request body/query/path/header values without touching auth tokens,
+  // signature verification data, or raw verification payloads.
+  app.use(sanitizeRequestInput());
+
   // Enhanced health check with deep introspection — not versioned (operational endpoint)
   app.use("/health", createHealthRouter());
   app.use("/health", createHealthDetailRouter());
@@ -180,58 +186,61 @@ export function createApp(
   // CSP violation report collection endpoint (helmet's reportUri above)
   app.use(createCspRouter());
 
-  const r = express.Router();
+  // Versioned API surface — all feature routes live under /api/v1
+  function buildApiRouter(): express.Router {
+    const router = express.Router();
 
-  // API version negotiation headers
-  r.use(apiVersionHeader);
-  r.use(deprecationHeaders);
+    router.use(apiVersionHeader);
+    router.use(deprecationHeaders);
 
-  r.use("/auth", authRoutes);
-  r.use("/wallet", walletRoutes);
-  r.use("/trades", createTradeRouter(deps));
-  r.use("/trades", createTradeTemplateRouter());
-  r.use("/trades", createTradeWatchlistRouter());
-  r.use("/trades", createTradeEvidenceRouter());
-  r.use("/trades", createTradeExportRouter());
-  r.use("/trades", createTradeNotesRouter());
-  r.use("/trades", createTradeEventsRouter());
-  r.use("/trades/:id/manifest", createTradeManifestRouter());
-  // NOTE: createManifestRouter() previously shared the exact same mount path as
-  // createTradeManifestRouter() above, so its GET/POST "/" handlers were fully
-  // shadowed and unreachable. It is now mounted on a distinct sub-path so its
-  // driverIdNumber-aware schema and buildSubmitManifestTx contract flow can run.
-  r.use("/trades/:id/manifest/submit", createManifestRouter());
-  r.use("/escrow", createEscrowReleaseRouter());
-  r.use("/escrow", createEscrowScheduleRouter());
-  r.use("/evidence", createEvidenceRouter());
-  r.use("/audit-trail", createAuditTrailRouter());
-  r.use("/goals", createGoalsRouter());
-  r.use("/notifications", createNotificationPreferencesRouter());
-  r.use("/notifications", createNotificationsRouter());
-  r.use("/disputes", disputeRoutes);
-  r.use("/dispute-categories", disputeCategoryRoutes);
-  r.use("/treasury", createTreasuryRouter());
-  r.use("/fees", createFeeAccountingRouter());
-  r.use("/users", userRoutes);
-  r.use("/reputation", reputationRoutes);
-  r.use("/stellar/fees", stellarFeesRoutes);
-  r.use("/stellar/tx", stellarTxStatusRoutes);
-  r.use("/stellar/assets", stellarAssetRoutes);
-  r.use("/stellar/accounts", stellarAccountBalanceRoutes);
-  r.use("/stellar/accounts", stellarAccountCreateRoutes);
-  r.use("/contracts", createContractStateRouter());
-  r.use("/admin/features", createAdminFeaturesRouter());
-  r.use("/admin/evidence-verification", createAdminEvidenceVerificationRouter());
-  r.use("/admin/retention", createAdminRetentionRouter());
-  r.use("/admin/webhooks", createAdminWebhooksRouter());
-  r.use("/audit-logs", createAuditLogRouter());
-  r.use("/trust-score", createTrustScoreRouter());
-  r.use("/webhooks", webhooksRoutes);
-  r.use("/events", createEventRouter());
+    router.use("/auth", authRoutes);
+    router.use("/wallet", walletRoutes);
+    router.use("/trades", createTradeRouter());
+    router.use("/trade-templates", createTradeTemplateRouter());
+    router.use("/trade-watchlists", createTradeWatchlistRouter());
+    router.use("/trade-evidence", createTradeEvidenceRouter());
+    router.use("/trade-exports", createTradeExportRouter());
+    router.use("/escrow-releases", createEscrowReleaseRouter());
+    router.use("/escrow-schedules", createEscrowScheduleRouter());
+    router.use("/trade-manifests", createTradeManifestRouter());
+    router.use("/manifests", createManifestRouter());
+    router.use("/trade-notes", createTradeNotesRouter());
+    router.use("/evidence", createEvidenceRouter());
+    router.use("/audit-trail", createAuditTrailRouter());
+    router.use("/goals", createGoalsRouter());
+    router.use("/notifications/preferences", createNotificationPreferencesRouter());
+    router.use("/notifications", createNotificationsRouter());
+    router.use("/disputes", disputeRoutes);
+    router.use("/dispute-categories", disputeCategoryRoutes);
+    router.use("/treasury", createTreasuryRouter());
+    router.use("/fees", createFeeAccountingRouter());
+    router.use("/users", userRoutes);
+    router.use("/reputation", reputationRoutes);
+    router.use("/stellar/fees", stellarFeesRoutes);
+    router.use("/stellar/tx-status", stellarTxStatusRoutes);
+    router.use("/stellar/assets", stellarAssetRoutes);
+    router.use("/stellar/account-balance", stellarAccountBalanceRoutes);
+    router.use("/stellar/account-create", stellarAccountCreateRoutes);
+    router.use("/contract-state", createContractStateRouter());
+    router.use("/admin/features", createAdminFeaturesRouter());
+    router.use("/admin/evidence-verification", createAdminEvidenceVerificationRouter());
+    router.use("/admin/retention", createAdminRetentionRouter());
+    router.use("/admin/webhooks", createAdminWebhooksRouter());
+    router.use("/audit-logs", createAuditLogRouter());
+    router.use("/trust-score", createTrustScoreRouter());
+    router.use("/webhooks", webhooksRoutes);
+    router.use("/events", createEventRouter());
+    router.use("/trade-events", createTradeEventsRouter());
 
-  app.use("/api/v1", r);
+    return router;
+  }
 
+  app.use("/api/v1", buildApiRouter());
+
+  // Error handler must be registered last
   app.use(errorHandler);
 
   return app;
 }
+
+export default createApp;

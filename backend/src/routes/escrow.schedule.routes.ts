@@ -10,16 +10,37 @@ const scheduleParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+// Reject zero-equivalent values ("0", "00.0") and cap digit length to avoid
+// precision/DoS via arbitrarily long digit strings. At least one non-zero
+// digit is required, and the integer part is limited to 12 digits.
+const amountUsdcSchema = z
+  .string()
+  .regex(/^(?=.*[1-9])\d{1,12}(\.\d{1,7})?$/, "Invalid USDC amount");
+
 const milestoneSchema = z.object({
   milestoneIndex: z.coerce.number().int().min(0),
-  amountUsdc: z.string().regex(/^\d+(\.\d{1,7})?$/, "Invalid USDC amount"),
+  amountUsdc: amountUsdcSchema,
   dueAt: z.string().datetime({ message: "Invalid ISO date for dueAt" }),
   conditionHash: z.string().max(64).optional(),
 });
 
-const createScheduleBodySchema = z.object({
-  milestones: z.array(milestoneSchema).min(1).max(100),
-});
+const createScheduleBodySchema = z
+  .object({
+    milestones: z.array(milestoneSchema).min(1).max(100),
+  })
+  .superRefine((value, ctx) => {
+    const seen = new Set<number>();
+    value.milestones.forEach((milestone, index) => {
+      if (seen.has(milestone.milestoneIndex)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["milestones", index, "milestoneIndex"],
+          message: `Duplicate milestoneIndex: ${milestone.milestoneIndex}`,
+        });
+      }
+      seen.add(milestone.milestoneIndex);
+    });
+  });
 
 type SchedulePrisma = PrismaClient & {
   escrowReleaseMilestone?: {
@@ -53,11 +74,13 @@ function isBuyerOrSeller(trade: { buyerAddress: string; sellerAddress: string },
   );
 }
 
-function isMediator(trade: { mediatorAddress?: string | null }, walletAddress: string): boolean {
-  return (
-    typeof trade.mediatorAddress === "string" &&
-    trade.mediatorAddress.toLowerCase() === walletAddress.toLowerCase()
-  );
+function isParty(
+  trade: { buyerAddress: string; sellerAddress: string; mediatorAddress?: string | null },
+  walletAddress: string,
+): boolean {
+  if (isBuyerOrSeller(trade, walletAddress)) return true;
+  const mediator = trade.mediatorAddress?.trim();
+  return !!mediator && mediator.toLowerCase() === walletAddress.toLowerCase();
 }
 
 function tradeWhere(id: string) {
@@ -67,6 +90,16 @@ function tradeWhere(id: string) {
     orConditions.push({ id: numericId });
   }
   return { OR: orConditions };
+}
+
+// Compare USDC amounts as scaled integers to avoid floating point drift.
+const USDC_DECIMALS = 7;
+const USDC_SCALE = 10n ** BigInt(USDC_DECIMALS);
+
+function toScaledAmount(amount: string): bigint {
+  const [whole, fraction = ""] = amount.split(".");
+  const paddedFraction = (fraction + "0".repeat(USDC_DECIMALS)).slice(0, USDC_DECIMALS);
+  return BigInt(whole) * USDC_SCALE + BigInt(paddedFraction || "0");
 }
 
 export function createEscrowScheduleRouter(
@@ -110,24 +143,46 @@ export function createEscrowScheduleRouter(
           return;
         }
 
-        await prisma.escrowReleaseMilestone.deleteMany({
-          where: { tradeId: trade.tradeId },
-        });
-
-        const created: any[] = [];
-        for (let i = 0; i < milestones.length; i++) {
-          const m = milestones[i]!;
-          const record = await prisma.escrowReleaseMilestone.create({
-            data: {
-              tradeId: trade.tradeId,
-              milestoneIndex: m.milestoneIndex,
-              amountUsdc: m.amountUsdc,
-              dueAt: new Date(m.dueAt),
-              conditionHash: m.conditionHash ?? null,
-            },
-          });
-          created.push(record);
+        const tradeAmount = (trade as { amountUsdc?: string | null }).amountUsdc;
+        if (tradeAmount) {
+          const milestoneTotal = milestones.reduce(
+            (sum, m) => sum + toScaledAmount(m.amountUsdc),
+            0n,
+          );
+          if (milestoneTotal !== toScaledAmount(tradeAmount)) {
+            res.status(400).json({
+              error: "Milestone amounts must sum to the trade amount",
+            });
+            return;
+          }
         }
+
+        const created = await prisma.$transaction(async (tx) => {
+          const txMilestone = (tx as SchedulePrisma).escrowReleaseMilestone;
+          if (!txMilestone) {
+            throw new Error("Release schedule store unavailable");
+          }
+
+          await txMilestone.deleteMany({
+            where: { tradeId: trade.tradeId },
+          });
+
+          const records: any[] = [];
+          for (let i = 0; i < milestones.length; i++) {
+            const m = milestones[i]!;
+            const record = await txMilestone.create({
+              data: {
+                tradeId: trade.tradeId,
+                milestoneIndex: m.milestoneIndex,
+                amountUsdc: m.amountUsdc,
+                dueAt: new Date(m.dueAt),
+                conditionHash: m.conditionHash ?? null,
+              },
+            });
+            records.push(record);
+          }
+          return records;
+        });
 
         const now = new Date();
         const nextMilestone = created.find((m) => m.dueAt > now);
@@ -168,7 +223,7 @@ export function createEscrowScheduleRouter(
           return;
         }
 
-        if (!isBuyerOrSeller(trade, walletAddress) && !isMediator(trade, walletAddress)) {
+        if (!isParty(trade, walletAddress)) {
           res.status(403).json({ error: "Only the buyer, seller, or mediator may view the release schedule" });
           return;
         }
