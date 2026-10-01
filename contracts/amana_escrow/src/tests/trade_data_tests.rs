@@ -16,7 +16,7 @@ mod trade_data_tests {
             .address();
         token::StellarAssetClient::new(env, &token_id).mint(&buyer, &amount);
         EscrowContractClient::new(env, &contract_id)
-            .initialize(&admin, &token_id, &treasury, &100u32, &token_id);
+            .initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token_id, &treasury, &100u32, &token_id);
         (contract_id, token_id, buyer, seller, treasury)
     }
 

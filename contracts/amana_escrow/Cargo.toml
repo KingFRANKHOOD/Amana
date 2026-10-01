@@ -70,3 +70,7 @@ path = "tests/state_machine_fuzz_tests.rs"
 [[test]]
 name = "storage_struct_golden_tests"
 path = "tests/storage_struct_golden_tests.rs"
+
+[[test]]
+name = "security_fixes_tests"
+path = "tests/security_fixes_tests.rs"

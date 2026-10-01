@@ -164,4 +164,50 @@ describe("EventIndexerService", () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.tradeId).toBeNull();
   });
+
+  it("reprocesses the boundary ledger after a crash between fetch and commit without duplicating events", async () => {
+    const records: Array<Record<string, unknown>> = [];
+    const prisma = {
+      indexedEvent: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          if (records.some((record) => record.eventId === data.eventId)) {
+            throw makeUniqueError();
+          }
+          const record = { id: records.length + 1, ingestedAt: new Date(), ...data };
+          records.push(record);
+          return record;
+        }),
+      },
+    };
+    const emitted = jest.fn();
+    eventIndexerEmitter.on("event", emitted);
+
+    // First run: the boundary ledger's event is fetched but the process crashes
+    // before the commit completes, so nothing is persisted.
+    const boundaryEvent = makeRawEvent("evt-boundary");
+    const crashingPrisma = {
+      indexedEvent: {
+        create: jest.fn().mockRejectedValue(new Error("crash before commit")),
+      },
+    };
+    const crashingService = new EventIndexerService(crashingPrisma as any);
+    await expect(crashingService.ingestEvent(boundaryEvent as any)).rejects.toThrow(
+      "crash before commit",
+    );
+    expect(records).toHaveLength(0);
+
+    // Restart: the indexer resumes from lastIngestedLedger (not +1), so the
+    // boundary ledger is re-fetched and reprocessed idempotently.
+    const restartedService = new EventIndexerService(prisma as any);
+    await restartedService.ingestEvent(boundaryEvent as any);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.eventId).toBe("evt-boundary");
+    expect(emitted).toHaveBeenCalledTimes(1);
+
+    // A second replay of the same boundary ledger must be deduped, not duplicated.
+    await restartedService.ingestEvent(boundaryEvent as any);
+    expect(records).toHaveLength(1);
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
 });

@@ -154,6 +154,35 @@ describe("TrustScoreService", () => {
       expect(result.breakdown.disputePenalty).toBeGreaterThan(0);
     });
 
+    it.each([DisputeStatus.RESOLVED, DisputeStatus.CLOSED])(
+      "does not label a %s dispute as lost without a recorded outcome (issue #1400)",
+      async (status) => {
+        mockPrisma.user.findUnique.mockResolvedValue({
+          walletAddress: "guser",
+          createdAt: new Date(Date.now() - 30 * 86400000),
+        });
+        setMockTrades([]);
+        setMockDisputes([
+          {
+            id: 1,
+            tradeId: "t1-dispute",
+            status,
+            initiator: "guser",
+            createdAt: new Date(),
+          },
+        ]);
+
+        const result = await service.calculateTrustScore("guser");
+        const disputeEvent = result.history.find((event) => event.id === "dispute-1");
+
+        expect(disputeEvent).toBeDefined();
+        expect(disputeEvent!.type).toBe("dispute_initiated");
+        expect(disputeEvent!.impact).toBe(-2);
+        expect(disputeEvent!.event).not.toMatch(/against you/);
+        expect(result.history.some((event) => event.type === "dispute_lost")).toBe(false);
+      },
+    );
+
     it("should return elite tier for high scores with custom config", async () => {
       const serviceHigh = new TrustScoreService(mockPrisma as any, {
         baseScore: 90,

@@ -75,7 +75,9 @@ async function applyStatusTransition(
   if (!existing) {
     // Only TradeCreated should legitimately create a new row.  All other
     // event types that reach here without a trade row indicate a gap in
-    // processing — fail loudly rather than inserting garbage.
+    // processing — fail loudly rather than inserting garbage. Throwing
+    // MissingTradeError lets the outbox layer defer (not dead-letter) the
+    // event until its TradeCreated predecessor succeeds (issue #1404).
     if (event.eventType !== EventType.TradeCreated) {
       throw new MissingTradeError(event.tradeId, event.eventType);
     }
@@ -105,12 +107,50 @@ async function applyStatusTransition(
     !validPredecessors ||
     !validPredecessors.includes(existing.status as TradeStatus)
   ) {
+    // Backfill path (issue #1404): a late-arriving TradeCreated must be able
+    // to repair a row that was created without real party addresses (legacy
+    // stub) instead of silently dropping. If the existing row is already
+    // CREATED but has empty buyer/seller, fill them from the creation event.
+    if (
+      event.eventType === EventType.TradeCreated &&
+      (existing as { buyerAddress?: string; sellerAddress?: string })
+        .buyerAddress === "" &&
+      (existing as { buyerAddress?: string; sellerAddress?: string })
+        .sellerAddress === ""
+    ) {
+      const buyerAddress = createPayload.buyerAddress?.trim() ?? "";
+      const sellerAddress = createPayload.sellerAddress?.trim() ?? "";
+      if (buyerAddress !== "" && sellerAddress !== "") {
+        const backfill = await tx.trade.updateMany({
+          where: {
+            tradeId: event.tradeId,
+            status: existing.status,
+            version: existing.version,
+          },
+          data: {
+            buyerAddress: buyerAddress.toLowerCase(),
+            sellerAddress: sellerAddress.toLowerCase(),
+            amountUsdc: createPayload.amountUsdc ?? "0",
+            updatedAt: new Date(),
+          },
+        });
+        if (backfill.count === 0) {
+          throw new Error("Concurrency conflict");
+        }
+      }
+    }
     return;
   }
 
   const newStatus = EVENT_TO_STATUS[event.eventType];
   if (!newStatus) return;
 
+  // TradeCreated arriving for a PENDING_SIGNATURE row carries the canonical
+  // on-chain party addresses — persist them along with the status transition
+  // so the off-chain row is never left with placeholder addresses.
+  const isTradeCreatedBackfill =
+    event.eventType === EventType.TradeCreated &&
+    (existing.status as TradeStatus) === TradeStatus.PENDING_SIGNATURE;
   const result = await tx.trade.updateMany({
     where: {
       tradeId: event.tradeId,
@@ -121,6 +161,13 @@ async function applyStatusTransition(
       status: newStatus,
       version: { increment: 1 },
       updatedAt: new Date(),
+      ...(isTradeCreatedBackfill
+        ? {
+            buyerAddress: createPayload.buyerAddress.toLowerCase(),
+            sellerAddress: createPayload.sellerAddress.toLowerCase(),
+            amountUsdc: createPayload.amountUsdc ?? "0",
+          }
+        : {}),
     },
   });
 
@@ -296,7 +343,7 @@ export async function handleFundsReleased(
     version: 1,
   });
 
-  // Record the 1% platform fee for this completed trade
+  // Record the platform fee (current on-chain fee_bps) for this completed trade
   const amountUsdc =
     event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
   await feeAccountingService.recordFee(
@@ -370,7 +417,7 @@ export async function handleDisputeResolved(
     version: 1,
   });
 
-  // Record the 1% platform fee for dispute-resolved (completed) trades
+  // Record the platform fee (current on-chain fee_bps) for dispute-resolved trades
   const amountUsdc =
     event.data.amount_usdc != null ? String(event.data.amount_usdc) : "0";
   await feeAccountingService.recordFee(
@@ -399,6 +446,23 @@ export async function handleDisputeResolved(
     });
 }
 
+/**
+ * Keep fee accounting in sync with the contract's live fee_bps
+ * (admin update_fee_bps / multisig UpdateFeeBps both emit FEEUPD).
+ */
+export async function handleFeeRateUpdated(
+  _tx: Prisma.TransactionClient,
+  event: ParsedEvent,
+): Promise<() => void> {
+  const newFeeBps = Number(event.data.new_fee_bps);
+  feeAccountingService.setFeeBps(newFeeBps);
+  appLogger.debug(
+    { newFeeBps, ledger: event.ledgerSequence },
+    "[EventHandler] FeeRateUpdated",
+  );
+  return () => {};
+}
+
 /** Dispatch a parsed event to the correct handler, returning a post-commit thunk. */
 export async function dispatchEvent(
   tx: Prisma.TransactionClient,
@@ -423,7 +487,7 @@ export async function dispatchEvent(
     [EventType.DeadlineExtended]: handleNoop,
     [EventType.MediatorAdded]: handleNoop,
     [EventType.MediatorRemoved]: handleNoop,
-    [EventType.FeeRateUpdated]: handleNoop,
+    [EventType.FeeRateUpdated]: handleFeeRateUpdated,
     [EventType.FeesWithdrawn]: handleNoop,
     [EventType.PathPaymentInitiated]: handleNoop,
     [EventType.PathPaymentExecuted]: handleNoop,

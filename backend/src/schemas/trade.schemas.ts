@@ -38,11 +38,33 @@ function numericQueryParam(
   }, schema);
 }
 
+/**
+ * Maximum number of integer digits allowed for a USDC amount. USDC has 7
+ * decimal places; capping the integer part keeps amounts within a sane range
+ * and prevents precision/DoS issues from arbitrarily long digit strings.
+ */
+const MAX_AMOUNT_INTEGER_DIGITS = 12;
+
+/**
+ * Shared USDC amount validator. Rejects zero-equivalent values (`0`, `00.0`,
+ * `0.0000000`) and over-long digit strings at the schema level, so
+ * schema-only routes (e.g. milestone schedule POST) cannot admit them.
+ */
+export const amountUsdcSchema = z
+  .string()
+  .regex(
+    new RegExp(`^(?=.*[1-9])\\d{1,${MAX_AMOUNT_INTEGER_DIGITS}}(\\.\\d{1,7})?$`),
+    "Invalid amount format",
+  )
+  .refine((v: string) => Number(v) > 0, {
+    message: "Amount must be positive",
+  });
+
 export const createTradeSchema = z.object({
   buyerAddress: stellarPublicKey("buyerAddress").optional(),
   sellerAddress: stellarPublicKey("sellerAddress"),
   amountUsdc: z.union([
-    z.string().regex(/^\d+(\.\d{1,7})?$/, "Invalid amount format"),
+    amountUsdcSchema,
     z.number().positive("Amount must be positive").transform(String),
   ]),
   buyerLossBps: z.number().int().min(0, "buyerLossBps must be >= 0").max(10000, "buyerLossBps must be <= 10000").default(5000),

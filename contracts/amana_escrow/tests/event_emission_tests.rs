@@ -37,7 +37,7 @@ fn setup(
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
     token::StellarAssetClient::new(env, &usdc_id).mint(&buyer, &amount);
-    client.initialize(&admin, &usdc_id, &treasury, &fee_bps, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
     (contract_id, usdc_id, buyer, seller, treasury, mediator)
 }
 
@@ -103,7 +103,7 @@ fn test_event_trade_created_payload() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
 
@@ -136,7 +136,7 @@ fn test_event_trade_funded_payload() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -170,7 +170,7 @@ fn test_event_funds_released_payload_integrity() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -214,7 +214,7 @@ fn test_event_dispute_initiated_payload() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -242,7 +242,7 @@ fn test_event_mediator_added_payload() {
     let usdc_id = env
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     client.add_mediator(&mediator);
 
@@ -267,7 +267,7 @@ fn test_event_mediator_removed_payload() {
     let usdc_id = env
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
     client.add_mediator(&mediator);
 
     client.remove_mediator(&mediator);
@@ -294,7 +294,7 @@ fn test_full_lifecycle_event_sequence() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     client.add_mediator(&mediator);
     assert_last_topic(&env, symbol_short!("MEDADD").into_val(&env));
@@ -332,7 +332,7 @@ fn test_dispute_lifecycle_event_sequence() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -348,6 +348,17 @@ fn test_dispute_lifecycle_event_sequence() {
         &String::from_str(&env, "Delivery discrepancy"),
     );
     assert_last_topic(&env, symbol_short!("EVDSUB").into_val(&env));
+
+    let evidence_data = last_event_data(&env);
+    assert_eq!(evidence_data.len(), 4);
+    assert!(matches!(
+        &evidence_data[3],
+        ScVal::Bytes(Some(legacy_hash)) if legacy_hash.to_vec() == b"QmEvidence"
+    ));
+    assert_eq!(
+        client.get_evidence(&trade_id, &buyer),
+        Some(String::from_str(&env, "QmEvidence")),
+    );
 
     client.resolve_dispute(&trade_id, &mediator, &5_000_u32);
     assert_last_topic(&env, symbol_short!("DISRES").into_val(&env));
@@ -372,7 +383,7 @@ fn test_event_video_proof_submitted_payload() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -401,7 +412,7 @@ fn test_event_video_proof_submitted_has_timestamp() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -431,7 +442,7 @@ fn test_event_manifest_submitted_payload() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -465,7 +476,7 @@ fn test_event_manifest_submitted_has_timestamp() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -500,7 +511,7 @@ fn test_event_trade_cancelled_payload() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.cancel_trade(&trade_id, &buyer);
@@ -527,7 +538,7 @@ fn test_event_trade_cancelled_has_timestamp() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.cancel_trade(&trade_id, &buyer);
@@ -554,7 +565,7 @@ fn test_event_initialized_payload() {
     let usdc_id = env
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     // The InitializedEvent uses multi-topic ["amana", "initialized"], so we check
     // that the last event was our initialize call and has the right field count.
@@ -577,7 +588,7 @@ fn test_event_initialized_has_timestamp() {
     let usdc_id = env
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let data = last_event_data(&env);
     // timestamp is the last field (index 2)
@@ -603,7 +614,7 @@ fn test_event_confirm_delivery_has_timestamp() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -636,7 +647,7 @@ fn test_event_execute_cancellation_via_refund_has_timestamp() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32, &None);
     client.deposit(&trade_id);
@@ -669,7 +680,7 @@ fn test_no_event_on_invalid_create() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10_000);
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+    client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
 
     // Attempt a create_trade with 0 amount should fail
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

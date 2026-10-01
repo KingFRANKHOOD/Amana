@@ -21,7 +21,7 @@ mod local_deployment_tests {
         let treasury = Address::generate(&env);
 
         // Should not panic — contract accepts any token address
-        client.initialize(&admin, &test_token, &treasury, &100_u32, &test_token);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &test_token, &treasury, &100_u32, &test_token);
 
         // Verify initialization succeeded
         let stored_token = client.get_token_contract();
@@ -44,7 +44,7 @@ mod local_deployment_tests {
         let treasury = Address::generate(&env);
 
         // Initialize with token1 as both cngn_contract and source_token
-        client.initialize(&admin, &token1, &treasury, &100_u32, &token2);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token1, &treasury, &100_u32, &token2);
 
         // Verify both storage keys are accessible
         let cngn_token = client.get_token_contract();
@@ -70,10 +70,10 @@ mod local_deployment_tests {
         let treasury = Address::generate(&env);
 
         // First initialization should succeed
-        client.initialize(&admin, &token, &treasury, &100_u32, &token);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &100_u32, &token);
 
         // Second initialization should panic
-        client.initialize(&admin, &token, &treasury, &100_u32, &token);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &100_u32, &token);
     }
 
     /// Test that admin authorization is enforced during initialization
@@ -92,13 +92,13 @@ mod local_deployment_tests {
         let treasury = Address::generate(&env);
 
         // Should panic because admin auth is not mocked
-        client.initialize(&admin, &token, &treasury, &100_u32, &token);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &100_u32, &token);
     }
 
     /// Test that fee_bps validation works correctly for local deployments
     /// (prevents invalid configurations).
     #[test]
-    #[should_panic(expected = "fee_bps must not exceed 10000")]
+    #[should_panic(expected = "fee_bps out of range")]
     fn test_initialize_rejects_invalid_fee_bps() {
         let env = Env::default();
         env.mock_all_auths();
@@ -111,7 +111,7 @@ mod local_deployment_tests {
         let treasury = Address::generate(&env);
 
         // Should panic — fee_bps > 10000 is invalid
-        client.initialize(&admin, &token, &treasury, &10_001_u32, &token);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &(amana_escrow::MAX_FEE_BPS + 1), &token);
     }
 
     /// Test that contract state persists correctly after initialization
@@ -129,7 +129,7 @@ mod local_deployment_tests {
         let treasury = Address::generate(&env);
         let fee_bps = 250_u32;
 
-        client.initialize(&admin, &token, &treasury, &fee_bps, &token);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &fee_bps, &token);
 
         // Verify all state is correctly stored
         assert_eq!(client.get_admin(), admin);
@@ -138,9 +138,10 @@ mod local_deployment_tests {
         assert_eq!(client.get_fee_bps(), fee_bps);
     }
 
-    /// Test that contract can be deployed with zero fee (edge case for local testing)
+    /// Test that initialization rejects a fee below the documented minimum.
     #[test]
-    fn test_initialize_with_zero_fee_bps() {
+    #[should_panic(expected = "fee_bps out of range")]
+    fn test_initialize_rejects_zero_fee_bps() {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -151,13 +152,34 @@ mod local_deployment_tests {
         let token = Address::generate(&env);
         let treasury = Address::generate(&env);
 
-        // Should succeed — zero fee is valid for testing
-        client.initialize(&admin, &token, &treasury, &0_u32, &token);
-
-        assert_eq!(client.get_fee_bps(), 0);
+        // Zero is below MIN_FEE_BPS and must be rejected.
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &0_u32, &token);
     }
 
-    /// Test that contract can be deployed with maximum fee (10000 bps = 100%)
+    #[test]
+    fn test_initialize_accepts_minimum_fee_bps() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(amana_escrow::EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let treasury = Address::generate(&env);
+
+        client.initialize(
+            &soroban_sdk::Vec::from_array(&env, [admin.clone()]),
+            &1_u32,
+            &token,
+            &treasury,
+            &amana_escrow::MIN_FEE_BPS,
+            &token,
+        );
+
+        assert_eq!(client.get_fee_bps(), amana_escrow::MIN_FEE_BPS);
+    }
+
+    /// Test that contract can be deployed with the maximum configured fee.
     #[test]
     fn test_initialize_with_max_fee_bps() {
         let env = Env::default();
@@ -170,9 +192,9 @@ mod local_deployment_tests {
         let token = Address::generate(&env);
         let treasury = Address::generate(&env);
 
-        // Should succeed — 10000 bps is the maximum allowed
-        client.initialize(&admin, &token, &treasury, &10_000_u32, &token);
+        // Should succeed — MAX_FEE_BPS is the maximum allowed.
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token, &treasury, &amana_escrow::MAX_FEE_BPS, &token);
 
-        assert_eq!(client.get_fee_bps(), 10_000);
+        assert_eq!(client.get_fee_bps(), amana_escrow::MAX_FEE_BPS);
     }
 }
