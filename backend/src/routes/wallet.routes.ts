@@ -31,7 +31,13 @@ const pathPaymentQuoteQuerySchema = z.object({
     .string()
     .regex(/^G[A-Z0-9]{55}$/, "sourceAssetIssuer must be a valid Stellar public key")
     .optional(),
-});
+}).refine(
+  (q) => q.sourceAsset === "XLM" || q.sourceAsset === "native" || !!q.sourceAssetIssuer,
+  {
+    message: "sourceAssetIssuer is required for non-native source assets",
+    path: ["sourceAssetIssuer"],
+  },
+);
 
 walletRoutes.get("/balance", authMiddleware, async (req: any, res) => {
   try {
@@ -66,7 +72,7 @@ walletRoutes.get(
       const quotes = await pathPaymentService.getPathPaymentQuote(
         sourceAmount,
         sourceAsset,
-        sourceAssetIssuer as string
+        sourceAssetIssuer
       );
       res.json({ routes: quotes });
     } catch (error: any) {

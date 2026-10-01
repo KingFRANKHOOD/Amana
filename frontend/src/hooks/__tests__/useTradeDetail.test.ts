@@ -1,5 +1,7 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useTradeDetail } from "../useTradeDetail";
+import { POLLING_STATUSES, useTradeDetail } from "../useTradeDetail";
 import { useAuth } from "../useAuth";
 import { api, ApiError } from "@/lib/api";
 
@@ -116,7 +118,20 @@ describe("useTradeDetail", () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
-  it.each(["FUNDED", "IN_TRANSIT"])(
+  it("only uses polling statuses that exist in the backend TradeStatus enum", () => {
+    const schema = readFileSync(
+      join(__dirname, "..", "..", "..", "..", "backend", "prisma", "schema.prisma"),
+      "utf8",
+    );
+    const body = schema.match(/enum TradeStatus\s*\{([^}]*)\}/);
+    expect(body).not.toBeNull();
+    const backendStatuses = new Set(body![1].split(/\s+/).filter(Boolean));
+    for (const status of POLLING_STATUSES) {
+      expect(backendStatuses).toContain(status);
+    }
+  });
+
+  it.each(["FUNDED", "DELIVERED"])(
     "polls every 10 seconds while the trade is in %s status",
     async (status) => {
       jest.useFakeTimers({ doNotFake: ["queueMicrotask"] });

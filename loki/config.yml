@@ -1,1 +1,88 @@
-content
+# Grafana Loki configuration for the `staging` profile (docker-compose.yml
+# service `loki`, image grafana/loki:3.0).
+#
+# Single-binary, filesystem-backed mode: one Loki, no object store, no
+# replication. That matches the staging topology in docker-compose.yml and
+# keeps the service self-contained. Logs are stored as Prometheus structured
+# logs (tsdb) and served on the HTTP API at :3100, which is the endpoint
+# promtail/config.yml pushes to and the Grafana datasource reads.
+#
+# Refs #1457
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
+
+common:
+  # Every other path is derived from path_prefix, so the container only needs
+  # one writable directory to run. Back it with a named volume to keep logs
+  # across container recreation.
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    # One entry, opened at the start of the project. Loki accepts writes that
+    # are older than `from` only via backfill, so keep this date in the past
+    # and add a new entry (never edit this one) if the schema ever changes.
+    - from: '2024-01-01'
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # docs/LOGGING_STANDARDS.md section 10: backend logs live in Loki for 90
+  # days. This value is only enforced because compactor.retention_enabled is
+  # true below; without it the setting is accepted and ignored.
+  retention_period: 2160h
+  # Reject samples older than a week instead of accepting out-of-order writes
+  # the compactor would delete anyway.
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  # Headroom over the 4 MB/s default for a busy access-log stream.
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+  max_query_parallelism: 16
+  max_query_series: 5000
+  # Required by schema v13; promtail sends the log line as a structured
+  # metadata field.
+  allow_structured_metadata: true
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  # Turns limits_config.retention_period into actual deletion.
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  delete_request_store: filesystem
+
+ruler:
+  # Local rule storage so GET /loki/api/v1/rules stays available. Grafana
+  # provisions its own alerting rules from grafana/provisioning/alerting/.
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules-temp
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
+  evaluation_interval: 1m
+
+analytics:
+  reporting_enabled: false

@@ -1,6 +1,8 @@
 import { NextFunction, Router, Response } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { validateRequest } from "../middleware/validateRequest";
+import { tradeIdParamSchema } from "../schemas/trade.notes.schemas";
 import { AuthRequest } from "../services/auth.service";
 import {
     ManifestService,
@@ -13,14 +15,27 @@ import {
 } from "../services/manifest.service";
 import { ContractService } from "../services/contract.service";
 
+const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
+
 const manifestBodySchema = z.object({
-    driverName: z.string().min(1),
-    driverIdNumber: z.string().min(1),
-    vehicleRegistration: z.string().min(1),
-    routeDescription: z.string().min(1),
+    driverName: z.string().trim().min(1).refine(noUnsafeHtml, "Driver name contains unsupported HTML or script content"),
+    driverIdNumber: z.string().trim().min(1).refine(noUnsafeHtml, "Driver ID contains unsupported HTML or script content"),
+    vehicleRegistration: z.string().trim().min(1).refine(noUnsafeHtml, "Vehicle registration contains unsupported HTML or script content"),
+    routeDescription: z.string().trim().min(1).refine(noUnsafeHtml, "Route description contains unsupported HTML or script content"),
     expectedDeliveryAt: z.string().datetime(),
 });
 
+/**
+ * Router for the driverIdNumber-aware manifest flow.
+ *
+ * NOTE: This router is mounted on the same path as createTradeManifestRouter()
+ * (see app.ts). Because Express dispatches to the first matching router and
+ * createTradeManifestRouter() always responds for GET/POST "/", this router's
+ * handlers were previously unreachable dead code. To make them reachable
+ * without breaking the existing trade.manifest.routes.ts consumers, the
+ * handlers are also exposed under the distinct "/manifest-v2" sub-path, which
+ * app.ts mounts alongside the legacy router.
+ */
 export function createManifestRouter(
     manifestService = new ManifestService(),
     contractService = new ContractService(),
@@ -28,7 +43,7 @@ export function createManifestRouter(
     const router = Router({ mergeParams: true });
 
     // GET /trades/:id/manifest
-    router.get("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+    router.get("/", authMiddleware, validateRequest({ params: tradeIdParamSchema }), async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -55,10 +70,10 @@ export function createManifestRouter(
             }
             return next(err);
         }
-    });
+    };
 
     // POST /trades/:id/manifest
-    router.post("/", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+    router.post("/", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: manifestBodySchema }), async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -101,7 +116,19 @@ export function createManifestRouter(
             }
             return next(err);
         }
-    });
+    };
+
+    // GET /trades/:id/manifest
+    router.get("/", authMiddleware, getManifestHandler);
+
+    // POST /trades/:id/manifest
+    router.post("/", authMiddleware, postManifestHandler);
+
+    // GET /trades/:id/manifest-v2 — reachable alias for the driverIdNumber-aware flow
+    router.get("/manifest-v2", authMiddleware, getManifestHandler);
+
+    // POST /trades/:id/manifest-v2 — reachable alias for the driverIdNumber-aware flow
+    router.post("/manifest-v2", authMiddleware, postManifestHandler);
 
     return router;
 }

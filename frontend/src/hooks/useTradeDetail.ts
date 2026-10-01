@@ -4,7 +4,10 @@ import { useAuth } from "./useAuth";
 import { useTradeStream } from "./useTradeStream";
 
 const POLL_INTERVAL_MS = 10_000;
-const POLLING_STATUSES = new Set(["FUNDED", "IN_TRANSIT"]);
+// Must be values of backend TradeStatus (backend/prisma/schema.prisma).
+// Non-terminal statuses awaiting a counterparty action; guarded by
+// __tests__/useTradeDetail.test.ts against schema drift.
+export const POLLING_STATUSES: ReadonlySet<string> = new Set(["FUNDED", "DELIVERED"]);
 
 interface UseTradeDetailResult {
   trade: TradeResponse | null;

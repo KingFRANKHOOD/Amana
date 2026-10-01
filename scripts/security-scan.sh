@@ -25,13 +25,13 @@ run_step() {
   echo ""
 }
 
-# npm audit — frontend
-run_step "frontend npm audit" \
-  sh -c "cd '$REPO_ROOT/frontend' && npm audit --audit-level=high"
+# pnpm audit — frontend
+run_step "frontend pnpm audit" \
+  sh -c "cd '$REPO_ROOT/frontend' && pnpm audit --audit-level=high"
 
-# npm audit — backend
-run_step "backend npm audit" \
-  sh -c "cd '$REPO_ROOT/backend' && npm audit --audit-level=high"
+# pnpm audit — backend
+run_step "backend pnpm audit" \
+  sh -c "cd '$REPO_ROOT/backend' && pnpm audit --audit-level=high"
 
 # cargo audit — contracts
 if command -v cargo-audit &>/dev/null || cargo audit --version &>/dev/null 2>&1; then

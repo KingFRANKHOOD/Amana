@@ -73,7 +73,7 @@ your working directory stable and uses the lockfile owned by each package.
 | Build the backend | `pnpm --dir backend build` |
 | Build the frontend | `pnpm --dir frontend build` |
 | Start the mobile app | `pnpm --dir mobile start` |
-| Test the routes service | `pnpm --dir routes-d test` |
+| Test the routes service (npm-managed, not in the pnpm workspace) | `cd routes-d && npm ci && npm test -- --coverage` |
 
 To pass additional arguments to a package script, insert `--` before them. For
 example, run one frontend test with
@@ -158,28 +158,42 @@ All contributions must include test coverage verifying the new behavior or bug f
 
 ## Bounties & Contributor Payments
 
-Amana runs its contributor bounties through the GitHub issue tracker. Each
-bounty issue states the reward and the payout asset up front, and payouts are
-settled on-chain to the contributor's Stellar address once the linked pull
-request is reviewed and merged.
+Amana runs contributor bounties through its GitHub issues. If you are
+considering picking up a bounty, here is how to verify that contributors are
+actually paid before you invest time.
 
-### Where to find payment proof
+### Where to find proof of payment
 
-We do not publish a separate list of transaction hashes in this document,
-because every payout is already publicly verifiable on-chain and traceable
-from the issue that funded it:
+We do not maintain a separate, hand-curated list of payouts in this document,
+because any such list would quickly go stale and could not be independently
+verified. Instead, all payout evidence lives in public, verifiable places:
 
-1. Open the bounty issue you are interested in and read its payout details.
-2. Follow the linked pull request and its merge commit to confirm the work was
-   accepted.
-3. Look up the payout transaction on a Stellar block explorer (for example
-   [stellar.expert](https://stellar.expert)) using the transaction hash or the
-   recipient address referenced in the issue or PR discussion.
+1. **Closed bounty issues.** Browse the repository's closed issues and look for
+   issues labelled as bounties. When a bounty is paid out, the maintainer
+   comments on the issue with the payout reference (for example, a Stellar
+   transaction hash or a link to the transaction on a block explorer) and then
+   closes the issue. The issue thread itself is the canonical record.
+2. **Merged pull requests.** Paid bounties are tied to merged PRs. Open the PR
+   that closed the bounty issue and read the linked issue thread for the payout
+   comment.
+3. **On-chain transactions.** Amana's escrow and payout flows settle on
+   Stellar/Soroban. Any transaction hash shared in an issue thread can be
+   independently verified on a public Stellar block explorer (for example,
+   [stellar.expert](https://stellar.expert)) by searching for the hash.
 
-If a specific bounty's payout history is unclear, ask directly on that issue
-and a maintainer will point you to the corresponding transaction. Please do
-not treat any hash, address, or link you cannot independently verify on-chain
-as proof of payment.
+### How to verify a payout yourself
+
+1. Find a closed bounty issue in this repository.
+2. Locate the maintainer's payout comment containing a transaction hash or
+   explorer link.
+3. Paste the transaction hash into a public Stellar block explorer and confirm
+   the transfer, amount, and destination address.
+
+If you cannot find a payout reference on a closed bounty issue, please ask on
+that issue thread — maintainers will point you to the corresponding
+transaction. We deliberately avoid publishing wallet addresses or payment
+records in this file so that the evidence always remains independently
+verifiable on-chain rather than taken on trust.
 
 ---
 

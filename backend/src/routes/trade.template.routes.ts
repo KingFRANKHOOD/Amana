@@ -11,6 +11,7 @@ import {
 import {
   createTradeTemplateSchema,
   templateIdParamSchema,
+  listTemplatesQuerySchema,
 } from "../schemas/trade.template.schemas";
 
 function caller(req: AuthRequest, res: Response): string | null {
@@ -22,7 +23,9 @@ function caller(req: AuthRequest, res: Response): string | null {
   return walletAddress;
 }
 
-export function createTradeTemplateRouter(prisma: PrismaClient = defaultPrisma) {
+export function createTradeTemplateRouter(
+  prisma: PrismaClient = defaultPrisma,
+) {
   const router = Router();
   const templates = new TradeTemplateService(prisma);
 
@@ -42,15 +45,33 @@ export function createTradeTemplateRouter(prisma: PrismaClient = defaultPrisma) 
     },
   );
 
-  router.get("/templates", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const userAddress = caller(req, res);
-    if (!userAddress) return;
-    try {
-      res.status(200).json({ templates: await templates.list(userAddress) });
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.get(
+    "/templates",
+    authMiddleware,
+    validateRequest({ query: listTemplatesQuerySchema }),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+      const userAddress = caller(req, res);
+      if (!userAddress) return;
+      try {
+        const { page, limit } = req.query as unknown as {
+          page: number;
+          limit: number;
+        };
+        const result = await templates.list(userAddress, page, limit);
+        res.status(200).json({
+          templates: result.templates,
+          pagination: {
+            page: result.page,
+            limit: result.limit,
+            total: result.total,
+            totalPages: Math.ceil(result.total / result.limit),
+          },
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post(
     "/from-template/:templateId",
