@@ -46,6 +46,28 @@ function caller(req: AuthRequest, res: Response): string | null {
   return walletAddress;
 }
 
+/**
+ * Returns true when the request explicitly targets the driverIdNumber-aware
+ * manifest contract flow (driverNameHash/driverIdHash + buildSubmitManifestTx).
+ * This lets the app mount both manifest routers on the same path without the
+ * trade manifest router shadowing this one for those requests.
+ */
+function wantsDriverIdManifest(req: AuthRequest): boolean {
+  const body = req.body as Record<string, unknown> | undefined;
+  if (body && typeof body === "object") {
+    if (typeof body.driverIdHash === "string" || typeof body.driverNameHash === "string") {
+      return true;
+    }
+  }
+  const query = req.query as Record<string, unknown> | undefined;
+  if (query && typeof query === "object") {
+    if (query.flow === "driverId" || query.flow === "driver-id") {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function createTradeManifestRouter(
   manifestService = new ManifestService(),
   contractService: ManifestContract = new ContractService(),
@@ -111,7 +133,7 @@ export function createTradeManifestRouter(
         tradeId,
         callerAddress: walletAddress,
         driverName: parsed.data.driverName,
-        driverIdNumber: parsed.data.phone,
+        driverIdNumber: parsed.data.driverIdNumber,
         vehicleRegistration: parsed.data.licensePlate,
         routeDescription,
         expectedDeliveryAt: parsed.data.estimatedDeliveryWindow.to,

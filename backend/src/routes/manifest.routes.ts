@@ -25,6 +25,17 @@ const manifestBodySchema = z.object({
     expectedDeliveryAt: z.string().datetime(),
 });
 
+/**
+ * Router for the driverIdNumber-aware manifest flow.
+ *
+ * NOTE: This router is mounted on the same path as createTradeManifestRouter()
+ * (see app.ts). Because Express dispatches to the first matching router and
+ * createTradeManifestRouter() always responds for GET/POST "/", this router's
+ * handlers were previously unreachable dead code. To make them reachable
+ * without breaking the existing trade.manifest.routes.ts consumers, the
+ * handlers are also exposed under the distinct "/manifest-v2" sub-path, which
+ * app.ts mounts alongside the legacy router.
+ */
 export function createManifestRouter(
     manifestService = new ManifestService(),
     contractService = new ContractService(),
@@ -59,7 +70,7 @@ export function createManifestRouter(
             }
             return next(err);
         }
-    });
+    };
 
     // POST /trades/:id/manifest
     router.post("/", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: manifestBodySchema }), async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -105,7 +116,19 @@ export function createManifestRouter(
             }
             return next(err);
         }
-    });
+    };
+
+    // GET /trades/:id/manifest
+    router.get("/", authMiddleware, getManifestHandler);
+
+    // POST /trades/:id/manifest
+    router.post("/", authMiddleware, postManifestHandler);
+
+    // GET /trades/:id/manifest-v2 — reachable alias for the driverIdNumber-aware flow
+    router.get("/manifest-v2", authMiddleware, getManifestHandler);
+
+    // POST /trades/:id/manifest-v2 — reachable alias for the driverIdNumber-aware flow
+    router.post("/manifest-v2", authMiddleware, postManifestHandler);
 
     return router;
 }

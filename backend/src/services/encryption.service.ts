@@ -119,3 +119,10 @@ export class EncryptionService {
     return /^v\d+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/i.test(value);
   }
 }
+
+/**
+ * Stable key-derivation scope for webhook signing secrets. Webhook secrets
+ * are not associated with a trade, so a fixed scope keeps encrypt/decrypt
+ * symmetric across requests.
+ */
+export const WEBHOOK_SECRET_SCOPE = "webhook-secret";
