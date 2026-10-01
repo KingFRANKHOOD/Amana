@@ -15,17 +15,19 @@ The machine-readable spec lives at
 
 ## Base URL
 
-The backend listens on `PORT` (default `4000`), with all routes mounted at
-the root:
+The backend listens on `PORT` (default `4000`). Every API route is served
+twice: under the canonical versioned prefix, and unprefixed for backwards
+compatibility (those responses carry `Deprecation`/`Sunset` headers).
 
 ```
-http://localhost:4000/api/v1
+http://localhost:4000/api/v1   # canonical
+http://localhost:4000          # legacy, deprecated
 ```
 
-All paths in this guide are relative to the base URL above. The `/api/v1`
-prefix is the canonical path. The legacy unprefixed paths (e.g. `/trades`)
-are deprecated and will be removed after the sunset date (see response
-headers).
+Paths in this guide are written without the prefix. Two exceptions matter:
+operational endpoints (`/health*`, `/metrics-info`) are only mounted
+unversioned, and the browser CSP report collector is only mounted versioned at
+`POST /api/v1/csp-violation`.
 
 ## Authentication
 
@@ -125,7 +127,7 @@ List endpoints that support pagination (e.g. `GET /trades`) use `page` +
 | Parameter | Default | Notes |
 |---|---|---|
 | `page` | `1` | 1-indexed |
-| `limit` | `20` | Max `100` |
+| `limit` | `20` | Max `100`. `GET /trades/export` defaults to `50` |
 | `sort` | server default | Format `field:direction`, e.g. `createdAt:desc` |
 
 ```bash
@@ -133,9 +135,12 @@ curl 'http://localhost:4000/trades?status=FUNDED&page=2&limit=50&sort=createdAt:
   -b amana.cookies
 ```
 
-Responses return the page of items under `items` along with a `pagination`
-object containing `page`, `limit`, `total`, and `totalPages` for building
-proper pagination UI.
+Responses return the page of items under `items`. Endpoints that expose a total
+count (`GET /trades/watched`, `GET /trades/export`, `GET /disputes`) also return
+a `pagination` object with `page`, `limit`, `total`, and `totalPages`; the
+remaining list endpoints return the page of items only, so clients should keep
+requesting increasing `page` values until a page comes back shorter than
+`limit`.
 
 ## Idempotency
 
