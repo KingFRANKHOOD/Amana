@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma as defaultPrisma } from "../lib/db";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 import { validateRequest } from "../middleware/validateRequest";
+
+const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
 import {
   DisputeCategoryService,
   DisputeCategoryNotFoundError,
@@ -11,14 +13,14 @@ import {
 import { isMediatorAddress } from "../lib/accessControl";
 
 const createCategorySchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(100, "Name must be 100 characters or fewer"),
-  description: z.string().trim().max(1000, "Description must be 1000 characters or fewer").optional(),
+  name: z.string().trim().min(1, "Name is required").max(100, "Name must be 100 characters or fewer").refine(noUnsafeHtml, "Name contains unsupported HTML or script content"),
+  description: z.string().trim().max(1000, "Description must be 1000 characters or fewer").optional().refine((value) => value === undefined || noUnsafeHtml(value), "Description contains unsupported HTML or script content"),
   isActive: z.boolean().optional(),
 });
 
 const updateCategorySchema = z.object({
-  name: z.string().trim().min(1).max(100).optional(),
-  description: z.string().trim().max(1000).optional(),
+  name: z.string().trim().min(1).max(100).optional().refine((value) => value === undefined || noUnsafeHtml(value), "Name contains unsupported HTML or script content"),
+  description: z.string().trim().max(1000).optional().refine((value) => value === undefined || noUnsafeHtml(value), "Description contains unsupported HTML or script content"),
   isActive: z.boolean().optional(),
 });
 

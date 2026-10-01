@@ -88,7 +88,7 @@ describe("eventHandlers", () => {
   /* ---------- handleTradeCreated ---------------------------------- */
 
   describe("handleTradeCreated", () => {
-    it("creates trade when missing", async () => {
+    it("creates trade when missing (normalizes addresses to lowercase)", async () => {
       const event = makeParsedEvent(EventType.TradeCreated, {
         data: { buyer: "GA_BUYER", seller: "GA_SELLER", amount_usdc: 1000 },
       });
@@ -98,8 +98,8 @@ describe("eventHandlers", () => {
       expect(mockTx.trade.create).toHaveBeenCalledWith({
         data: {
           tradeId: "test-trade-001",
-          buyerAddress: "GA_BUYER",
-          sellerAddress: "GA_SELLER",
+          buyerAddress: "ga_buyer",
+          sellerAddress: "ga_seller",
           amountUsdc: "1000",
           status: TradeStatus.CREATED,
           version: 1,
@@ -130,20 +130,13 @@ describe("eventHandlers", () => {
       });
     });
 
-    it("defaults buyer/seller to empty string when absent", async () => {
+    it("rejects missing buyer/seller with InvalidPartyAddressError (no empty-string rows)", async () => {
       const event = makeParsedEvent(EventType.TradeCreated, { data: {} });
 
-      await handleTradeCreated(mockTx, event);
-
-      expect(mockTx.trade.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            buyerAddress: "",
-            sellerAddress: "",
-            amountUsdc: "0",
-          }),
-        }),
+      await expect(handleTradeCreated(mockTx, event)).rejects.toThrow(
+        "buyerAddress is missing or empty",
       );
+      expect(mockTx.trade.create).not.toHaveBeenCalled();
     });
   });
 
@@ -286,14 +279,19 @@ describe("eventHandlers", () => {
               : {},
         });
 
-        await dispatchEvent(tx, event);
-
-        if (status !== null) {
-          // For events that map to a status, a missing trade should be created
+        if (eventType === EventType.TradeCreated) {
+          await dispatchEvent(tx, event);
+          // Only TradeCreated may create a missing trade row.
           expect(tx.trade.create).toHaveBeenCalled();
+        } else if (status !== null) {
+          // Non-creation status events with no existing row must fail loudly
+          // (MissingTradeError) rather than inserting stub rows (issue #1404).
+          await expect(dispatchEvent(tx, event)).rejects.toThrow();
+          expect(tx.trade.create).not.toHaveBeenCalled();
         } else {
           // No-op events should not touch trade table when no existing trade
           // (they are informational and handled by handleNoop)
+          await dispatchEvent(tx, event);
           expect(tx.trade.create).not.toHaveBeenCalled();
         }
       }

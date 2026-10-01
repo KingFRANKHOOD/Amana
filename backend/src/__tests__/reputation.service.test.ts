@@ -126,8 +126,29 @@ describe("ReputationService", () => {
 
       const result = await service.getUserReputation("guser");
 
-      expect(result.trustScore).toBe(38);
+      // Only the initiation penalty applies: a RESOLVED status carries no outcome.
+      expect(result.trustScore).toBe(46);
       expect(result.disputedTrades).toBe(0);
+    });
+
+    it("does not treat a resolved dispute as lost (issue #1400)", async () => {
+      setMockTrades([]);
+      setMockDisputes([
+        {
+          id: 1,
+          tradeId: "trade-001",
+          status: "RESOLVED",
+          initiator: "guser",
+          createdAt: new Date("2025-01-10"),
+        },
+      ]);
+
+      const result = await service.getUserReputation("guser");
+
+      expect(result.trustScore).toBe(48);
+      expect(result.history).toHaveLength(1);
+      expect(result.history[0]!.impact).toBe(-2);
+      expect(result.history[0]!.event).not.toMatch(/against you/);
     });
 
     it("should compute success rate correctly", async () => {

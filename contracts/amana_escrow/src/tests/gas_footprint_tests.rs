@@ -69,7 +69,7 @@ mod gas_footprint_tests {
             token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(amount * 10));
 
             let client = EscrowContractClient::new(&env, &contract_id);
-            client.initialize(&admin, &usdc_id, &treasury, &100_u32, &usdc_id);
+            client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100_u32, &usdc_id);
             client.set_mediator(&mediator);
 
             Ctx {

@@ -1,87 +1,109 @@
-import { Request, Response, NextFunction } from "express";
+import { randomUUID } from 'crypto';
+import { NextFunction, Request, Response } from 'express';
+import { ZodError, ZodTypeAny } from 'zod';
+import { ErrorCode } from '../errors/errorCodes';
+import { StructuredErrorPayload } from '../errors/appError';
+import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, TracedRequest } from './correlationId.middleware';
+import { appLogger } from './logger';
 
-type ParseAsyncSchema = {
-  parseAsync: (input: unknown) => Promise<unknown>;
-};
+export const ERROR_CORRELATION_ID_HEADER = 'x-error-correlation-id';
 
-type ZodLikeIssue = {
-  path: Array<string | number>;
-  message: string;
-};
+const CONTROL_CHARS_PATTERN = /[\u0000-\u001F\u007F]+/g;
 
-function getZodLikeIssues(error: unknown): ZodLikeIssue[] | null {
-  if (!error || typeof error !== "object") {
-    return null;
-  }
-
-  const err = error as any;
-  if (Array.isArray(err.issues)) {
-    return err.issues;
-  }
-  if (Array.isArray(err.errors)) {
-    return err.errors;
-  }
-
-  return null;
-}
-
-function sanitizeString(value: string): string {
-  return value.trim();
-}
-
-function sanitizeValue(value: unknown): unknown {
+export function normalizeValue(value: unknown): unknown {
   if (typeof value === "string") {
-    return sanitizeString(value);
+    return value.replace(CONTROL_CHARS_PATTERN, " ").trim();
   }
   if (Array.isArray(value)) {
-    return value.map(sanitizeValue);
+    return value.map(normalizeValue);
   }
   if (value !== null && typeof value === "object") {
-    return sanitizeObject(value as Record<string, unknown>);
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = normalizeValue(entry);
+    }
+    return result;
   }
   return value;
 }
 
-function sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {};
-  for (const key of Object.keys(obj)) {
-    sanitized[key] = sanitizeValue(obj[key]);
-  }
-  return sanitized;
-}
+export function validateRequest(schema: ZodTypeAny) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const result = schema.safeParse({
+      body: req.body,
+      query: req.query,
+      params: req.params,
+    });
 
-export const validateRequest = (schema: {
-  body?: ParseAsyncSchema;
-  query?: ParseAsyncSchema;
-  params?: ParseAsyncSchema;
-}) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      if (schema.body) {
-        req.body = await schema.body.parseAsync(req.body);
-      }
-      if (schema.query) {
-        const parsed = await schema.query.parseAsync(req.query);
-        Object.defineProperty(req, 'query', {
-          value: parsed,
-          writable: true,
-          configurable: true,
-        });
-      }
-      if (schema.params) {
-        req.params = (await schema.params.parseAsync(req.params)) as any;
-      }
-      next();
-    } catch (error) {
-      const issues = getZodLikeIssues(error);
-      if (issues?.length) {
-        const firstError = issues[0];
-        if (!firstError) return next(error);
-        const fieldName = firstError.path.join(".");
-        const message = fieldName ? `${fieldName}: ${firstError.message}` : firstError.message;
-        return res.status(400).json({ error: message });
-      }
-      next(error);
+    if (result.success) {
+      req.body = result.data.body;
+      req.query = result.data.query;
+      req.params = result.data.params;
+      return next();
     }
+
+    const traced = req as TracedRequest;
+    const correlationId =
+      traced.correlationId ||
+      (res.getHeader(CORRELATION_ID_HEADER) as string | undefined);
+    const requestId =
+      traced.requestId ||
+      (res.getHeader(REQUEST_ID_HEADER) as string | undefined);
+    const path = req.path;
+    const method = req.method;
+
+    const inferredUserId =
+      (req as any).user?.id ||
+      (req as any).user?.address ||
+      (req as any).userId ||
+      undefined;
+
+    const pathMatch = req.path ? req.path.match(/(?:trades|disputes)\/([^/]+)/i) : null;
+    const inferredTradeId =
+      req.params?.tradeId ||
+      req.params?.id ||
+      (req.body && typeof req.body === 'object' ? req.body.tradeId : undefined) ||
+      (pathMatch ? pathMatch[1] : undefined);
+
+    const errorCorrelationId = `err_${randomUUID()}`;
+    if (typeof res.setHeader === 'function') {
+      res.setHeader(ERROR_CORRELATION_ID_HEADER, errorCorrelationId);
+    }
+
+    const issues = result.error.errors;
+
+    appLogger.warn(
+      {
+        errorCorrelationId,
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Validation failed',
+        statusCode: 400,
+        tradeId: inferredTradeId,
+        userId: inferredUserId,
+        operation: `${method} ${path}`,
+        requestId,
+        correlationId,
+        path,
+        method,
+        errors: issues,
+      },
+      '[VALIDATION_ERROR] Request schema validation failed',
+    );
+
+    const payload: StructuredErrorPayload = {
+      code: ErrorCode.VALIDATION_ERROR,
+      message: 'Validation failed',
+      details: { errors: issues },
+      timestamp: new Date().toISOString(),
+      path,
+      errorCorrelationId,
+      ...(inferredTradeId && { tradeId: inferredTradeId }),
+      ...(inferredUserId && { userId: inferredUserId }),
+      operation: `${method} ${path}`,
+      ...(correlationId && { correlationId }),
+      ...(requestId && { requestId }),
+    };
+
+    return res.status(400).json(payload);
   };
-};
+}

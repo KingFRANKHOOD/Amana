@@ -27,55 +27,23 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   fetch: async () => {
     set({ isLoading: true });
     try {
-      // Fetch from API, fallback to mock data on failure or for dev
       const response = await fetch('/api/notifications');
-      if (response.ok) {
-        const data = await response.json();
-        const notifications = data.notifications || data;
-        const unreadCount = notifications.filter((n: Notification) => !n.read).length;
-        set({ notifications, unreadCount, isLoading: false });
-      } else {
-        throw new Error('API failed');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch notifications: ${response.status}`);
       }
-    } catch {
-      // Mock data fallback
-      const mockNotifications: Notification[] = [
-        {
-          id: '1',
-          title: 'Trade Created',
-          message: 'Your trade #1024 has been successfully created.',
-          type: 'success',
-          read: false,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          title: 'Payment Received',
-          message: 'Payment of 100 USDC received for trade #1024.',
-          type: 'success',
-          read: false,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: '3',
-          title: 'System Alert',
-          message: 'Stellar network connectivity is currently optimal.',
-          type: 'info',
-          read: true,
-          createdAt: new Date().toISOString(),
-        }
-      ];
-      const unreadCount = mockNotifications.filter(n => !n.read).length;
-      set({ notifications: mockNotifications, unreadCount, isLoading: false });
+      const data = await response.json();
+      const notifications = data.notifications || data;
+      const unreadCount = notifications.filter((n: Notification) => !n.read).length;
+      set({ notifications, unreadCount });
+    } finally {
+      set({ isLoading: false });
     }
   },
 
   markRead: async (id: string) => {
-    // Optionally make a patch request to API
-    try {
-      await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
-    } catch {
-      // Ignore API failure for client-side state update
+    const response = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+    if (!response.ok) {
+      throw new Error(`Failed to mark notification as read: ${response.status}`);
     }
 
     const { notifications } = get();
@@ -91,10 +59,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   markAllRead: async () => {
-    try {
-      await fetch('/api/notifications/read', { method: 'PATCH' });
-    } catch {
-      // Ignore API failure for client-side state update
+    const response = await fetch('/api/notifications/read', { method: 'PATCH' });
+    if (!response.ok) {
+      throw new Error(`Failed to mark all notifications as read: ${response.status}`);
     }
 
     const { notifications } = get();

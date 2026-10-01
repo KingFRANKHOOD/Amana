@@ -1,11 +1,11 @@
 export type TradeStatus =
-  | 'PENDING'
+  | 'PENDING_SIGNATURE'
+  | 'CREATED'
   | 'FUNDED'
-  | 'IN_TRANSIT'
   | 'DELIVERED'
-  | 'DISPUTED'
   | 'COMPLETED'
-  | 'REFUNDED';
+  | 'DISPUTED'
+  | 'CANCELLED';
 
 export interface Trade {
   id: number;

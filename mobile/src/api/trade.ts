@@ -1,6 +1,25 @@
 import apiClient from './client';
 import type { Trade, TradeListResult, TradeStatus } from '../types/trade';
 
+/**
+ * Backend's TradeStatus enum (backend/prisma/schema.prisma) is the source of
+ * truth. Keep this list in sync so the mobile client never sends a status the
+ * server-side nativeEnum(TradeStatus) validator would reject with HTTP 400.
+ */
+export const BACKEND_TRADE_STATUSES = [
+  'PENDING_SIGNATURE',
+  'CREATED',
+  'FUNDED',
+  'DELIVERED',
+  'COMPLETED',
+  'DISPUTED',
+  'CANCELLED',
+] as const satisfies readonly TradeStatus[];
+
+export function isValidTradeStatus(status: string): status is TradeStatus {
+  return (BACKEND_TRADE_STATUSES as readonly string[]).includes(status);
+}
+
 export const tradeApi = {
   async listTrades(params?: {
     status?: TradeStatus;

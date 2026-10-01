@@ -146,6 +146,11 @@ export function createEvidenceRouter(evidenceService = new EvidenceService()) {
       const range = req.headers["range"] as string | undefined;
 
       try {
+        // Resolve the CID to its TradeEvidence record and enforce the same
+        // buyer/seller/admin party check used by the list endpoint before
+        // streaming any bytes from the IPFS gateway.
+        await evidenceService.assertStreamAccess(cid, callerAddress);
+
         const upstream = await evidenceService.streamFromIPFS(cid, range);
 
         // Always advertise range support so clients know they can seek
@@ -166,6 +171,14 @@ export function createEvidenceRouter(evidenceService = new EvidenceService()) {
         res.status(status);
         upstream.data.pipe(res);
       } catch (err) {
+        if (err instanceof EvidenceTradeNotFoundError) {
+          res.status(404).json({ error: err.message });
+          return;
+        }
+        if (err instanceof EvidenceAccessDeniedError) {
+          res.status(403).json({ error: err.message });
+          return;
+        }
         appLogger.error({ err }, "[EvidenceRoute] Stream error");
         res.status(502).json({ error: "Failed to stream from IPFS gateway" });
       }
