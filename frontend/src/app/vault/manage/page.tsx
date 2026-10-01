@@ -27,14 +27,25 @@ type ActionModal =
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<string, { pill: string; dot: string }> = {
-  active: {
+  // Active/in-escrow states (backend: FUNDED, DELIVERED)
+  funded: {
     pill: "text-status-success bg-emerald-muted",
     dot: "bg-status-success",
   },
-  pending: {
+  delivered: {
+    pill: "text-status-success bg-emerald-muted",
+    dot: "bg-status-success",
+  },
+  // Pending states (backend: PENDING_SIGNATURE, CREATED)
+  pending_signature: {
     pill: "text-status-warning bg-status-warning/15",
     dot: "bg-status-warning",
   },
+  created: {
+    pill: "text-status-warning bg-status-warning/15",
+    dot: "bg-status-warning",
+  },
+  // Terminal states
   completed: {
     pill: "text-text-secondary bg-bg-elevated",
     dot: "bg-text-muted",
@@ -43,7 +54,10 @@ const STATUS_STYLES: Record<string, { pill: string; dot: string }> = {
     pill: "text-status-danger bg-status-danger/15",
     dot: "bg-status-danger",
   },
-  locked: { pill: "text-status-locked bg-gold-muted", dot: "bg-gold" },
+  cancelled: {
+    pill: "text-text-muted bg-bg-elevated",
+    dot: "bg-text-muted",
+  },
 };
 
 function statusStyle(status: string) {
@@ -384,15 +398,17 @@ export default function VaultManagePage() {
   }, [isAuthenticated, token, fetchData]);
 
   // Derived
+  // "Active" tab shows trades that are in-flight: awaiting deposit (PENDING_SIGNATURE, CREATED)
+  // or funds already locked in escrow (FUNDED, DELIVERED).
+  const ACTIVE_STATUSES = ["pending_signature", "created", "funded", "delivered"];
   const displayedTrades =
     activeTab === "active"
-      ? trades.filter((t) =>
-          ["active", "pending", "locked"].includes(t.status.toLowerCase()),
-        )
+      ? trades.filter((t) => ACTIVE_STATUSES.includes(t.status.toLowerCase()))
       : trades;
 
+  // Only trades with funds locked in escrow count toward the locked total.
   const totalLocked = trades
-    .filter((t) => ["active", "locked"].includes(t.status.toLowerCase()))
+    .filter((t) => ["funded", "delivered"].includes(t.status.toLowerCase()))
     .reduce((sum, t) => sum + parseFloat(t.amountCngn), 0);
 
   // Actions
@@ -667,13 +683,19 @@ export default function VaultManagePage() {
                     {/* Rows */}
                     {displayedTrades.map((trade) => {
                       const s = statusStyle(trade.status);
-                      const isPending =
-                        trade.status.toLowerCase() === "pending";
-                      const isActive = trade.status.toLowerCase() === "active";
-                      const isLocked = trade.status.toLowerCase() === "locked";
-                      const canDeposit = isPending;
-                      const canRelease = isActive || isLocked;
-                      const canDispute = isActive || isLocked || isPending;
+                      const status = trade.status.toLowerCase();
+                      // PENDING_SIGNATURE / CREATED → buyer needs to deposit into escrow
+                      const canDeposit =
+                        status === "pending_signature" || status === "created";
+                      // FUNDED / DELIVERED → funds are locked, seller can be paid
+                      const canRelease =
+                        status === "funded" || status === "delivered";
+                      // Any in-flight trade can be disputed
+                      const canDispute =
+                        status === "pending_signature" ||
+                        status === "created" ||
+                        status === "funded" ||
+                        status === "delivered";
 
                       return (
                         <div

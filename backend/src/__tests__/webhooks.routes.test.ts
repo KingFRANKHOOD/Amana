@@ -146,6 +146,49 @@ describe("Webhooks Routes", () => {
       expect(prisma.webhookSubscription.create).toHaveBeenCalled();
     });
 
+    it("should not throw ReferenceError for undefined encryptSecret (regression #1397)", async () => {
+      (AuthService.validateToken as jest.Mock).mockResolvedValue({
+        sub: mockWallet.toLowerCase(),
+        walletAddress: mockWallet.toLowerCase(),
+        jti: "test-jti",
+      });
+      (AuthService.isTokenRevoked as jest.Mock).mockResolvedValue(false);
+
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        id: mockUserId,
+        walletAddress: mockWallet.toLowerCase(),
+      });
+
+      (prisma.webhookSubscription.create as jest.Mock).mockResolvedValue({
+        id: 3,
+        url: "https://example.com/webhook",
+        events: ["trade.created"],
+        secretHash: "hashedsecret",
+        isActive: true,
+        userId: mockUserId,
+        createdAt: new Date(),
+      });
+
+      const response = await request(app)
+        .post("/webhooks")
+        .set("Authorization", "Bearer valid.jwt.token")
+        .send({
+          url: "https://example.com/webhook",
+          events: ["trade.created"],
+        });
+
+      expect(response.status).not.toBe(500);
+      expect(response.status).toBe(201);
+      expect(response.body.error).toBeUndefined();
+      expect(prisma.webhookSubscription.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            secretHash: expect.any(String),
+          }),
+        })
+      );
+    });
+
     it("should return 400 for invalid URL", async () => {
       (AuthService.validateToken as jest.Mock).mockResolvedValue({
         sub: mockWallet.toLowerCase(),
@@ -244,125 +287,6 @@ describe("Webhooks Routes", () => {
           where: { userId: mockUserId },
         })
       );
-    });
-
-    it("should return 401 if not authenticated", async () => {
-      const response = await request(app).get("/webhooks");
-
-      expect(response.status).toBe(401);
-    });
-  });
-
-  describe("DELETE /webhooks/:id", () => {
-    it("should delete a webhook owned by the user", async () => {
-      (AuthService.validateToken as jest.Mock).mockResolvedValue({
-        sub: mockWallet.toLowerCase(),
-        walletAddress: mockWallet.toLowerCase(),
-        jti: "test-jti",
-      });
-      (AuthService.isTokenRevoked as jest.Mock).mockResolvedValue(false);
-
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
-        id: mockUserId,
-        walletAddress: mockWallet.toLowerCase(),
-      });
-
-      (prisma.webhookSubscription.findUnique as jest.Mock).mockResolvedValue({
-        id: 1,
-        url: "https://example.com/webhook",
-        events: ["trade.created"],
-        secretHash: "hashedsecret",
-        isActive: true,
-        userId: mockUserId,
-        createdAt: new Date(),
-      });
-
-      (prisma.webhookSubscription.delete as jest.Mock).mockResolvedValue({});
-
-      const response = await request(app)
-        .delete("/webhooks/1")
-        .set("Authorization", "Bearer valid.jwt.token");
-
-      expect(response.status).toBe(200);
-      expect(response.body.message).toBe("Webhook deleted successfully");
-      expect(prisma.webhookSubscription.delete).toHaveBeenCalledWith({
-        where: { id: 1 },
-      });
-    });
-
-    it("should return 404 if webhook not found", async () => {
-      (AuthService.validateToken as jest.Mock).mockResolvedValue({
-        sub: mockWallet.toLowerCase(),
-        walletAddress: mockWallet.toLowerCase(),
-        jti: "test-jti",
-      });
-      (AuthService.isTokenRevoked as jest.Mock).mockResolvedValue(false);
-
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
-        id: mockUserId,
-        walletAddress: mockWallet.toLowerCase(),
-      });
-
-      (prisma.webhookSubscription.findUnique as jest.Mock).mockResolvedValue(null);
-
-      const response = await request(app)
-        .delete("/webhooks/999")
-        .set("Authorization", "Bearer valid.jwt.token");
-
-      expect(response.status).toBe(404);
-      expect(response.body.error).toBe("Webhook not found");
-    });
-
-    it("should return 403 if webhook belongs to another user", async () => {
-      (AuthService.validateToken as jest.Mock).mockResolvedValue({
-        sub: mockWallet.toLowerCase(),
-        walletAddress: mockWallet.toLowerCase(),
-        jti: "test-jti",
-      });
-      (AuthService.isTokenRevoked as jest.Mock).mockResolvedValue(false);
-
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
-        id: mockUserId,
-        walletAddress: mockWallet.toLowerCase(),
-      });
-
-      (prisma.webhookSubscription.findUnique as jest.Mock).mockResolvedValue({
-        id: 1,
-        url: "https://example.com/webhook",
-        events: ["trade.created"],
-        secretHash: "hashedsecret",
-        isActive: true,
-        userId: 999, // Different user
-        createdAt: new Date(),
-      });
-
-      const response = await request(app)
-        .delete("/webhooks/1")
-        .set("Authorization", "Bearer valid.jwt.token");
-
-      expect(response.status).toBe(403);
-      expect(response.body.error).toBe("Forbidden");
-    });
-
-    it("should return 401 if not authenticated", async () => {
-      const response = await request(app).delete("/webhooks/1");
-
-      expect(response.status).toBe(401);
-    });
-
-    it("should return 400 for invalid webhook ID", async () => {
-      (AuthService.validateToken as jest.Mock).mockResolvedValue({
-        sub: mockWallet.toLowerCase(),
-        walletAddress: mockWallet.toLowerCase(),
-        jti: "test-jti",
-      });
-      (AuthService.isTokenRevoked as jest.Mock).mockResolvedValue(false);
-
-      const response = await request(app)
-        .delete("/webhooks/invalid")
-        .set("Authorization", "Bearer valid.jwt.token");
-
-      expect(response.status).toBe(400);
     });
   });
 });

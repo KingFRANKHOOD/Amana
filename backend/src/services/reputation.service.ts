@@ -47,7 +47,6 @@ export class ReputationService {
       disputedCount,
       completedTrades,
       disputesInitiatedCount,
-      disputesLost,
       recentDisputes,
     } = await withDatabaseQueryTimeout(this.prisma, async (database) => {
       const [
@@ -56,7 +55,6 @@ export class ReputationService {
         disputedAggregate,
         recentCompletedTrades,
         disputeAggregate,
-        lostDisputeAggregate,
         latestDisputes,
       ] = await Promise.all([
         database.trade.aggregate({ where: tradeParticipantFilter, _count: { _all: true } }),
@@ -77,10 +75,6 @@ export class ReputationService {
           where: { initiator: normalized },
           _count: { _all: true },
         }),
-        database.dispute.aggregate({
-          where: { initiator: normalized, status: { in: ["RESOLVED", "CLOSED"] }, outcome: "LOST" },
-          _count: { _all: true },
-        }),
         database.dispute.findMany({
           where: { initiator: normalized },
           orderBy: { createdAt: "desc" },
@@ -94,14 +88,14 @@ export class ReputationService {
         disputedCount: disputedAggregate._count._all,
         completedTrades: recentCompletedTrades,
         disputesInitiatedCount: disputeAggregate._count._all,
-        disputesLost: lostDisputeAggregate._count._all,
         recentDisputes: latestDisputes,
       };
     });
 
     let trustScore = 50;
     trustScore += completedCount * 5;
-    trustScore -= disputesLost * 8;
+    // Disputes carry no recorded outcome, so a RESOLVED/CLOSED status cannot be
+    // treated as "lost" — only the initiation penalty applies.
     trustScore -= disputesInitiatedCount * 2;
     if (totalTrades >= 50) trustScore += 15;
     else if (totalTrades >= 25) trustScore += 8;
@@ -128,21 +122,16 @@ export class ReputationService {
     }
 
     for (const dispute of recentDisputes) {
-      const isLost = (dispute as any).outcome === "LOST" && (dispute.status === "RESOLVED" || dispute.status === "CLOSED");
-      const isResolvedTerminal = dispute.status === "RESOLVED" || dispute.status === "CLOSED";
-      const historyType = isLost ? "dispute_resolved" : "dispute_initiated";
-      const impact = isLost ? -10 : -2;
+      const resolved = dispute.status === "RESOLVED" || dispute.status === "CLOSED";
       history.push({
         id: `dispute-${dispute.id}`,
-        event: isLost
-          ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved against you`
-          : isResolvedTerminal
-            ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved in your favor`
-            : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
-        impact,
-        impactLabel: `${impact}`,
+        event: resolved
+          ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved`
+          : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
+        impact: -2,
+        impactLabel: "-2",
         timestamp: dispute.createdAt.toISOString(),
-        type: historyType as ReputationEvent["type"],
+        type: resolved ? "dispute_resolved" : "dispute_initiated",
       });
     }
 

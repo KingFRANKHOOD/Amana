@@ -58,6 +58,7 @@ interface TrustScoreConfig {
   tradeCompletionDiminishingRate: number;
   volumeThresholds: { minTrades: number; bonus: number }[];
   disputeInitiatedPenalty: number;
+  /** Reserved: only applicable once disputes persist an explicit outcome. */
   disputeLostPenalty: number;
   decayHalfLifeDays: number;
   minScore: number;
@@ -128,7 +129,6 @@ export class TrustScoreService {
         activityTrades,
         completedTrades,
         disputeAggregate,
-        lostDisputeAggregate,
         disputes,
         lastTrade,
         volumeRows,
@@ -157,10 +157,6 @@ export class TrustScoreService {
           where: { initiator: normalized },
           _count: { _all: true },
         }),
-        database.dispute.aggregate({
-          where: { initiator: normalized, status: { in: [DisputeStatus.RESOLVED, DisputeStatus.CLOSED] }, outcome: "LOST" },
-          _count: { _all: true },
-        }),
         database.dispute.findMany({
           where: { initiator: normalized },
           orderBy: { createdAt: "desc" },
@@ -186,7 +182,6 @@ export class TrustScoreService {
         activityTrades,
         completedTrades,
         disputeCount: disputeAggregate._count._all,
-        lostDisputeCount: lostDisputeAggregate._count._all,
         disputes,
         lastTrade,
         totalVolumeUsdc: Number(volumeRows[0]?.totalVolumeUsdc ?? 0),
@@ -201,11 +196,10 @@ export class TrustScoreService {
       activityTrades,
       completedTrades,
       disputeCount,
-      lostDisputeCount,
       disputes,
       lastTrade,
       totalVolumeUsdc,
-    } = queryResult as any;
+    } = queryResult;
 
     const successRate =
       totalTrades > 0
@@ -223,7 +217,6 @@ export class TrustScoreService {
       totalTrades,
       totalVolumeUsdc,
       disputeCount,
-      lostDisputeCount,
       activityTrades,
       normalized,
     );
@@ -269,7 +262,6 @@ export class TrustScoreService {
     totalTrades: number,
     totalVolumeUsdc: number,
     disputeCount: number,
-    lostDisputeCount: number,
     allTrades: { createdAt: Date; amountUsdc: string; status: TradeStatus }[],
     normalizedAddress: string,
   ): TrustScoreBreakdown {
@@ -281,7 +273,7 @@ export class TrustScoreService {
 
     const volumeBonus = this.calculateVolumeBonus(totalTrades, totalVolumeUsdc);
 
-    const disputePenalty = this.calculateDisputePenalty(disputeCount, lostDisputeCount);
+    const disputePenalty = this.calculateDisputePenalty(disputeCount);
 
     const activityDecay = this.calculateActivityDecay(
       allTrades,
@@ -344,9 +336,10 @@ export class TrustScoreService {
     return tradeCountBonus + volumeBonus;
   }
 
-  private calculateDisputePenalty(disputeCount: number, lostDisputeCount = 0): number {
-    if (disputeCount === 0 && lostDisputeCount === 0) return 0;
-    return disputeCount * this.config.disputeInitiatedPenalty + lostDisputeCount * this.config.disputeLostPenalty;
+  private calculateDisputePenalty(disputeCount: number): number {
+    if (disputeCount === 0) return 0;
+
+    return disputeCount * this.config.disputeInitiatedPenalty;
   }
 
   private calculateActivityDecay(
@@ -420,26 +413,29 @@ export class TrustScoreService {
     }
 
     for (const dispute of disputes.slice(0, 5)) {
-      const isLost = (dispute as any).outcome === "LOST" && (dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED);
+      // The Dispute model does not record an outcome (winner/loser), only a
+      // lifecycle status. A RESOLVED/CLOSED status says nothing about whether the
+      // initiator won, so every dispute is treated as initiated-only here. The
+      // harsher `disputeLostPenalty` / "dispute_lost" event must only be applied
+      // once an explicit outcome is persisted.
       const timestamp = dispute.createdAt.toISOString();
       const ageMs = now - dispute.createdAt.getTime();
       const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
-      const rawImpact = isLost
-        ? -this.config.disputeLostPenalty
-        : -this.config.disputeInitiatedPenalty;
+      const rawImpact = -this.config.disputeInitiatedPenalty;
       const decayedImpact = Math.round(rawImpact * decayFactor * 10) / 10;
+      const tradeRef = `${dispute.tradeId.slice(0, 8)}...`;
+      const terminal =
+        dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED;
 
       events.push({
         id: `dispute-${dispute.id}`,
-        event: isLost
-          ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved against you`
-          : (dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED)
-            ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved in your favor`
-            : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
+        event: terminal
+          ? `Initiated dispute on trade ${tradeRef} (${dispute.status.toLowerCase()})`
+          : `Initiated dispute on trade ${tradeRef}`,
         impact: rawImpact,
         impactLabel: `${rawImpact}`,
         timestamp,
-        type: isLost ? "dispute_lost" : "dispute_initiated",
+        type: "dispute_initiated",
         decayedImpact,
       });
     }

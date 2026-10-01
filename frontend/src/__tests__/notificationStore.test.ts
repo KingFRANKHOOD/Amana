@@ -59,16 +59,20 @@ describe('Notification Store', () => {
       expect(state.unreadCount).toBe(1);
     });
 
-    it('should fallback to mock data on fetch failure', async () => {
-      global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+    it('should reject on fetch failure and preserve existing notifications', async () => {
+      const existingNotifications: Notification[] = [
+        { id: 'existing', title: 'Existing', message: 'Keep this', type: 'info', read: false, createdAt: '...' },
+      ];
+      useNotificationStore.setState({ notifications: existingNotifications, unreadCount: 1 });
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 } as unknown as Response);
 
       const store = useNotificationStore.getState();
-      await store.fetch();
+      await expect(store.fetch()).rejects.toThrow('Failed to fetch notifications: 404');
 
       const state = useNotificationStore.getState();
       expect(state.isLoading).toBe(false);
-      expect(state.notifications.length).toBe(3);
-      expect(state.unreadCount).toBe(2);
+      expect(state.notifications).toEqual(existingNotifications);
+      expect(state.unreadCount).toBe(1);
     });
   });
 
@@ -95,6 +99,20 @@ describe('Notification Store', () => {
       expect(state.unreadCount).toBe(1);
       expect(global.fetch).toHaveBeenCalledWith('/api/notifications/1/read', { method: 'PATCH' });
     });
+
+    it('should reject on request failure without changing notifications', async () => {
+      const initialNotifications: Notification[] = [
+        { id: '1', title: 'T1', message: 'M1', type: 'info', read: false, createdAt: '...' },
+      ];
+      useNotificationStore.setState({ notifications: initialNotifications, unreadCount: 1 });
+      global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      await expect(useNotificationStore.getState().markRead('1')).rejects.toThrow('Network error');
+
+      const state = useNotificationStore.getState();
+      expect(state.notifications).toEqual(initialNotifications);
+      expect(state.unreadCount).toBe(1);
+    });
   });
 
   describe('markAllRead', () => {
@@ -118,6 +136,22 @@ describe('Notification Store', () => {
       expect(state.notifications.every(n => n.read)).toBe(true);
       expect(state.unreadCount).toBe(0);
       expect(global.fetch).toHaveBeenCalledWith('/api/notifications/read', { method: 'PATCH' });
+    });
+
+    it('should reject on unsuccessful response without changing notifications', async () => {
+      const initialNotifications: Notification[] = [
+        { id: '1', title: 'T1', message: 'M1', type: 'info', read: false, createdAt: '...' },
+      ];
+      useNotificationStore.setState({ notifications: initialNotifications, unreadCount: 1 });
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 } as unknown as Response);
+
+      await expect(useNotificationStore.getState().markAllRead()).rejects.toThrow(
+        'Failed to mark all notifications as read: 404',
+      );
+
+      const state = useNotificationStore.getState();
+      expect(state.notifications).toEqual(initialNotifications);
+      expect(state.unreadCount).toBe(1);
     });
   });
 

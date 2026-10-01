@@ -3,7 +3,21 @@ kind: Kustomization
 resources:
   - vault-secret-store.yaml
   - external-secret.yaml
+  - configmap.yaml
+  - postgres-statefulset.yaml
   - backend-deployment.yaml
+  - backend-service.yaml
   - worker-deployment.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
   - redis-deployment.yaml
+  - redis-service.yaml
   - migration-job.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - network-policies.yaml
+  - pod-disruption-budgets.yaml
+  - cronjob-backup.yaml
+  - cronjob-backup-verify.yaml
+  - alerts-api-latency.yaml
+  - alerts-backup-verify.yaml

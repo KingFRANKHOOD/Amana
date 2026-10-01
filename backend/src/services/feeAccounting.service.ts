@@ -4,8 +4,37 @@ import { prisma as defaultPrisma } from "../lib/db";
 import { appLogger } from "../middleware/logger";
 import { cacheService } from "../lib/cache";
 
-export const FEE_RATE = 0.01; // 1% platform fee
+// Mirrors contracts/amana_escrow/src/lib.rs MIN_FEE_BPS / MAX_FEE_BPS.
+// Guarded by __tests__/feeAccounting.contract-parity.test.ts.
+export const MIN_FEE_BPS = 1;
+export const MAX_FEE_BPS = 500;
+export const BPS_DIVISOR = 10_000;
+// Initial on-chain value (scripts/deploy-contract-local.sh FEE_BPS default).
+export const DEFAULT_FEE_BPS = 100;
 export const CSV_EXPORT_MAX_ROWS = 100_000;
+
+export function isValidFeeBps(bps: unknown): bps is number {
+  return (
+    typeof bps === "number" &&
+    Number.isInteger(bps) &&
+    bps >= MIN_FEE_BPS &&
+    bps <= MAX_FEE_BPS
+  );
+}
+
+function resolveInitialFeeBps(): number {
+  const raw = process.env.PLATFORM_FEE_BPS;
+  if (raw === undefined || raw === "") return DEFAULT_FEE_BPS;
+  const parsed = Number(raw);
+  if (!isValidFeeBps(parsed)) {
+    appLogger.warn(
+      { PLATFORM_FEE_BPS: raw },
+      "[FeeAccounting] Invalid PLATFORM_FEE_BPS, falling back to default",
+    );
+    return DEFAULT_FEE_BPS;
+  }
+  return parsed;
+}
 
 export interface FeeEventRecord {
   id: number;
@@ -34,10 +63,42 @@ export interface FeeListResult {
 }
 
 export class FeeAccountingService {
-  constructor(private readonly db: PrismaClient = defaultPrisma) {}
+  private feeBps: number;
+
+  constructor(
+    private readonly db: PrismaClient = defaultPrisma,
+    feeBps: number = resolveInitialFeeBps(),
+  ) {
+    this.feeBps = feeBps;
+  }
+
+  /** Current fee rate (bps) used when recording fee events. */
+  getFeeBps(): number {
+    return this.feeBps;
+  }
 
   /**
-   * Calculate and record the 1% platform fee for a completed trade.
+   * Sync the fee rate with the contract's live value (e.g. from a
+   * FeeRateUpdated event or a get_fee_bps read). Out-of-range values are
+   * rejected so a malformed event can't corrupt accounting.
+   */
+  setFeeBps(bps: number): void {
+    if (!isValidFeeBps(bps)) {
+      appLogger.warn({ bps }, "[FeeAccounting] Ignoring out-of-range fee_bps");
+      return;
+    }
+    if (bps !== this.feeBps) {
+      appLogger.info(
+        { oldFeeBps: this.feeBps, newFeeBps: bps },
+        "[FeeAccounting] Platform fee rate updated",
+      );
+    }
+    this.feeBps = bps;
+  }
+
+  /**
+   * Calculate and record the platform fee (at the current on-chain fee_bps)
+   * for a completed trade.
    * Idempotent: if a fee event already exists for this tradeId, it is a no-op
    * and returns the existing record.
    */
@@ -60,7 +121,7 @@ export class FeeAccountingService {
     }
 
     const amount = parseFloat(tradeAmountUsdc);
-    const fee = Number.isFinite(amount) ? amount * FEE_RATE : 0;
+    const fee = Number.isFinite(amount) ? (amount * this.feeBps) / BPS_DIVISOR : 0;
     const feeUsdc = fee.toFixed(6);
 
     const record = await tx.platformFeeEvent.create({
@@ -74,7 +135,7 @@ export class FeeAccountingService {
     });
 
     appLogger.info(
-      { tradeId, tradeAmountUsdc, feeUsdc, ledgerSequence },
+      { tradeId, tradeAmountUsdc, feeUsdc, feeBps: this.feeBps, ledgerSequence },
       "[FeeAccounting] Platform fee recorded",
     );
 

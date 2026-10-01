@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: db-backup-verify-daily
-  namespace: amana
+  namespace: default
 spec:
   # Runs after db-backup-daily (0 2 * * *) completes.
   schedule: "0 3 * * *"

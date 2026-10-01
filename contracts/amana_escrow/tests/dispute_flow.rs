@@ -130,7 +130,7 @@ impl H {
 
     fn funded_trade(&self, amount: i128) -> u64 {
         self.c()
-            .initialize(&self.admin, &self.token, &self.admin, &0u32, &self.token);
+            .initialize(&soroban_sdk::Vec::from_array(&self.env, [self.admin.clone()]), &1_u32, &self.token, &self.admin, &1u32, &self.token);
         self.c().set_mediator(&self.mediator);
         self.tok().mint(&self.buyer, &amount);
         let trade_id = self.c().create_trade(
