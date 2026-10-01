@@ -7,9 +7,10 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { validateRequest } from "../middleware/validateRequest";
 import { AuthRequest } from "../services/auth.service";
 import { ContractService } from "../services/contract.service";
+import { strictTradeIdSchema } from "../schemas/trade.schemas";
 
 const releaseParamsSchema = z.object({
-  id: z.string().min(1),
+  id: strictTradeIdSchema,
 });
 
 const milestoneBodySchema = z.object({
@@ -44,12 +45,7 @@ function canRelease(trade: { buyerAddress: string }, walletAddress: string): boo
 }
 
 function tradeWhere(id: string) {
-  const numericId = Number(id);
-  const orConditions: Array<Record<string, unknown>> = [{ tradeId: id }];
-  if (Number.isInteger(numericId) && numericId > 0) {
-    orConditions.push({ id: numericId });
-  }
-  return { OR: orConditions };
+  return { tradeId: id };
 }
 
 export function createEscrowReleaseRouter(

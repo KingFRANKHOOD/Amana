@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { strictTradeIdSchema } from "./trade.schemas";
 
 const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
 
@@ -12,5 +13,5 @@ export const addNoteSchema = z.object({
 });
 
 export const tradeIdParamSchema = z.object({
-  id: z.string().min(1, "Trade ID is required"),
+  id: strictTradeIdSchema,
 });

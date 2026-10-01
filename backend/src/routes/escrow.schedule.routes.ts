@@ -5,9 +5,10 @@ import { prisma as defaultPrisma } from "../lib/db";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { validateRequest } from "../middleware/validateRequest";
 import { AuthRequest } from "../services/auth.service";
+import { strictTradeIdSchema } from "../schemas/trade.schemas";
 
 const scheduleParamsSchema = z.object({
-  id: z.string().min(1),
+  id: strictTradeIdSchema,
 });
 
 // Reject zero-equivalent values ("0", "00.0") and cap digit length to avoid
@@ -84,12 +85,7 @@ function isParty(
 }
 
 function tradeWhere(id: string) {
-  const numericId = Number(id);
-  const orConditions: Array<Record<string, unknown>> = [{ tradeId: id }];
-  if (Number.isInteger(numericId) && numericId > 0) {
-    orConditions.push({ id: numericId });
-  }
-  return { OR: orConditions };
+  return { tradeId: id };
 }
 
 // Compare USDC amounts as scaled integers to avoid floating point drift.

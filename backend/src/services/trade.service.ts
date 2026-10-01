@@ -285,17 +285,10 @@ export class TradeService {
   }
 
   async getTradeById(id: string, callerAddress: string) {
-    const numericId = Number(id);
-    const orConditions: Prisma.TradeWhereInput[] = [{ tradeId: id }];
-
-    if (Number.isInteger(numericId) && numericId > 0) {
-      orConditions.push({ id: numericId });
-    }
-
     const trade = await cacheService.getOrSet<Trade | null>(
       `cache:trade:${id}`,
       60,
-      () => this.prisma.trade.findFirst({ where: { OR: orConditions } }),
+      () => this.prisma.trade.findFirst({ where: { tradeId: id } }),
     );
 
     if (!trade) {
