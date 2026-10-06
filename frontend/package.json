@@ -11,7 +11,7 @@
     "test:pact": "jest --config jest.pact.config.ts"
   },
   "dependencies": {
-    "next": "14.2.3",
+    "next": "16.3.8",
     "react": "18.3.1",
     "react-dom": "19.3.0"
   },
