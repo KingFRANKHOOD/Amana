@@ -31,7 +31,7 @@ importers:
         specifier: ^57.0.19
         version: 57.0.20(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       expo-background-fetch:
-        specifier: ~57.0.14
+        specifier: ~57.0.16
         version: 57.0.16(expo@57.0.20)(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))
       expo-device:
         specifier: ^6.0.2
@@ -1228,7 +1228,6 @@ packages:
   '@pact-foundation/pact-core@19.2.0':
     resolution: {integrity: sha512-7EB2e850hmBzGnwOYTRj4TCFCJQa9zaOy53bK+ybzEDx801olf0gVlYqMYHt1EsHUZzmtS5uDybpr9UMcZQxgg==}
     engines: {node: '>=20'}
-    cpu: [x64, ia32, arm64]
     os: [darwin, linux, win32]
 
   '@pact-foundation/pact@16.5.0':
