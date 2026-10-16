@@ -228,12 +228,12 @@ services:
     profiles: [staging]
 
   loki:
-    image: grafana/loki:3.0
+    image: grafana/loki:3.0.0
     ports: ["3100:3100"]
     profiles: [staging]
 
   promtail:
-    image: grafana/promtail:3.0
+    image: grafana/promtail:3.0.0
     volumes: ["/var/log:/var/log", "/var/lib/docker/
 
 /* … truncated 1100 chars — edit only what you need near the top … */
