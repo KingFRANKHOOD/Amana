@@ -30,7 +30,17 @@ export default defineConfig({
 
   projects: [
     {
-      name: 'chromium',
+      name: 'chromium-desktop',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // Visual regression snapshots live in ./tests/visual and run in their
+      // own project so CI can target it explicitly
+      // (`playwright test --project=visual-regression`). The e2e suite lives
+      // in the default testDir (./tests/e2e).
+      name: 'visual-regression',
+      testDir: './tests/visual',
+      testMatch: '**/*.visual.spec.ts',
       use: { ...devices['Desktop Chrome'] },
     },
   ],
