@@ -117,7 +117,7 @@ echo ""
 # Build WASM artifact
 echo "📦 Building WASM artifact..."
 cd "$contract_dir"
-cargo build --target wasm32-unknown-unknown --features wasm --release 2>&1 | grep -E "Compiling|Finished|error" || true
+cargo build --target wasm32-unknown-unknown --features wasm --release
 
 WASM_FILE="target/wasm32-unknown-unknown/release/amana_escrow.wasm"
 if [[ ! -f "$WASM_FILE" ]]; then

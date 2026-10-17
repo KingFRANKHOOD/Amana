@@ -63,6 +63,8 @@ jobs:
             contracts:
               - 'contracts/**'
               - 'scripts/check-contract-deployment-safety.sh'
+              - 'scripts/deploy-contract-local.sh'
+              - 'scripts/test-deploy-contract-local.sh'
 
   stack:
     name: ${{ matrix.stack }} CI
@@ -180,6 +182,10 @@ jobs:
         if: matrix.stack == 'contracts'
         run: ../../scripts/check-contract-deployment-safety.sh
         working-directory: contracts/amana_escrow
+
+      - name: Local deployment build failure regression test
+        if: matrix.stack == 'contracts'
+        run: bash scripts/test-deploy-contract-local.sh
 
       - name: Cargo security audit
         if: matrix.stack == 'contracts'
