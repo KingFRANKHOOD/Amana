@@ -6,13 +6,14 @@ module.exports = {
   testMatch: ["**/__tests__/**/*.test.ts", "**/?(*.)+(spec|test).ts"],
   moduleFileExtensions: ["ts", "js", "json"],
   transform: {
-    "^.+\\.ts$": ["ts-jest", { tsconfig: "tsconfig.json" }],
+    "^.+\\.ts$": ["ts-jest", { tsconfig: "tsconfig.json", diagnostics: false }],
   },
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   modulePaths: ["<rootDir>"],
   setupFiles: ["<rootDir>/src/__tests__/setup.ts"],
+  setupFilesAfterEnv: ["<rootDir>/src/__tests__/cleanup.ts"],
   collectCoverage: true,
   coverageDirectory: "<rootDir>/coverage",
   coverageReporters: ["text", "lcov", "clover"],
@@ -30,6 +31,6 @@ module.exports = {
       statements: 80,
     },
   },
-  forceExit: true,
   detectOpenHandles: true,
+  globalTeardown: "<rootDir>/src/__tests__/globalTeardown.ts",
 };

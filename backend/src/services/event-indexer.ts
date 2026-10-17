@@ -44,6 +44,7 @@ export class EventIndexerService {
   private server: StellarSdk.rpc.Server;
   private running: boolean = false;
   private timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  private activePoll: Promise<void> | null = null;
   private lastIngestedLedger: number = 0;
   private backoffMs: number;
 
@@ -78,25 +79,43 @@ export class EventIndexerService {
     this.scheduleNextPoll(0);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.running = false;
     if (this.timeoutHandle) {
       clearTimeout(this.timeoutHandle);
       this.timeoutHandle = null;
+    }
+    if (this.activePoll) {
+      await this.activePoll;
+      this.activePoll = null;
     }
     appLogger.info("[EventIndexer] Stopped");
   }
 
   private scheduleNextPoll(delayMs: number): void {
     if (!this.running) return;
-    this.timeoutHandle = setTimeout(() => this.pollEvents(), delayMs);
+    this.timeoutHandle = setTimeout(() => {
+      const poll = this.pollEvents();
+      this.activePoll = poll;
+      void poll.then(
+        () => {
+          if (this.activePoll === poll) this.activePoll = null;
+        },
+        () => {
+          if (this.activePoll === poll) this.activePoll = null;
+        },
+      );
+    }, delayMs);
   }
 
   async pollEvents(): Promise<void> {
     if (!this.running) return;
 
     try {
-      const startLedger = this.lastIngestedLedger > 0 ? this.lastIngestedLedger + 1 : 1;
+      // Resume from the last ingested ledger (not +1) so a ledger that was
+      // fetched but not fully committed before a crash is reprocessed. The
+      // boundary ledger is idempotent via the unique eventId upsert/dedupe.
+      const startLedger = this.lastIngestedLedger > 0 ? this.lastIngestedLedger : 1;
 
       const response = await this.server.getEvents({
         startLedger,
@@ -115,6 +134,8 @@ export class EventIndexerService {
         }
       }
 
+      this.trackLag(response.latestLedger);
+
       this.backoffMs = this.config.backoffInitialMs;
       this.scheduleNextPoll(this.config.pollIntervalMs);
     } catch (error) {
@@ -124,6 +145,15 @@ export class EventIndexerService {
       this.backoffMs = Math.min(this.backoffMs * 2, this.config.backoffMaxMs);
       this.scheduleNextPoll(delay);
     }
+  }
+
+  private trackLag(chainHead?: number): void {
+    if (typeof chainHead !== "number" || chainHead <= 0) return;
+    const lag = Math.max(0, chainHead - this.lastIngestedLedger);
+    appLogger.info(
+      { chainHead, lastIngestedLedger: this.lastIngestedLedger, lag },
+      "[EventIndexer] Lag",
+    );
   }
 
   async ingestEvent(rawEvent: StellarSdk.rpc.Api.EventResponse): Promise<void> {
@@ -248,17 +278,36 @@ export class EventIndexerService {
     return events.map((e: Record<string, unknown>) => ({
       eventType: e.eventType,
       ledgerSequence: e.ledgerSequence,
-      txHash: e.txHash,
-      payload: e.payload,
-      ingestedAt: e.ingestedAt,
+      txHash: e.txHash as string | null,
+      payload: e.payload as Prisma.JsonValue,
+      ingestedAt: e.ingestedAt as Date,
     }));
   }
 
-  getLastIngestedLedger(): number {
-    return this.lastIngestedLedger;
+  private parseEvent(rawEvent: StellarSdk.rpc.Api.EventResponse): ParsedEvent | null {
+    try {
+      const topic = rawEvent.topic?.[0]?.toString?.() ?? "";
+      const eventType = EVENT_TOPIC_MAP[topic] ?? topic;
+      const eventId = `${rawEvent.ledger}-${rawEvent.txHash ?? ""}-${rawEvent.id ?? ""}`;
+
+      return {
+        eventId,
+        tradeId: "unknown",
+        eventType,
+        ledgerSequence: rawEvent.ledger,
+        contractId: rawEvent.contractId?.toString?.() ?? this.config.contractId,
+        data: (rawEvent.value ?? {}) as Prisma.JsonObject,
+      };
+    } catch (error) {
+      appLogger.warn({ error }, "[EventIndexer] Failed to parse event");
+      return null;
+    }
   }
 
-  private async persistIndexedEvent(parsed: ParsedEvent, txHash: string | null): Promise<boolean> {
+  private async persistIndexedEvent(
+    parsed: ParsedEvent,
+    txHash: string | null,
+  ): Promise<boolean> {
     try {
       await this.prisma.indexedEvent.create({
         data: {
@@ -283,78 +332,8 @@ export class EventIndexerService {
 
   private isUniqueConstraintError(error: unknown): boolean {
     return (
-      error instanceof Prisma.PrismaClientKnownRequestError
-      && error.code === "P2002"
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
     );
-  }
-
-  private parseEvent(rawEvent: StellarSdk.rpc.Api.EventResponse): ParsedEvent | null {
-    try {
-      const topic = rawEvent.topic;
-      if (!topic || topic.length === 0) return null;
-
-      const eventSymbol = this.extractSymbolValue(topic[0]!);
-      if (!eventSymbol) return null;
-
-      const topicKey = topic.length > 1
-        ? `${eventSymbol}:${this.extractSymbolValue(topic[1]!)}`
-        : eventSymbol;
-
-      const eventType = EVENT_TOPIC_MAP[topicKey] ?? EVENT_TOPIC_MAP[eventSymbol];
-      if (!eventType) {
-        appLogger.warn({ topicKey, eventSymbol }, "[EventIndexer] Unknown event symbol");
-        return null;
-      }
-
-      const tradeId =
-        topic.length > 1 ? this.extractScalarValue(topic[1]!) : "unknown";
-
-      const data: Record<string, unknown> = {};
-      if (rawEvent.value) {
-        data.raw = rawEvent.value;
-        const val = rawEvent.value as unknown as {
-          type?: string;
-          value?: Array<{ key: { value: string }; val: { value: unknown } }>;
-        };
-        if (val?.type === "map" && Array.isArray(val.value)) {
-          for (const entry of val.value) {
-            if (entry?.key?.value) {
-              data[entry.key.value] = entry.val?.value;
-            }
-          }
-        }
-      }
-
-      return {
-        eventType,
-        tradeId: String(tradeId),
-        ledgerSequence: rawEvent.ledger,
-        contractId: String(rawEvent.contractId ?? this.config.contractId),
-        eventId: rawEvent.id,
-        data,
-      };
-    } catch (error) {
-      appLogger.error({ error }, "[EventIndexer] Failed to parse event");
-      return null;
-    }
-  }
-
-  private extractSymbolValue(scVal: StellarSdk.xdr.ScVal): string | null {
-    try {
-      const nativeVal = StellarSdk.scValToNative(scVal);
-      if (typeof nativeVal === "string") return nativeVal;
-      return String(nativeVal);
-    } catch {
-      return null;
-    }
-  }
-
-  private extractScalarValue(scVal: StellarSdk.xdr.ScVal): string {
-    try {
-      const nativeVal = StellarSdk.scValToNative(scVal);
-      return String(nativeVal);
-    } catch {
-      return "unknown";
-    }
   }
 }

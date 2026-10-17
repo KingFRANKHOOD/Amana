@@ -66,7 +66,7 @@ export function WalletAddressBadge({
         <button
           type="button"
           onClick={() => void onCopy()}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-text-primary"
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-text-muted hover:text-text-primary"
           aria-label="Copy wallet address"
           title="Copy wallet address"
         >
@@ -83,7 +83,7 @@ export function WalletAddressBadge({
           href={`https://stellar.expert/explorer/${explorerNetwork}/account/${address}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-gold"
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-text-muted hover:text-gold"
           aria-label="Open wallet in Stellar Expert"
           title="Open wallet in Stellar Expert"
         >

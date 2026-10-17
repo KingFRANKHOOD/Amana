@@ -11,25 +11,45 @@ const TradeStatus = {
 
 describe("ReputationService", () => {
   let mockPrisma: {
-    trade: { findMany: jest.Mock };
-    dispute: { findMany: jest.Mock };
+    trade: { aggregate: jest.Mock; findMany: jest.Mock };
+    dispute: { aggregate: jest.Mock; findMany: jest.Mock };
   };
   let service: ReputationService;
 
   const allTrades: Record<string, unknown>[] = [];
+  const allDisputes: Record<string, unknown>[] = [];
+
+  function matchesTradeWhere(trade: any, where: any) {
+    const participantMatches = where.OR.some(
+      (condition: any) =>
+        trade.buyerAddress === condition.buyerAddress ||
+        trade.sellerAddress === condition.sellerAddress,
+    );
+    return participantMatches && (!where.status || trade.status === where.status);
+  }
 
   function setMockTrades(trades: Record<string, unknown>[]) {
     allTrades.length = 0;
     allTrades.push(...trades);
-    mockPrisma.trade.findMany.mockImplementation(
-      ({ where }: { where: { buyerAddress?: string; sellerAddress?: string } }) =>
-        Promise.resolve(
-          allTrades.filter(
-            (t) =>
-              (where.buyerAddress && (t as any).buyerAddress === where.buyerAddress) ||
-              (where.sellerAddress && (t as any).sellerAddress === where.sellerAddress),
-          ),
-        ),
+    mockPrisma.trade.aggregate.mockImplementation(({ where }: any) =>
+      Promise.resolve({ _count: { _all: allTrades.filter((trade) => matchesTradeWhere(trade, where)).length } }),
+    );
+    mockPrisma.trade.findMany.mockImplementation(({ where, take }: any) =>
+      Promise.resolve(allTrades.filter((trade) => matchesTradeWhere(trade, where)).slice(0, take)),
+    );
+  }
+
+  function setMockDisputes(disputes: Record<string, unknown>[]) {
+    allDisputes.length = 0;
+    allDisputes.push(...disputes);
+    const matches = (dispute: any, where: any) =>
+      dispute.initiator === where.initiator &&
+      (!where.status?.in || where.status.in.includes(dispute.status));
+    mockPrisma.dispute.aggregate.mockImplementation(({ where }: any) =>
+      Promise.resolve({ _count: { _all: allDisputes.filter((dispute) => matches(dispute, where)).length } }),
+    );
+    mockPrisma.dispute.findMany.mockImplementation(({ where, take }: any) =>
+      Promise.resolve(allDisputes.filter((dispute) => matches(dispute, where)).slice(0, take)),
     );
   }
 
@@ -48,16 +68,17 @@ describe("ReputationService", () => {
 
   beforeEach(() => {
     mockPrisma = {
-      trade: { findMany: jest.fn() },
-      dispute: { findMany: jest.fn() },
+      trade: { aggregate: jest.fn(), findMany: jest.fn() },
+      dispute: { aggregate: jest.fn(), findMany: jest.fn() },
     };
+    setMockDisputes([]);
     service = new ReputationService(mockPrisma as any);
   });
 
   describe("getUserReputation", () => {
     it("should return default values when user has no trades", async () => {
       setMockTrades([]);
-      mockPrisma.dispute.findMany.mockResolvedValue([]);
+      setMockDisputes([]);
 
       const result = await service.getUserReputation("guser");
 
@@ -75,7 +96,7 @@ describe("ReputationService", () => {
           makeTrade({ tradeId: `trade-${i}`, buyerAddress: "guser" }),
         ),
       );
-      mockPrisma.dispute.findMany.mockResolvedValue([]);
+      setMockDisputes([]);
 
       const result = await service.getUserReputation("guser");
 
@@ -86,7 +107,7 @@ describe("ReputationService", () => {
 
     it("should apply dispute penalties to trust score", async () => {
       setMockTrades([]);
-      mockPrisma.dispute.findMany.mockResolvedValue([
+      setMockDisputes([
         {
           id: 1,
           tradeId: "trade-001",
@@ -105,8 +126,29 @@ describe("ReputationService", () => {
 
       const result = await service.getUserReputation("guser");
 
-      expect(result.trustScore).toBe(38);
+      // Only the initiation penalty applies: a RESOLVED status carries no outcome.
+      expect(result.trustScore).toBe(46);
       expect(result.disputedTrades).toBe(0);
+    });
+
+    it("does not treat a resolved dispute as lost (issue #1400)", async () => {
+      setMockTrades([]);
+      setMockDisputes([
+        {
+          id: 1,
+          tradeId: "trade-001",
+          status: "RESOLVED",
+          initiator: "guser",
+          createdAt: new Date("2025-01-10"),
+        },
+      ]);
+
+      const result = await service.getUserReputation("guser");
+
+      expect(result.trustScore).toBe(48);
+      expect(result.history).toHaveLength(1);
+      expect(result.history[0]!.impact).toBe(-2);
+      expect(result.history[0]!.event).not.toMatch(/against you/);
     });
 
     it("should compute success rate correctly", async () => {
@@ -116,7 +158,7 @@ describe("ReputationService", () => {
         makeTrade({ buyerAddress: "guser", status: TradeStatus.DISPUTED }),
         makeTrade({ buyerAddress: "guser", status: TradeStatus.FUNDED }),
       ]);
-      mockPrisma.dispute.findMany.mockResolvedValue([]);
+      setMockDisputes([]);
 
       const result = await service.getUserReputation("guser");
 
@@ -131,7 +173,7 @@ describe("ReputationService", () => {
           makeTrade({ tradeId: `trade-${i}`, buyerAddress: "guser" }),
         ),
       );
-      mockPrisma.dispute.findMany.mockResolvedValue([]);
+      setMockDisputes([]);
 
       const result = await service.getUserReputation("guser");
 
@@ -144,7 +186,7 @@ describe("ReputationService", () => {
           makeTrade({ tradeId: `trade-${i}`, buyerAddress: "guser" }),
         ),
       );
-      mockPrisma.dispute.findMany.mockResolvedValue([]);
+      setMockDisputes([]);
 
       const result = await service.getUserReputation("guser");
 
@@ -159,7 +201,7 @@ describe("ReputationService", () => {
           sellerAddress: "guser",
         }),
       ]);
-      mockPrisma.dispute.findMany.mockResolvedValue([]);
+      setMockDisputes([]);
 
       const result = await service.getUserReputation("guser");
 
@@ -174,11 +216,28 @@ describe("ReputationService", () => {
           sellerAddress: "gseller",
         }),
       ]);
-      mockPrisma.dispute.findMany.mockResolvedValue([]);
+      setMockDisputes([]);
 
       const result = await service.getUserReputation("guser");
 
       expect(result.history[0]!.event).toContain("buyer");
+    });
+
+    it("uses one bounded OR query for recent trade history", async () => {
+      setMockTrades([makeTrade({ buyerAddress: "guser" })]);
+      setMockDisputes([]);
+
+      await service.getUserReputation("GUSER");
+
+      expect(mockPrisma.trade.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.trade.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ buyerAddress: "guser" }, { sellerAddress: "guser" }],
+          }),
+          take: 5,
+        }),
+      );
     });
   });
 });

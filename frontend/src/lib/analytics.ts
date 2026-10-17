@@ -22,7 +22,8 @@ const SENSITIVE_KEYS = [
 
 const EMAIL_REGEX = /\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b/;
 const IP_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-const WALLET_REGEX = /\b0x[a-fA-F0-9]{40}\b|\b[46][a-zA-Z0-9]{48,56}\b/;
+// Ethereum 0x addresses, Stellar G... public keys (56 chars) and M... muxed accounts (69 chars).
+const WALLET_REGEX = /\b0x[a-fA-F0-9]{40}\b|\bG[A-Z2-7]{55}\b|\bM[A-Z2-7]{68}\b/;
 
 // ─── Opt-out ──────────────────────────────────────────────────────────────────
 

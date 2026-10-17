@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { apiUrl } from '../support/api';
 
 const BUYER_ADDRESS = 'GDNM7WSJ7VIUVK2TSZ2OQES5XR2663TZEIBFXRDT56B5IRLHERVWSXMU';
 
@@ -55,7 +56,7 @@ test.describe('Wallet Connection Flow', () => {
       { addr: BUYER_ADDRESS },
     );
 
-    await page.route('http://localhost:4000/auth/challenge', async (route) => {
+    await page.route(apiUrl('/auth/challenge'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -63,7 +64,7 @@ test.describe('Wallet Connection Flow', () => {
       });
     });
 
-    await page.route('http://localhost:4000/auth/verify', async (route) => {
+    await page.route(apiUrl('/auth/verify'), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -75,9 +76,11 @@ test.describe('Wallet Connection Flow', () => {
     await page.waitForLoadState('networkidle');
 
     const connectButton = page.getByRole('button', { name: /connect|login|sign/i }).first();
-    if (await connectButton.isVisible()) {
-      await connectButton.click();
-    }
+    await expect(
+      connectButton,
+      'Connect/login/sign button must be visible on an unauthenticated landing page',
+    ).toBeVisible();
+    await connectButton.click();
 
     await page.waitForTimeout(1000);
     const hasToken = await page.evaluate(() => window.sessionStorage.getItem('amana_jwt'));

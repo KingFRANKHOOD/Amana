@@ -64,6 +64,22 @@ describe("scrubProperties", () => {
     expect((output.nested as { wallet: string }).wallet).toBe("[REDACTED]");
   });
 
+  it("redacts Stellar public keys and muxed accounts under non-sensitive keys", () => {
+    const input = {
+      counterparty: "GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ",
+      destination: `MA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJUAAAAAAAAAAAAGZFQ`,
+      memo: "Paying GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ now",
+      label: "GENERAL-STATUS",
+    };
+
+    const output = scrubProperties(input);
+
+    expect(output.counterparty).toBe("[REDACTED]");
+    expect(output.destination).toBe("[REDACTED]");
+    expect(output.memo).toBe("[REDACTED]");
+    expect(output.label).toBe("GENERAL-STATUS");
+  });
+
   it("passes through safe scalar values unchanged", () => {
     const input = { step: "details", count: 3, flag: true };
     const output = scrubProperties(input);

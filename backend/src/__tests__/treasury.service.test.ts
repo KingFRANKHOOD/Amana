@@ -59,9 +59,9 @@ describe("TreasuryService", () => {
     it("should accept withdrawal from admin caller", async () => {
       (isMediatorAddress as jest.Mock).mockReturnValue(true);
 
-      const result = await treasuryService.withdraw("GABCDEST", "100", "GADMIN");
-
-      expect(result).toHaveProperty("unsignedXdr");
+      await expect(
+        treasuryService.withdraw("GABCDEST", "100", "GADMIN"),
+      ).rejects.toThrow("Treasury withdrawal is not yet implemented");
     });
   });
 

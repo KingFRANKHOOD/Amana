@@ -3,7 +3,7 @@
   "info": {
     "title": "Amana Backend API",
     "version": "1.0.0",
-    "description": "OpenAPI coverage for the live Amana backend routes under `backend/src/routes`.\n\nAuthentication flow:\n1. Call `POST /auth/challenge` with a Stellar public key.\n2. Sign the returned challenge with the wallet.\n3. Exchange the signature at `POST /auth/verify` for a bearer token.\n4. Send `Authorization: Bearer <token>` to protected endpoints.\n\nJWT semantics enforced by middleware:\n- `iss` must match `JWT_ISSUER` (default `amana`)\n- `aud` must match `JWT_AUDIENCE` (default `amana-api`)\n- `jti` is required and checked against the revocation denylist\n- `nbf` must be present and not be in the future\n\nError code references in operation descriptions map to backend `ErrorCode` values in\n`backend/src/errors/errorCodes.ts`. Some route handlers still emit legacy `{ error }`\npayloads while centralized validation/runtime failures return `{ code, message, details }`."
+    "description": "OpenAPI coverage for the live Amana backend routes under `backend/src/routes`.\n\nAuthentication flow:\n1. Call `POST /auth/challenge` with a Stellar public key.\n2. Sign the returned challenge with the wallet.\n3. Exchange the signature at `POST /auth/verify` for an HttpOnly session cookie.\n4. Send requests with credentials so the browser includes the cookie automatically.\n\nJWT semantics enforced by middleware:\n- `iss` must match `JWT_ISSUER` (default `amana`)\n- `aud` must match `JWT_AUDIENCE` (default `amana-api`)\n- `jti` is required and checked against the revocation denylist\n- `nbf` must be present and not be in the future\n\nError code references in operation descriptions map to backend `ErrorCode` values in\n`backend/src/errors/errorCodes.ts`. Some route handlers still emit legacy `{ error }`\npayloads while centralized validation/runtime failures return `{ code, message, details }`."
   },
   "servers": [
     {
@@ -64,14 +64,18 @@
     },
     {
       "name": "Goals"
+    },
+    {
+      "name": "Security"
     }
   ],
   "components": {
     "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "amana_access",
+        "description": "HttpOnly, Secure, SameSite=Strict access-token cookie."
       }
     },
     "parameters": {
@@ -180,6 +184,7 @@
       "PathPaymentSourceAssetIssuer": {
         "in": "query",
         "name": "sourceAssetIssuer",
+        "description": "Issuer of the source asset. Required for every non-native asset (anything other than XLM); omitting it returns 400.",
         "required": false,
         "schema": {
           "type": "string"
@@ -190,16 +195,9 @@
         "in": "query",
         "name": "status",
         "required": false,
+        "description": "Exact `TradeStatus` value; any other value is rejected with 400.",
         "schema": {
-          "type": "string",
-          "enum": [
-            "CREATED",
-            "FUNDED",
-            "DELIVERED",
-            "RELEASED",
-            "DISPUTED",
-            "RESOLVED"
-          ]
+          "$ref": "#/components/schemas/TradeStatus"
         }
       },
       "ListTradesPageQuery": {
@@ -221,6 +219,18 @@
           "minimum": 1,
           "maximum": 100,
           "default": 20
+        }
+      },
+      "TradeExportLimitQuery": {
+        "in": "query",
+        "name": "limit",
+        "required": false,
+        "description": "Page size for the JSON export. Ignored when `format=csv`.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
         }
       },
       "ListTradesSortQuery": {
@@ -266,6 +276,55 @@
         "example": {
           "error": "Unauthorized"
         }
+      },
+      "TradeStatus": {
+        "type": "string",
+        "description": "Mirrors the Prisma `TradeStatus` enum in `backend/prisma/schema.prisma`.",
+        "enum": [
+          "PENDING_SIGNATURE",
+          "CREATED",
+          "FUNDED",
+          "DELIVERED",
+          "COMPLETED",
+          "DISPUTED",
+          "CANCELLED"
+        ]
+      },
+      "GoalStatus": {
+        "type": "string",
+        "description": "Mirrors the Prisma `GoalStatus` enum in `backend/prisma/schema.prisma`.",
+        "enum": [
+          "ACTIVE",
+          "COMPLETED",
+          "CANCELLED"
+        ]
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ]
       },
       "AppErrorResponse": {
         "type": "object",
@@ -366,16 +425,19 @@
       "AuthVerifyResponse": {
         "type": "object",
         "properties": {
-          "token": {
-            "type": "string",
-            "description": "JWT bearer token for subsequent API calls."
+          "authenticated": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Confirms that the HttpOnly access and refresh cookies were issued."
           }
         },
         "required": [
-          "token"
+          "authenticated"
         ],
         "example": {
-          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+          "authenticated": true
         }
       },
       "LogoutResponse": {
@@ -774,6 +836,493 @@
         "type": "object",
         "additionalProperties": true
       },
+      "TradeExportRow": {
+        "type": "object",
+        "description": "Flattened trade row shared by the JSON and CSV exports. `fee` is always\nan empty string because platform fees are not yet persisted per trade.\n",
+        "properties": {
+          "trade_id": {
+            "type": "string"
+          },
+          "buyer": {
+            "type": "string"
+          },
+          "seller": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string",
+            "enum": [
+              "USDC"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "fee": {
+            "type": "string"
+          },
+          "dispute_flag": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "trade_id",
+          "buyer",
+          "seller",
+          "amount",
+          "asset",
+          "status",
+          "created_at",
+          "completed_at",
+          "fee",
+          "dispute_flag"
+        ]
+      },
+      "TradeExportListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TradeExportRow"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ]
+      },
+      "WatchRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userAddress": {
+            "type": "string"
+          },
+          "tradeId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "userAddress",
+          "tradeId",
+          "createdAt"
+        ]
+      },
+      "WatchResponse": {
+        "type": "object",
+        "properties": {
+          "watch": {
+            "$ref": "#/components/schemas/WatchRecord"
+          }
+        },
+        "required": [
+          "watch"
+        ]
+      },
+      "WatchRemovalResponse": {
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean",
+            "description": "False when the trade was not on the caller's watchlist."
+          }
+        },
+        "required": [
+          "removed"
+        ]
+      },
+      "WatchedTrade": {
+        "type": "object",
+        "description": "Full trade row returned by the watchlist with the bookmark timestamp.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tradeId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "buyerAddress": {
+            "type": "string"
+          },
+          "sellerAddress": {
+            "type": "string"
+          },
+          "amountUsdc": {
+            "type": "string"
+          },
+          "buyerLossBps": {
+            "type": "integer"
+          },
+          "sellerLossBps": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          },
+          "fundedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "watchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the caller bookmarked the trade."
+          }
+        },
+        "required": [
+          "id",
+          "tradeId",
+          "buyerAddress",
+          "sellerAddress",
+          "amountUsdc",
+          "buyerLossBps",
+          "sellerLossBps",
+          "version",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "watchedAt"
+        ]
+      },
+      "WatchedTradeListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WatchedTrade"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ]
+      },
+      "EscrowMilestoneRequest": {
+        "type": "object",
+        "properties": {
+          "milestoneIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "amountUsdc": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,7})?$",
+            "description": "USDC amount, at most 7 decimal places, no negative sign."
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 timestamp for the milestone due date."
+          },
+          "conditionHash": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true
+          }
+        },
+        "required": [
+          "milestoneIndex",
+          "amountUsdc",
+          "dueAt"
+        ]
+      },
+      "EscrowScheduleRequest": {
+        "type": "object",
+        "properties": {
+          "milestones": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/EscrowMilestoneRequest"
+            }
+          }
+        },
+        "required": [
+          "milestones"
+        ]
+      },
+      "EscrowReleaseMilestoneView": {
+        "type": "object",
+        "properties": {
+          "milestoneIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "amountUsdc": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "conditionHash": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true
+          },
+          "released": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "milestoneIndex",
+          "amountUsdc",
+          "dueAt",
+          "conditionHash",
+          "released"
+        ]
+      },
+      "EscrowReleaseSchedule": {
+        "type": "object",
+        "properties": {
+          "tradeId": {
+            "type": "string"
+          },
+          "milestoneCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextReleaseDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Earliest unreleased milestone due date in the future, or null."
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EscrowReleaseMilestoneView"
+            }
+          }
+        },
+        "required": [
+          "tradeId",
+          "milestoneCount",
+          "nextReleaseDate",
+          "milestones"
+        ]
+      },
+      "TreasuryBalanceResponse": {
+        "type": "object",
+        "properties": {
+          "balance": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "contractId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "balance",
+          "asset",
+          "contractId"
+        ],
+        "example": {
+          "balance": "150.50",
+          "asset": "USDC",
+          "contractId": "CTEST00000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "TreasuryConfigResponse": {
+        "type": "object",
+        "properties": {
+          "contractId": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contractId",
+          "network",
+          "asset"
+        ]
+      },
+      "CspViolationReport": {
+        "type": "object",
+        "properties": {
+          "blocked-uri": {
+            "type": "string"
+          },
+          "violated-directive": {
+            "type": "string"
+          },
+          "document-uri": {
+            "type": "string"
+          },
+          "effective-directive": {
+            "type": "string"
+          },
+          "original-policy": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          }
+        }
+      },
+      "CspReportBody": {
+        "type": "object",
+        "properties": {
+          "csp-report": {
+            "$ref": "#/components/schemas/CspViolationReport"
+          }
+        }
+      },
+      "GoalAnalytics": {
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string"
+          },
+          "targetAmountUsdc": {
+            "type": "string"
+          },
+          "currentAmountUsdc": {
+            "type": "string"
+          },
+          "percentageComplete": {
+            "type": "number"
+          },
+          "daysRemaining": {
+            "type": "integer"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GoalStatus"
+          },
+          "vaultBalance": {
+            "type": "string"
+          },
+          "isOnTrack": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "goalId",
+          "targetAmountUsdc",
+          "currentAmountUsdc",
+          "percentageComplete",
+          "daysRemaining",
+          "deadline",
+          "status",
+          "vaultBalance",
+          "isOnTrack"
+        ]
+      },
+      "GoalsAnalyticsResponse": {
+        "type": "object",
+        "properties": {
+          "walletAddress": {
+            "type": "string"
+          },
+          "totalGoals": {
+            "type": "integer"
+          },
+          "activeGoals": {
+            "type": "integer"
+          },
+          "completedGoals": {
+            "type": "integer"
+          },
+          "totalTargetAmount": {
+            "type": "string"
+          },
+          "totalCurrentAmount": {
+            "type": "string"
+          },
+          "overallProgressPercentage": {
+            "type": "number"
+          },
+          "goals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GoalAnalytics"
+            }
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "walletAddress",
+          "totalGoals",
+          "activeGoals",
+          "completedGoals",
+          "totalTargetAmount",
+          "totalCurrentAmount",
+          "overallProgressPercentage",
+          "goals",
+          "timestamp"
+        ]
+      },
       "DisputeCategory": {
         "type": "object",
         "properties": {
@@ -1171,99 +1720,11 @@
           "algorithm",
           "keyId"
         ]
-      },
-      "GoalsAnalyticsResponse": {
-        "type": "object",
-        "properties": {
-          "walletAddress": {
-            "type": "string"
-          },
-          "totalGoals": {
-            "type": "integer"
-          },
-          "activeGoals": {
-            "type": "integer"
-          },
-          "completedGoals": {
-            "type": "integer"
-          },
-          "totalTargetAmount": {
-            "type": "string"
-          },
-          "totalCurrentAmount": {
-            "type": "string"
-          },
-          "overallProgressPercentage": {
-            "type": "number"
-          },
-          "goals": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "goalId": {
-                  "type": "string"
-                },
-                "targetAmountUsdc": {
-                  "type": "string"
-                },
-                "currentAmountUsdc": {
-                  "type": "string"
-                },
-                "percentageComplete": {
-                  "type": "number"
-                },
-                "daysRemaining": {
-                  "type": "integer"
-                },
-                "deadline": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "vaultBalance": {
-                  "type": "string"
-                },
-                "isOnTrack": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "goalId",
-                "targetAmountUsdc",
-                "currentAmountUsdc",
-                "percentageComplete",
-                "daysRemaining",
-                "deadline",
-                "status",
-                "vaultBalance",
-                "isOnTrack"
-              ]
-            }
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "walletAddress",
-          "totalGoals",
-          "activeGoals",
-          "completedGoals",
-          "totalTargetAmount",
-          "totalCurrentAmount",
-          "overallProgressPercentage",
-          "goals",
-          "timestamp"
-        ]
       }
     },
     "responses": {
       "UnauthorizedError": {
-        "description": "Missing, invalid, revoked, or semantically invalid bearer token.",
+        "description": "Missing, invalid, revoked, or semantically invalid session. `authMiddleware`\nreturns the classified error as `{ code, error, details }`; `details.errorType`\nis one of `missing_header`, `invalid_format`, `invalid_token`, `expired_token`,\n`network_error`, `config_error`.",
         "content": {
           "application/json": {
             "schema": {
@@ -1272,12 +1733,20 @@
             "examples": {
               "unauthorized": {
                 "value": {
-                  "error": "Unauthorized"
+                  "code": "AUTH_ERROR",
+                  "error": "Missing Authorization header",
+                  "details": {
+                    "errorType": "missing_header"
+                  }
                 }
               },
               "revoked": {
                 "value": {
-                  "error": "Unauthorized: token has been revoked"
+                  "code": "AUTH_ERROR",
+                  "error": "Unauthorized: token has been revoked",
+                  "details": {
+                    "errorType": "invalid_token"
+                  }
                 }
               }
             }
@@ -1537,7 +2006,7 @@
         "tags": [
           "Auth"
         ],
-        "summary": "Verify the signed challenge and issue a JWT",
+        "summary": "Verify the signed challenge and create a session",
         "description": "Rate limited to 10 attempts per 15-minute window per IP.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`.",
         "requestBody": {
           "required": true,
@@ -1551,7 +2020,7 @@
         },
         "responses": {
           "200": {
-            "description": "Signature verified and JWT issued.",
+            "description": "Signature verified and HttpOnly session cookies issued.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1596,7 +2065,7 @@
         "description": "Adds the current token `jti` to the revocation denylist until expiry.\nError code references: `AUTH_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -1628,7 +2097,7 @@
         "description": "Error code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -1673,7 +2142,7 @@
         "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -1728,7 +2197,7 @@
         "description": "Error code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -1758,7 +2227,7 @@
         "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -1803,7 +2272,7 @@
         "description": "Returns reputation metrics for the wallet in the bearer token.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -1833,7 +2302,7 @@
         "description": "Returns trust score details for the wallet in the bearer token.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -1965,7 +2434,7 @@
         "description": "Returns active categories by default. Admin wallets can include inactive categories.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2003,7 +2472,7 @@
         "description": "Admin wallet access is required.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -2060,7 +2529,7 @@
         "summary": "Fetch a dispute category",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2101,7 +2570,7 @@
         "description": "Admin wallet access is required.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2165,7 +2634,7 @@
         "description": "Admin wallet access is required. The category is marked inactive.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2204,7 +2673,7 @@
         "description": "Returns paginated list of disputes accessible to the authenticated mediator.\nError code references: `AUTH_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2286,7 +2755,7 @@
         "description": "Mediator-only endpoint to transition a dispute to a new status.\nValid transitions: OPEN → UNDER_REVIEW → RESOLVED/CLOSED\nError code references: `AUTH_ERROR`, `DISPUTE_NOT_FOUND`, `DISPUTE_STATUS_TRANSITION_INVALID`, `DISPUTE_STATUS_CONFLICT`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2366,7 +2835,7 @@
         "description": "The buyer address is derived from the bearer token, not the request body.\nProvide optional `Idempotency-Key` for safe retries.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2414,7 +2883,7 @@
         "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2466,7 +2935,7 @@
         "description": "Error code references: `AUTH_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -2495,7 +2964,7 @@
         "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2544,7 +3013,7 @@
         "description": "Only the buyer can build the deposit transaction, and the trade must still be in `CREATED`.\nSupports optional `Idempotency-Key`.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2593,7 +3062,7 @@
         "description": "Only the buyer can confirm delivery, and the trade must be `FUNDED`.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2658,7 +3127,7 @@
         "description": "Allowed for the buyer or an admin wallet only, and the trade must be `DELIVERED`.\nSupports optional `Idempotency-Key`.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2726,7 +3195,7 @@
         "description": "Supports optional `Idempotency-Key`.\nRoute validation requires a reason of at least 10 characters and either `category`\nor `categoryId`. The category must match an active dispute category.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2807,7 +3276,7 @@
         "description": "Returned fields depend on caller role:\n- seller receives the full manifest\n- buyer receives masked driver identity\n- mediator/admin receives hashed identity values\nError code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2854,7 +3323,7 @@
         "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2926,7 +3395,7 @@
         "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -2981,7 +3450,7 @@
         "description": "Supports byte-range requests using the inbound `Range` header.\nSuccessful range requests return `206 Partial Content` and set `accept-ranges: bytes`.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -3061,7 +3530,7 @@
         "description": "Accepts multipart form-data with a `file` field and a `tradeId` field.\nSupported MIME types: `video/mp4`, `video/webm`.\nMaximum file size: 50 MB.\nSupports optional `Idempotency-Key`.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -3173,7 +3642,7 @@
         "description": "Default response is JSON. Use `format=csv` for a CSV export and `signed=true`\nto include a canonical payload and integrity signature metadata.\nError code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -3233,7 +3702,7 @@
         "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -3294,10 +3763,10 @@
           "Treasury"
         ],
         "summary": "Fetch the treasury balance",
-        "description": "Returns the current balance of the escrow contract treasury.\nRequires admin authorization via ADMIN_STELLAR_PUBKEYS env.\nError code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
+        "description": "Returns the current USDC balance of the escrow contract address configured by\n`AMANA_ESCROW_CONTRACT_ID`. Any authenticated session may read it; no admin\nallowlist check is applied on this route.\nError code references: `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -3306,18 +3775,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "balance": {
-                      "type": "string"
-                    },
-                    "asset": {
-                      "type": "string"
-                    },
-                    "contractId": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/TreasuryBalanceResponse"
                 }
               }
             }
@@ -3337,10 +3795,10 @@
           "Treasury"
         ],
         "summary": "Withdraw funds from the treasury",
-        "description": "Withdraws tokens from the escrow contract treasury.\nOnly admin wallets can perform this operation.\nError code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
+        "description": "Withdraws tokens from the escrow contract treasury. Only wallets in the\n`ADMIN_STELLAR_PUBKEYS` / mediator allowlist may call it; every other\nauthenticated caller receives 403.\n\nThe withdrawal itself is not implemented yet: `TreasuryService.withdraw`\nthrows a not-implemented `AppError` and the controller maps any non-403\nfailure to `500` with `{ \"error\": \"Treasury withdrawal failed\" }`, so the\n200 response below is currently unreachable.\nError code references: `AUTH_ERROR`, `DOMAIN_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -3352,11 +3810,11 @@
                 "properties": {
                   "destination": {
                     "type": "string",
-                    "description": "Stellar public key to receive the funds."
+                    "description": "Stellar Ed25519 public key to receive the funds."
                   },
                   "amount": {
                     "type": "string",
-                    "description": "Amount to withdraw in USDC."
+                    "description": "Amount to withdraw in USDC. The handler only checks that it is a string."
                   }
                 },
                 "required": [
@@ -3373,24 +3831,53 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "unsignedXdr": {
-                      "type": "string"
+                  "$ref": "#/components/schemas/UnsignedXdrResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Destination missing/not a string, not a valid Ed25519 public key, or amount missing/not a string.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "missingDestination": {
+                    "value": {
+                      "error": "Destination address is required"
+                    }
+                  },
+                  "invalidDestination": {
+                    "value": {
+                      "error": "Invalid destination address"
+                    }
+                  },
+                  "missingAmount": {
+                    "value": {
+                      "error": "Amount is required"
                     }
                   }
                 }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/LegacyValidationError"
-          },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
           },
           "403": {
-            "$ref": "#/components/responses/ForbiddenError"
+            "description": "Caller is not in the treasury admin allowlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "Only admin can withdraw treasury funds"
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
@@ -3404,10 +3891,10 @@
           "Treasury"
         ],
         "summary": "Fetch treasury configuration",
-        "description": "Returns the current treasury configuration including contract ID and network.\nError code references: `AUTH_ERROR`, `INTERNAL_ERROR`.",
+        "description": "Returns the current treasury configuration including contract ID, Stellar\nnetwork, and USDC asset code. Any authenticated session may read it.\nError code references: `AUTH_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -3416,18 +3903,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "contractId": {
-                      "type": "string"
-                    },
-                    "network": {
-                      "type": "string"
-                    },
-                    "asset": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/TreasuryConfigResponse"
                 }
               }
             }
@@ -3501,16 +3977,16 @@
         "tags": [
           "Auth"
         ],
-        "summary": "Refresh an existing JWT",
-        "description": "Exchanges a recently issued bearer token for a fresh token. This endpoint has its own stricter configurable rate limit.",
+        "summary": "Rotate the refresh cookie",
+        "description": "Atomically exchanges the HttpOnly refresh cookie for fresh access and refresh cookies. This endpoint has its own stricter configurable rate limit.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
           "200": {
-            "description": "New bearer token.",
+            "description": "Fresh HttpOnly session cookies issued.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3533,11 +4009,11 @@
         "tags": [
           "Auth"
         ],
-        "summary": "Validate the current JWT",
-        "description": "Returns the decoded authenticated user payload when the bearer token is valid.",
+        "summary": "Validate the current session",
+        "description": "Returns the decoded authenticated user payload when the access cookie is valid.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -3579,7 +4055,7 @@
         "description": "Returns the authenticated user's saved notification channel preferences.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -3625,7 +4101,7 @@
         "description": "Merges notification channel preferences for the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -3688,7 +4164,7 @@
         "description": "Lists the authenticated user's in-app notifications with pagination and unread counts.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -3750,7 +4226,7 @@
         "description": "Marks a notification owned by the authenticated user as read.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -3796,7 +4272,7 @@
         "description": "Marks every unread in-app notification for the authenticated user as read.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -3834,16 +4310,18 @@
           "Trades"
         ],
         "summary": "Export authenticated user's trades",
-        "description": "Returns a filtered trade export as JSON or CSV.",
+        "description": "Exports every trade where the caller is the buyer or seller, optionally filtered\nby status and creation date. `format=json` (default) returns one page plus\npagination metadata; `format=csv` returns the complete filtered set as a\nUTF-8 BOM-prefixed `text/csv` attachment with the `TradeExportRow` columns in\ndeclaration order and ignores `page`/`limit`.\n`from`/`to` are aliases of `dateFrom`/`dateTo`; when both are supplied the\nexplicit `from`/`to` pair wins.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
           {
             "in": "query",
             "name": "format",
+            "required": false,
+            "description": "Response format.",
             "schema": {
               "type": "string",
               "enum": [
@@ -3859,6 +4337,8 @@
           {
             "in": "query",
             "name": "dateFrom",
+            "required": false,
+            "description": "Only trades created at or after this ISO-8601 timestamp.",
             "schema": {
               "type": "string",
               "format": "date-time"
@@ -3867,6 +4347,28 @@
           {
             "in": "query",
             "name": "dateTo",
+            "required": false,
+            "description": "Only trades created at or before this ISO-8601 timestamp.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "description": "Alias of `dateFrom`, used when `dateFrom` is absent.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "description": "Alias of `dateTo`, used when `dateTo` is absent.",
             "schema": {
               "type": "string",
               "format": "date-time"
@@ -3876,7 +4378,7 @@
             "$ref": "#/components/parameters/ListTradesPageQuery"
           },
           {
-            "$ref": "#/components/parameters/ListTradesLimitQuery"
+            "$ref": "#/components/parameters/TradeExportLimitQuery"
           }
         ],
         "responses": {
@@ -3885,8 +4387,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/TradeExportListResponse"
                 }
               },
               "text/csv": {
@@ -3896,8 +4397,24 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid query (for example `from` after `to`, or `limit` above 100).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "from: from must be before or equal to to"
+                }
+              }
+            }
+          },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }
@@ -3911,7 +4428,7 @@
         "description": "Lists templates owned by the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -3939,7 +4456,7 @@
         "description": "Saves a reusable trade template for the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -3983,7 +4500,7 @@
         "description": "Creates an unsigned trade from a saved template owned by the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4023,37 +4540,46 @@
           "Trades"
         ],
         "summary": "List watched trades",
-        "description": "Lists trades the authenticated user has added to their watchlist.",
+        "description": "Lists trades the authenticated user has added to their watchlist, newest\nbookmark first, with pagination metadata. Only trades the caller is a party\nto can be watched in the first place.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ListTradesPageQuery"
+          },
+          {
+            "$ref": "#/components/parameters/ListTradesLimitQuery"
           }
         ],
         "responses": {
           "200": {
-            "description": "Watched trade list.",
+            "description": "Watched trade page.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
-                    }
-                  },
-                  "required": [
-                    "items"
-                  ]
+                  "$ref": "#/components/schemas/WatchedTradeListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`page` below 1 or `limit` outside 1-100.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }
@@ -4064,10 +4590,10 @@
           "Trades"
         ],
         "summary": "Watch a trade",
-        "description": "Adds a trade visible to the authenticated user to their watchlist.",
+        "description": "Adds a trade to the caller's watchlist. The trade must exist and the caller\nmust be its buyer or seller. Adding the same trade twice is idempotent and\nreturns the existing bookmark.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `FORBIDDEN`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4081,8 +4607,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/WatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or missing trade id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -4103,10 +4638,10 @@
           "Trades"
         ],
         "summary": "Stop watching a trade",
-        "description": "Removes a watched trade for the authenticated user.",
+        "description": "Removes a trade from the caller's watchlist. Ownership of the trade is checked\neven when no bookmark exists, so this endpoint cannot be used to probe\nunrelated trades. `removed` is false when the trade was not watched.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `FORBIDDEN`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4120,8 +4655,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/WatchRemovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or missing trade id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -4147,7 +4691,7 @@
         "description": "Lists notes for a trade visible to the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4191,7 +4735,7 @@
         "description": "Adds a private note to a trade visible to the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4245,10 +4789,10 @@
           "Trades"
         ],
         "summary": "Get escrow release schedule",
-        "description": "Returns release milestones configured for a trade.",
+        "description": "Returns the milestone-based release schedule for a trade, ordered by\n`milestoneIndex`. A trade with no schedule returns `milestoneCount: 0`, an\nempty `milestones` array, and `nextReleaseDate: null`. Accepts either the\n`tradeId` string or the numeric surrogate key in the `id` path segment.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `INFRA_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4262,8 +4806,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/EscrowReleaseSchedule"
                 }
               }
             }
@@ -4273,6 +4816,19 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "description": "Release schedule store unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "Release schedule store unavailable"
+                }
+              }
+            }
           }
         }
       },
@@ -4281,10 +4837,10 @@
           "Trades"
         ],
         "summary": "Replace escrow release schedule",
-        "description": "Replaces the trade's milestone-based release schedule.",
+        "description": "Replaces the trade's milestone-based release schedule. Existing milestones for\nthe trade are deleted before the new ones are written, so the call is a full\noverwrite rather than an append. Only the buyer or seller may set the\nschedule, and only while the trade is `CREATED` or `FUNDED`.\nError code references: `VALIDATION_ERROR`, `AUTH_ERROR`, `NOT_FOUND`, `FORBIDDEN`, `DOMAIN_ERROR`, `INFRA_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4297,42 +4853,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "milestones": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 100,
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "milestoneIndex": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "amountUsdc": {
-                          "type": "string"
-                        },
-                        "dueAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "conditionHash": {
-                          "type": "string",
-                          "maxLength": 64
-                        }
-                      },
-                      "required": [
-                        "milestoneIndex",
-                        "amountUsdc",
-                        "dueAt"
-                      ]
-                    }
-                  }
-                },
-                "required": [
-                  "milestones"
-                ]
+                "$ref": "#/components/schemas/EscrowScheduleRequest"
               }
             }
           }
@@ -4343,14 +4864,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/EscrowReleaseSchedule"
                 }
               }
             }
           },
           "400": {
-            "$ref": "#/components/responses/LegacyValidationError"
+            "description": "Body failed validation (missing/empty `milestones`, more than 100 milestones,\nnegative `milestoneIndex`, malformed `amountUsdc`/`dueAt`) or the trade is\nnot in `CREATED`/`FUNDED` state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalidMilestones": {
+                    "value": {
+                      "error": "milestones.0.amountUsdc: Invalid USDC amount"
+                    }
+                  },
+                  "wrongTradeStatus": {
+                    "value": {
+                      "error": "Trade must be CREATED or FUNDED to set a release schedule (current: COMPLETED)"
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
@@ -4360,6 +4899,19 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "description": "Release schedule store unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "example": {
+                  "error": "Release schedule store unavailable"
+                }
+              }
+            }
           }
         }
       }
@@ -4656,7 +5208,7 @@
         "description": "Admin-only endpoint that lists feature flag state.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -4689,7 +5241,7 @@
         "description": "Admin-only endpoint that updates feature flag state and optional rollout percentage.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -4758,7 +5310,7 @@
         "description": "Admin-only synchronous evidence pin verification pass.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -4791,7 +5343,7 @@
         "description": "Admin-only verification pass that can attempt repair for missing pins.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -4839,7 +5391,7 @@
         "description": "Admin-only endpoint that checks a single IPFS CID pin.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -4893,7 +5445,7 @@
         "description": "Admin-only endpoint that queues an asynchronous evidence verification job.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -4941,7 +5493,7 @@
         "description": "Lists webhook subscriptions owned by the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -4966,10 +5518,10 @@
           "Webhooks"
         ],
         "summary": "Register a webhook subscription",
-        "description": "Registers a webhook URL and event list for the authenticated user.",
+        "description": "Registers a webhook URL and event list for the authenticated user. The plaintext webhook secret is visible only once on creation in the X-Webhook-Secret response header and is never returned in the JSON body.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -5004,7 +5556,22 @@
         },
         "responses": {
           "201": {
-            "description": "Created webhook subscription and plaintext secret.",
+            "description": "Created webhook subscription. The plaintext secret is returned only once in X-Webhook-Secret.",
+            "headers": {
+              "X-Webhook-Secret": {
+                "description": "Plaintext webhook secret shown only once on creation.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Webhook-Secret-Warning": {
+                "description": "Indicates the secret will not be shown again.",
+                "schema": {
+                  "type": "string",
+                  "example": "shown-only-once"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5032,7 +5599,7 @@
         "description": "Deletes a webhook subscription owned by the authenticated user.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -5075,10 +5642,10 @@
           "Goals"
         ],
         "summary": "Fetch authenticated goal analytics",
-        "description": "Error code references: `AUTH_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
+        "description": "Returns savings-goal analytics for the authenticated wallet, correlating each\ngoal with its vault balance. Amounts are returned as strings to preserve\nprecision; `percentageComplete` and `overallProgressPercentage` are\ninteger-truncated percentages, and `daysRemaining` is clamped to 0 once the\ndeadline has passed.\nA wallet with no `User` row yields 404 (`NOT_FOUND`).\nError code references: `AUTH_ERROR`, `NOT_FOUND`, `INFRA_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -5095,8 +5662,85 @@
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
           },
+          "404": {
+            "description": "No user record exists for the authenticated wallet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppErrorResponse"
+                },
+                "example": {
+                  "code": "NOT_FOUND",
+                  "message": "User not found: GAAA...WHF",
+                  "details": {}
+                }
+              }
+            }
+          },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/csp-violation": {
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "summary": "Report a Content-Security-Policy violation",
+        "description": "Browser-reported CSP violation collector wired to helmet's `report-uri`\ndirective. Unauthenticated, always responds `204 No Content`; violations are\nlogged and counted for metrics. Accepts `application/csp-report` (what browsers\nsend) or `application/json`, up to 20 KB. Rate limited to 10 reports per minute\nper client.\nUnlike the rest of the API this route is only mounted under the versioned\n`/api/v1` prefix and has no legacy unprefixed alias.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/csp-report": {
+              "schema": {
+                "$ref": "#/components/schemas/CspReportBody"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CspReportBody"
+              }
+            }
+          },
+          "examples": {
+            "report": {
+              "value": {
+                "csp-report": {
+                  "blocked-uri": "https://evil.example.com/script.js",
+                  "violated-directive": "script-src",
+                  "effective-directive": "script-src",
+                  "document-uri": "https://app.example.com/trades"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report accepted. No response body."
+          },
+          "413": {
+            "description": "Report body exceeded the 20 KB limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "More than 10 reports in the last minute from the same client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
           }
         }
       }

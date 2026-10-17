@@ -3,19 +3,26 @@ import crypto from 'crypto';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import { Request } from 'express';
 import { findOrCreateUser } from './user.service';
-import { AppError, ErrorCode, isAppError } from '../errors/errorCodes';
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError, isAppError } from '../errors/appError';
 import { env } from '../config/env';
 import { redis } from '../lib/redis';
 import { TracingHelper } from '../config/tracing';
 
 const CHALLENGE_PREFIX = 'challenge:';
 const REVOKED_PREFIX = 'revoked_jti:';
+const REFRESH_PREFIX = 'refresh_token:';
 const CHALLENGE_TTL = 300; // 5 min
 // A refresh token can be expired briefly, but it must still be a recently
 // issued access token. Keeping these limits here makes the exceptional refresh
 // path deliberately narrower than normal JWT validation.
 const REFRESH_EXPIRY_GRACE_SECONDS = 15 * 60;
 const REFRESH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+export interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+}
 
 export interface JWTPayload {
   sub: string;
@@ -197,6 +204,38 @@ export class AuthService {
       if (isAppError(error)) throw error;
       throw new AppError(ErrorCode.AUTH_ERROR, 'Token refresh failed', 401);
     }
+  }
+
+  static async issueSession(walletAddress: string, accessToken?: string): Promise<AuthSession> {
+    const refreshToken = crypto.randomBytes(48).toString('base64url');
+    const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    await redis.set(
+      `${REFRESH_PREFIX}${refreshHash}`,
+      walletAddress.toLowerCase(),
+      'EX',
+      REFRESH_MAX_AGE_SECONDS,
+    );
+
+    return {
+      accessToken: accessToken ?? this.issueToken(walletAddress),
+      refreshToken,
+    };
+  }
+
+  /** Atomically consumes a refresh token and replaces it, preventing replay. */
+  static async rotateRefreshToken(refreshToken: string): Promise<AuthSession> {
+    const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const walletAddress = await redis.getdel(`${REFRESH_PREFIX}${refreshHash}`);
+    if (!walletAddress) {
+      throw new AppError(ErrorCode.AUTH_ERROR, 'Invalid or reused refresh token', 401);
+    }
+    return this.issueSession(walletAddress);
+  }
+
+  static async revokeRefreshToken(refreshToken: string | undefined): Promise<void> {
+    if (!refreshToken) return;
+    const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    await redis.del(`${REFRESH_PREFIX}${refreshHash}`);
   }
 
   /** Add a token's jti to the revocation denylist. TTL matches remaining token lifetime. */

@@ -1,5 +1,6 @@
 import { Verifier } from '@pact-foundation/pact';
 import path from 'path';
+import { existsSync } from 'fs';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 
@@ -156,14 +157,18 @@ describe('Pact Provider Verification - Trades API', () => {
 
   it('verifies the provider against the consumer pact', async () => {
     const pactDir = path.resolve(__dirname, '../../../frontend/tests/pact/pacts');
+    const mobilePactDir = path.resolve(__dirname, '../../../mobile/tests/pact/pacts');
     const port = process.env.PACT_PROVIDER_PORT || '3001';
+
+    const pactFiles = [
+      path.resolve(pactDir, 'AmanaFrontend-AmanaBackend.json'),
+      path.resolve(mobilePactDir, 'AmanaMobile-AmanaBackend.json'),
+    ].filter((file) => existsSync(file));
 
     const output = await new Verifier({
       provider: 'AmanaBackend',
       providerBaseUrl: `http://localhost:${port}`,
-      pactUrls: [
-        path.resolve(pactDir, 'AmanaFrontend-AmanaBackend.json'),
-      ],
+      pactUrls: pactFiles,
       stateHandlers: {
         'a buyer is authenticated': async () => Promise.resolve(),
         'a trade exists in CREATED status': async () => Promise.resolve(),

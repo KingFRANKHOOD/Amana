@@ -15,6 +15,8 @@ spec:
       labels:
         app: redis
     spec:
+      securityContext:
+        fsGroup: 999
       containers:
         - name: redis
           image: redis:7-alpine
@@ -25,8 +27,15 @@ spec:
           ports:
             - containerPort: 6379
               name: redis
-          environment:
+          env:
             - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: REDIS_PASSWORD
+            # REDISCLI_AUTH lets redis-cli authenticate without -a flag,
+            # keeping the password out of process listings and pod describe output.
+            - name: REDISCLI_AUTH
               valueFrom:
                 secretKeyRef:
                   name: amana-secrets
@@ -42,8 +51,6 @@ spec:
             exec:
               command:
                 - redis-cli
-                - -a
-                - $(REDIS_PASSWORD)
                 - ping
             initialDelaySeconds: 15
             periodSeconds: 10
@@ -51,8 +58,11 @@ spec:
             exec:
               command:
                 - redis-cli
-                - -a
-                - $(REDIS_PASSWORD)
                 - ping
             initialDelaySeconds: 10
             periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          emptyDir: {}

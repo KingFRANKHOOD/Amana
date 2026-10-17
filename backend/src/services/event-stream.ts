@@ -22,6 +22,7 @@ const MAX_TOTAL_CONNECTIONS = 10_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const MAX_MISSED_PONGS = 3;
 const WS_CLOSE_TRY_AGAIN_LATER = 1013;
+const MAX_BUFFERED_AMOUNT_BYTES = 16 * 1024 * 1024; // 16MB backpressure threshold
 
 export class EventStreamService {
   private static current: EventStreamService | null = null;
@@ -188,6 +189,20 @@ export class EventStreamService {
       if (meta.filter.tradeId && event.tradeId !== meta.filter.tradeId) continue;
       if (meta.filter.eventType && event.eventType !== meta.filter.eventType) continue;
 
+      if (ws.bufferedAmount > MAX_BUFFERED_AMOUNT_BYTES) {
+        appLogger.warn(
+          { userId: meta.userId, bufferedAmount: ws.bufferedAmount },
+          "[EventStream] Dropping slow consumer due to backpressure",
+        );
+        this.removeClient(ws);
+        try {
+          ws.close(1008, "Server dropping slow consumer");
+        } catch {
+          /* no-op */
+        }
+        continue;
+      }
+
       try {
         ws.send(message);
       } catch {
@@ -220,7 +235,7 @@ export class EventStreamService {
     };
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
@@ -237,7 +252,9 @@ export class EventStreamService {
     }
     this.clients.clear();
     this.userCounts.clear();
-    this.wss.close();
+    await new Promise<void>((resolve, reject) => {
+      this.wss.close((error) => (error ? reject(error) : resolve()));
+    });
     if (EventStreamService.current === this) {
       EventStreamService.current = null;
     }

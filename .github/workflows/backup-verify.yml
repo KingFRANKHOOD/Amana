@@ -1,0 +1,92 @@
+# Database Backup Verification
+#
+# Issue #1100 — verify that Amana's database backup pipeline produces
+# restorable, internally-consistent dumps, and that the whole pipeline (not
+# just the production CronJob + Prometheus alerting in infra/k8s) is validated
+# as part of CI.
+#
+# The restore/integrity checks here mirror what scripts/verify-backup.sh
+# applies to production backups (table presence, row counts, no orphaned
+# foreign keys, newest-created_at freshness) against a throwaway Postgres, so
+# a change to any backup script that breaks dump/restore is caught on a PR
+# instead of only in the next nightly verification run.
+
+name: Database Backup Verification
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly scheduled verification so the pipeline is exercised even when
+    # backup scripts are unchanged for a long time.
+    - cron: '0 4 * * 1'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'scripts/db-backup.sh'
+      - 'scripts/db-restore.sh'
+      - 'scripts/verify-backup.sh'
+      - 'scripts/ci-verify-backup.sh'
+      - '.github/workflows/backup-verify.yml'
+  pull_request:
+    paths:
+      - 'scripts/db-backup.sh'
+      - 'scripts/db-restore.sh'
+      - 'scripts/verify-backup.sh'
+      - 'scripts/ci-verify-backup.sh'
+      - '.github/workflows/backup-verify.yml'
+
+jobs:
+  # ── Job 1: static checks on the backup scripts ─────────────────────────────
+  backup-script-lint:
+    name: Backup script syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Syntax check backup scripts
+        run: |
+          bash -n scripts/db-backup.sh scripts/db-restore.sh scripts/verify-backup.sh scripts/ci-verify-backup.sh
+          echo "All backup scripts passed shell syntax checks."
+
+  # ── Job 2: end-to-end backup -> restore -> integrity check ────────────────
+  # Spins up a real PostgreSQL (same major release family as the deployment
+  # image used in infra/k8s) and runs the backup scripts against it.
+  backup-restore-verify:
+    name: Backup → restore → integrity
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: backup_test_password
+          POSTGRES_DB: amana_source
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d amana_source"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgresql://postgres:backup_test_password@localhost:5432/amana_source
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Run end-to-end backup verification
+        run: |
+          chmod +x scripts/ci-verify-backup.sh
+          scripts/ci-verify-backup.sh

@@ -1,6 +1,8 @@
 import { Response, Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { validateRequest } from "../middleware/validateRequest";
+import { tradeIdParamSchema } from "../schemas/trade.notes.schemas";
 import { AuthRequest } from "../services/auth.service";
 import {
   ManifestAccessDeniedError,
@@ -22,11 +24,13 @@ const deliveryWindowSchema = z.object({
   path: ["from"],
 });
 
+const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
+
 const tradeManifestBodySchema = z.object({
-  driverName: z.string().trim().min(1),
-  phone: z.string().trim().min(5),
-  licensePlate: z.string().trim().min(1),
-  vehicleType: z.string().trim().min(1),
+  driverName: z.string().trim().min(1).refine(noUnsafeHtml, "Driver name contains unsupported HTML or script content"),
+  phone: z.string().trim().min(5).refine(noUnsafeHtml, "Phone contains unsupported HTML or script content"),
+  licensePlate: z.string().trim().min(1).refine(noUnsafeHtml, "License plate contains unsupported HTML or script content"),
+  vehicleType: z.string().trim().min(1).refine(noUnsafeHtml, "Vehicle type contains unsupported HTML or script content"),
   estimatedDeliveryWindow: deliveryWindowSchema,
 });
 
@@ -42,6 +46,28 @@ function caller(req: AuthRequest, res: Response): string | null {
   return walletAddress;
 }
 
+/**
+ * Returns true when the request explicitly targets the driverIdNumber-aware
+ * manifest contract flow (driverNameHash/driverIdHash + buildSubmitManifestTx).
+ * This lets the app mount both manifest routers on the same path without the
+ * trade manifest router shadowing this one for those requests.
+ */
+function wantsDriverIdManifest(req: AuthRequest): boolean {
+  const body = req.body as Record<string, unknown> | undefined;
+  if (body && typeof body === "object") {
+    if (typeof body.driverIdHash === "string" || typeof body.driverNameHash === "string") {
+      return true;
+    }
+  }
+  const query = req.query as Record<string, unknown> | undefined;
+  if (query && typeof query === "object") {
+    if (query.flow === "driverId" || query.flow === "driver-id") {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function createTradeManifestRouter(
   manifestService = new ManifestService(),
   contractService: ManifestContract = new ContractService(),
@@ -49,7 +75,7 @@ export function createTradeManifestRouter(
 ) {
   const router = Router({ mergeParams: true });
 
-  router.get("/", authMiddleware, async (req: AuthRequest, res: Response, next) => {
+  router.get("/", authMiddleware, validateRequest({ params: tradeIdParamSchema }), async (req: AuthRequest, res: Response, next) => {
     const walletAddress = caller(req, res);
     if (!walletAddress) return;
 
@@ -72,7 +98,7 @@ export function createTradeManifestRouter(
     }
   });
 
-  router.post("/", authMiddleware, async (req: AuthRequest, res: Response, next) => {
+  router.post("/", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: tradeManifestBodySchema }), async (req: AuthRequest, res: Response, next) => {
     const walletAddress = caller(req, res);
     if (!walletAddress) return;
 
@@ -107,7 +133,7 @@ export function createTradeManifestRouter(
         tradeId,
         callerAddress: walletAddress,
         driverName: parsed.data.driverName,
-        driverIdNumber: parsed.data.phone,
+        driverIdNumber: parsed.data.driverIdNumber,
         vehicleRegistration: parsed.data.licensePlate,
         routeDescription,
         expectedDeliveryAt: parsed.data.estimatedDeliveryWindow.to,

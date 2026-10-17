@@ -62,10 +62,6 @@ export class TracedHttpClient {
   /**
    * Set authorization header
    */
-  setAuthToken(token: string): void {
-    this.baseHeaders['Authorization'] = `Bearer ${token}`;
-  }
-
   /**
    * Generate or retrieve correlation ID
    */
@@ -223,8 +219,7 @@ export class TracedHttpClient {
         }
       }
 
-      const tracedResponse: TracedResponse<T> = {
-        ...response,
+      const tracedResponse = Object.assign(response.clone(), {
         data,
         correlationId,
         requestId,
@@ -233,7 +228,7 @@ export class TracedHttpClient {
           endTime,
           duration,
         },
-      };
+      }) as TracedResponse<T>;
 
       // Handle error responses
       if (!response.ok) {

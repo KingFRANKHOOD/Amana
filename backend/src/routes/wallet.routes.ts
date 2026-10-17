@@ -1,12 +1,43 @@
-import { Router } from "express";
+import { NextFunction, Router } from "express";
+import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { WalletService } from "../services/wallet.service";
 import { PathPaymentService } from "../services/pathPayment.service";
 import { TOKEN_CONFIG } from "../config/token";
+import { isAppError } from "../errors/appError";
 
 export const walletRoutes = Router();
 const walletService = new WalletService();
 const pathPaymentService = new PathPaymentService();
+
+const pathPaymentQuoteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many quote requests, please try again later" },
+});
+
+const pathPaymentQuoteQuerySchema = z.object({
+  sourceAmount: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/, "sourceAmount must be a positive decimal number")
+    .refine((v) => Number(v) > 0, "sourceAmount must be greater than 0"),
+  sourceAsset: z
+    .string()
+    .regex(/^[A-Za-z0-9]{1,12}$/, "sourceAsset must be a valid asset code"),
+  sourceAssetIssuer: z
+    .string()
+    .regex(/^G[A-Z0-9]{55}$/, "sourceAssetIssuer must be a valid Stellar public key")
+    .optional(),
+}).refine(
+  (q) => q.sourceAsset === "XLM" || q.sourceAsset === "native" || !!q.sourceAssetIssuer,
+  {
+    message: "sourceAssetIssuer is required for non-native source assets",
+    path: ["sourceAssetIssuer"],
+  },
+);
 
 walletRoutes.get("/balance", authMiddleware, async (req: any, res) => {
   try {
@@ -22,20 +53,40 @@ walletRoutes.get("/balance", authMiddleware, async (req: any, res) => {
 });
 
 
-walletRoutes.get("/path-payment-quote", authMiddleware, async (req, res) => {
-  try {
-    const { sourceAmount, sourceAsset, sourceAssetIssuer } = req.query;
-    if (!sourceAmount || !sourceAsset) {
-      return res.status(400).json({ error: "Missing sourceAmount or sourceAsset" });
+walletRoutes.get(
+  "/path-payment-quote",
+  authMiddleware,
+  pathPaymentQuoteLimiter,
+  async (req, res, next: NextFunction) => {
+    const parsed = pathPaymentQuoteQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Invalid query parameters",
+        details: parsed.error.flatten().fieldErrors,
+      });
     }
-    
-    const quotes = await pathPaymentService.getPathPaymentQuote(
-      sourceAmount as string,
-      sourceAsset as string,
-      sourceAssetIssuer as string
-    );
-    res.json({ routes: quotes });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch quotes" });
+
+    const { sourceAmount, sourceAsset, sourceAssetIssuer } = parsed.data;
+
+    try {
+      const quotes = await pathPaymentService.getPathPaymentQuote(
+        sourceAmount,
+        sourceAsset,
+        sourceAssetIssuer
+      );
+      res.json({ routes: quotes });
+    } catch (error: any) {
+      if (isAppError(error)) {
+        return next(error);
+      }
+      if (error?.response?.status === 404 || error?.status === 404) {
+        return res.status(404).json({ error: "No payment path found" });
+      }
+      if (error?.isAxiosError || error?.response) {
+        return res.status(502).json({ error: "Upstream payment provider error" });
+      }
+      // Fallback for unexpected plain errors — preserve distinction where possible
+      return next(error);
+    }
   }
-});
+);

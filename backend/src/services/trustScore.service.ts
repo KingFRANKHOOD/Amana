@@ -1,6 +1,7 @@
 import { PrismaClient, TradeStatus, DisputeStatus } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
 import { appLogger } from "../middleware/logger";
+import { withDatabaseQueryTimeout } from "../lib/queryTimeout";
 
 export interface TrustScoreBreakdown {
   baseScore: number;
@@ -57,6 +58,7 @@ interface TrustScoreConfig {
   tradeCompletionDiminishingRate: number;
   volumeThresholds: { minTrades: number; bonus: number }[];
   disputeInitiatedPenalty: number;
+  /** Reserved: only applicable once disputes persist an explicit outcome. */
   disputeLostPenalty: number;
   decayHalfLifeDays: number;
   minScore: number;
@@ -80,10 +82,19 @@ const DEFAULT_CONFIG: TrustScoreConfig = {
   maxScore: 100,
 };
 
+const ACTIVITY_TRADE_LIMIT = 1_000;
+const HISTORY_TRADE_LIMIT = 10;
+const HISTORY_DISPUTE_LIMIT = 5;
+
 type TrustScoreDatabase = {
-  trade: Pick<PrismaClient["trade"], "findMany">;
-  dispute: Pick<PrismaClient["dispute"], "findMany">;
+  trade: Pick<PrismaClient["trade"], "aggregate" | "findMany" | "findFirst">;
+  dispute: Pick<PrismaClient["dispute"], "aggregate" | "findMany">;
   user: Pick<PrismaClient["user"], "findUnique">;
+  $queryRaw: PrismaClient["$queryRaw"];
+  $transaction?: <TResult>(
+    operation: (transaction: TrustScoreDatabase) => Promise<TResult>,
+    options: { maxWait: number; timeout: number },
+  ) => Promise<TResult>;
 };
 
 export class TrustScoreService {
@@ -105,39 +116,90 @@ export class TrustScoreService {
       "[TrustScore] Calculating trust score",
     );
 
-    const user = await this.prisma.user.findUnique({
-      where: { walletAddress: normalized },
+    const tradeParticipantFilter = {
+      OR: [{ buyerAddress: normalized }, { sellerAddress: normalized }],
+    };
+
+    const queryResult = await withDatabaseQueryTimeout(this.prisma, async (database) => {
+      const [
+        user,
+        totalAggregate,
+        completedAggregate,
+        disputedAggregate,
+        activityTrades,
+        completedTrades,
+        disputeAggregate,
+        disputes,
+        lastTrade,
+        volumeRows,
+      ] = await Promise.all([
+        database.user.findUnique({ where: { walletAddress: normalized } }),
+        database.trade.aggregate({ where: tradeParticipantFilter, _count: { _all: true } }),
+        database.trade.aggregate({
+          where: { ...tradeParticipantFilter, status: TradeStatus.COMPLETED },
+          _count: { _all: true },
+        }),
+        database.trade.aggregate({
+          where: { ...tradeParticipantFilter, status: TradeStatus.DISPUTED },
+          _count: { _all: true },
+        }),
+        database.trade.findMany({
+          where: tradeParticipantFilter,
+          orderBy: { createdAt: "desc" },
+          take: ACTIVITY_TRADE_LIMIT,
+        }),
+        database.trade.findMany({
+          where: { ...tradeParticipantFilter, status: TradeStatus.COMPLETED },
+          orderBy: { createdAt: "desc" },
+          take: HISTORY_TRADE_LIMIT,
+        }),
+        database.dispute.aggregate({
+          where: { initiator: normalized },
+          _count: { _all: true },
+        }),
+        database.dispute.findMany({
+          where: { initiator: normalized },
+          orderBy: { createdAt: "desc" },
+          take: HISTORY_DISPUTE_LIMIT,
+        }),
+        database.trade.findFirst({
+          where: tradeParticipantFilter,
+          orderBy: { updatedAt: "desc" },
+          select: { updatedAt: true },
+        }),
+        database.$queryRaw<{ totalVolumeUsdc: string }[]>`
+          SELECT COALESCE(SUM(CAST("amountUsdc" AS NUMERIC)), 0)::TEXT AS "totalVolumeUsdc"
+          FROM "Trade"
+          WHERE "buyerAddress" = ${normalized} OR "sellerAddress" = ${normalized}
+        `,
+      ]);
+
+      return {
+        user,
+        totalTrades: totalAggregate._count._all,
+        completedCount: completedAggregate._count._all,
+        disputedCount: disputedAggregate._count._all,
+        activityTrades,
+        completedTrades,
+        disputeCount: disputeAggregate._count._all,
+        disputes,
+        lastTrade,
+        totalVolumeUsdc: Number(volumeRows[0]?.totalVolumeUsdc ?? 0),
+      };
     });
 
-    const [buyerTrades, sellerTrades, disputes] = await Promise.all([
-      this.prisma.trade.findMany({
-        where: { buyerAddress: normalized },
-        orderBy: { createdAt: "asc" },
-      }),
-      this.prisma.trade.findMany({
-        where: { sellerAddress: normalized },
-        orderBy: { createdAt: "asc" },
-      }),
-      this.prisma.dispute.findMany({
-        where: { initiator: normalized },
-        orderBy: { createdAt: "asc" },
-      }),
-    ]);
-
-    const allTrades = [...buyerTrades, ...sellerTrades];
-    const completedTrades = allTrades.filter(
-      (t) => t.status === TradeStatus.COMPLETED,
-    );
-    const disputedTrades = allTrades.filter(
-      (t) => t.status === TradeStatus.DISPUTED,
-    );
-    const totalTrades = allTrades.length;
-    const completedCount = completedTrades.length;
-    const disputedCount = disputedTrades.length;
-
-    const totalVolumeUsdc = allTrades.reduce((sum, t) => {
-      return sum + parseFloat(t.amountUsdc || "0");
-    }, 0);
+    const {
+      user,
+      totalTrades,
+      completedCount,
+      disputedCount,
+      activityTrades,
+      completedTrades,
+      disputeCount,
+      disputes,
+      lastTrade,
+      totalVolumeUsdc,
+    } = queryResult;
 
     const successRate =
       totalTrades > 0
@@ -150,19 +212,12 @@ export class TrustScoreService {
         )
       : 0;
 
-    const lastTrade =
-      allTrades.length > 0
-        ? allTrades.reduce((latest, t) =>
-            t.updatedAt > latest.updatedAt ? t : latest,
-          )
-        : null;
-
     const breakdown = this.calculateBreakdown(
       completedCount,
       totalTrades,
       totalVolumeUsdc,
-      disputes.length,
-      allTrades,
+      disputeCount,
+      activityTrades,
       normalized,
     );
 
@@ -358,24 +413,29 @@ export class TrustScoreService {
     }
 
     for (const dispute of disputes.slice(0, 5)) {
-      const lost = dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED;
+      // The Dispute model does not record an outcome (winner/loser), only a
+      // lifecycle status. A RESOLVED/CLOSED status says nothing about whether the
+      // initiator won, so every dispute is treated as initiated-only here. The
+      // harsher `disputeLostPenalty` / "dispute_lost" event must only be applied
+      // once an explicit outcome is persisted.
       const timestamp = dispute.createdAt.toISOString();
       const ageMs = now - dispute.createdAt.getTime();
       const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
-      const rawImpact = lost
-        ? -this.config.disputeLostPenalty
-        : -this.config.disputeInitiatedPenalty;
+      const rawImpact = -this.config.disputeInitiatedPenalty;
       const decayedImpact = Math.round(rawImpact * decayFactor * 10) / 10;
+      const tradeRef = `${dispute.tradeId.slice(0, 8)}...`;
+      const terminal =
+        dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.CLOSED;
 
       events.push({
         id: `dispute-${dispute.id}`,
-        event: lost
-          ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved against you`
-          : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
+        event: terminal
+          ? `Initiated dispute on trade ${tradeRef} (${dispute.status.toLowerCase()})`
+          : `Initiated dispute on trade ${tradeRef}`,
         impact: rawImpact,
         impactLabel: `${rawImpact}`,
         timestamp,
-        type: lost ? "dispute_lost" : "dispute_initiated",
+        type: "dispute_initiated",
         decayedImpact,
       });
     }

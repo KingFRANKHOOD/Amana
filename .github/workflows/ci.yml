@@ -16,21 +16,17 @@ on:
       - 'frontend/**'
       - 'mobile/**'
       - 'contracts/**'
+      - 'routes-d/**'
       - 'scripts/**'
       - 'infra/**'
+      - 'grafana/**'
+      - 'loki/**'
+      - 'promtail/**'
       - 'pnpm-lock.yaml'
   pull_request:
     branches:
       - main
       - develop
-    paths:
-      - ".github/workflows/ci.yml"
-      - "frontend/**"
-      - "backend/**"
-      - "mobile/**"
-      - "contracts/**"
-      - "scripts/**"
-      - "infra/**"
 
 jobs:
   changes:
@@ -41,14 +37,17 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       mobile: ${{ steps.filter.outputs.mobile }}
       contracts: ${{ steps.filter.outputs.contracts }}
+      routes_d: ${{ steps.filter.outputs.routes_d }}
+      stack_matrix: ${{ steps.matrices.outputs.stack }}
+      trivy_matrix: ${{ steps.matrices.outputs.trivy }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Detect changed paths
         id: filter
         # Pinned from dorny/paths-filter@v3
-        uses: dorny/paths-filter@6852f92c20ea7fd3b0c25de3b5112db3a98da050
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             frontend:
@@ -70,27 +69,22 @@ jobs:
     name: ${{ matrix.stack }} CI
     runs-on: ubuntu-latest
     needs: changes
-    if: >
-      (matrix.stack == 'frontend' && needs.changes.outputs.frontend == 'true') ||
-      (matrix.stack == 'backend' && needs.changes.outputs.backend == 'true') ||
-      (matrix.stack == 'mobile' && needs.changes.outputs.mobile == 'true') ||
-      (matrix.stack == 'contracts' && needs.changes.outputs.contracts == 'true')
+    if: needs.changes.outputs.stack_matrix != '[]'
     strategy:
       matrix:
-        stack: [frontend, backend, mobile, contracts]
+        stack: ${{ fromJson(needs.changes.outputs.stack_matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
         if: matrix.stack != 'contracts'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node
         if: matrix.stack != 'contracts'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 20
           cache: pnpm
           cache-dependency-path: ${{ matrix.stack == 'frontend' && 'frontend/pnpm-lock.yaml' || matrix.stack == 'backend' && 'backend/pnpm-lock.yaml' || matrix.stack == 'mobile' && 'mobile/pnpm-lock.yaml' }}
 
@@ -102,7 +96,7 @@ jobs:
 
       - name: Cache Rust dependencies and build
         if: matrix.stack == 'contracts'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: contracts
           cache-targets: true
@@ -110,7 +104,7 @@ jobs:
       - name: Cache cargo-audit binary
         if: matrix.stack == 'contracts'
         id: cache-cargo-audit
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-audit
           key: cargo-audit-${{ runner.os }}-v0.21
@@ -124,9 +118,9 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: ${{ matrix.stack }}
 
-      - name: Security audit (npm)
+      - name: Security audit (pnpm)
         if: matrix.stack == 'frontend' || matrix.stack == 'backend'
-        run: npm audit --audit-level=high
+        run: pnpm audit --audit-level=high
         working-directory: ${{ matrix.stack }}
 
       - name: Build
@@ -144,9 +138,19 @@ jobs:
         run: pnpm test -- --coverage
         working-directory: frontend
 
+      - name: Upload frontend coverage
+        if: matrix.stack == 'frontend'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: frontend/coverage/lcov.info
+          flags: frontend
+          name: frontend
+          fail_ci_if_error: true
+
       - name: Frontend visual regression tests
         if: matrix.stack == 'frontend'
-        run: pnpm test:visual
+        run: pnpm exec playwright test --project=visual-regression
         working-directory: frontend
 
       - name: Backend test
@@ -157,6 +161,16 @@ jobs:
           export TRADE_NOTES_ENCRYPTION_KEY=test-trade-notes-encryption-key-base64-32chr
           pnpm test -- --coverage
         working-directory: backend
+
+      - name: Upload backend coverage
+        if: matrix.stack == 'backend'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: backend/coverage/lcov.info
+          flags: backend
+          name: backend
+          fail_ci_if_error: true
 
       - name: Mobile type check
         if: matrix.stack == 'mobile'
@@ -170,8 +184,18 @@ jobs:
 
       - name: Mobile test
         if: matrix.stack == 'mobile'
-        run: pnpm test
+        run: pnpm test:coverage
         working-directory: mobile
+
+      - name: Upload mobile coverage
+        if: matrix.stack == 'mobile'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: mobile/coverage/lcov.info
+          flags: mobile
+          name: mobile
+          fail_ci_if_error: true
 
       - name: Mobile security audit
         if: matrix.stack == 'mobile'
@@ -196,6 +220,25 @@ jobs:
         if: matrix.stack == 'contracts'
         working-directory: contracts/amana_escrow
         run: cargo test --locked
+
+      - name: Install cargo-llvm-cov
+        if: matrix.stack == 'contracts'
+        uses: taiki-e/install-action@6a241a1328ca6173d49760e1de6702cd5e52ef94 # cargo-llvm-cov
+
+      - name: Generate contracts coverage
+        if: matrix.stack == 'contracts'
+        working-directory: contracts
+        run: cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info
+
+      - name: Upload contracts coverage
+        if: matrix.stack == 'contracts'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: contracts/coverage/lcov.info
+          flags: contracts
+          name: contracts
+          fail_ci_if_error: true
 
       - name: Build WASM artifact
         if: matrix.stack == 'contracts'
@@ -222,11 +265,183 @@ jobs:
           echo "Mobile checks completed at $(date --utc)" > mobile/ci-artifacts/mobile-ci-summary.txt
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.stack }}-artifact
           path: ${{ matrix.stack == 'frontend' && 'frontend/coverage/' || matrix.stack == 'backend' && 'backend/coverage/' || matrix.stack == 'mobile' && 'mobile/ci-artifacts/' || matrix.stack == 'contracts' && 'contracts/amana_escrow/target/wasm32-unknown-unknown/release/amana_escrow.wasm' }}
           retention-days: 7
+
+  routes-d:
+    name: routes-d CI
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.routes_d == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: routes-d/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: routes-d
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+        working-directory: routes-d
+
+      - name: Build
+        run: npm run build
+        working-directory: routes-d
+
+      - name: Lint
+        run: npm run lint
+        working-directory: routes-d
+
+      - name: Test with coverage
+        run: npm test -- --coverage
+        working-directory: routes-d
+
+      - name: Upload routes-d coverage
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: routes-d/coverage/lcov.info
+          flags: routes-d
+          name: routes-d
+          fail_ci_if_error: true
+
+      - name: Upload routes-d artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: routes-d-artifact
+          path: routes-d/coverage/
+          if-no-files-found: warn
+          retention-days: 7
+
+  e2e:
+    name: Playwright E2E (seeded staging)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: >
+      github.event_name == 'pull_request' ||
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.backend == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            backend/pnpm-lock.yaml
+
+      - name: Validate Playwright JUnit output configuration
+        run: node --test scripts/ci-workflow.test.cjs
+
+      - name: Validate database restore target precedence
+        run: node --test scripts/db-restore.test.cjs
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install application dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: backend
+
+      - name: Create staging environment
+        run: |
+          cat > .env.staging <<'EOF'
+          STAGING_POSTGRES_PASSWORD=staging-password
+          STAGING_REDIS_PASSWORD=staging-redis-pass
+          STAGING_DATABASE_URL=postgresql://postgres:staging-password@localhost:5434/amana_staging
+          DATABASE_URL=postgresql://postgres:staging-password@localhost:5434/amana_staging
+          REDIS_URL=redis://:staging-redis-pass@localhost:6380
+          JWT_SECRET=ci-e2e-jwt-secret-value-with-minimum-length-32
+          TRADE_NOTES_ENCRYPTION_KEY=ci-e2e-trade-notes-encryption-key-base64-32chr
+          AMANA_ESCROW_CONTRACT_ID=ci-e2e-escrow-contract
+          USDC_CONTRACT_ID=ci-e2e-usdc-contract
+          CORS_ORIGINS=http://localhost:3000
+          PORT=4000
+          EOF
+
+      - name: Start seeded staging stack
+        run: |
+          chmod +x ./scripts/staging-up.sh ./scripts/staging-validate.sh
+          ./scripts/staging-up.sh --reset
+          set -a
+          source .env.staging
+          set +a
+          nohup pnpm --dir backend dev > backend-e2e.log 2>&1 &
+          nohup pnpm --dir frontend dev > frontend-e2e.log 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://localhost:4000/health/ready >/dev/null && curl --fail --silent http://localhost:3000/ >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 60 ]]; then
+              echo "Staging services did not become ready"
+              cat backend-e2e.log frontend-e2e.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Run Playwright E2E tests
+        id: e2e
+        working-directory: frontend
+        env:
+          CI: true
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/e2e-junit.xml
+        run: pnpm exec playwright test tests/e2e --project=chromium-desktop --reporter=line,html,junit
+
+      - name: Upload Playwright reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-e2e-reports
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            backend-e2e.log
+            frontend-e2e.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Add E2E results to summary
+        if: always()
+        run: |
+          {
+            echo "## Playwright E2E"
+            echo "- Environment: seeded staging"
+            echo "- Projects: chromium-desktop"
+            echo "- Result: ${{ steps.e2e.outcome }}"
+            echo "- HTML report and traces: playwright-e2e-reports artifact"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tear down staging stack
+        if: always()
+        run: docker compose --profile staging down -v --remove-orphans
 
   # Issue #998: container image vulnerability scanning. This repo does not
   # currently build/publish Docker images anywhere in CI (no Dockerfile
@@ -245,19 +460,17 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    if: >
-      (matrix.stack == 'frontend' && needs.changes.outputs.frontend == 'true') ||
-      (matrix.stack == 'backend' && needs.changes.outputs.backend == 'true')
+    if: needs.changes.outputs.trivy_matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
-        stack: [frontend, backend]
+        stack: ${{ fromJson(needs.changes.outputs.trivy_matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: ${{ matrix.stack }}
@@ -268,10 +481,58 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: trivy-${{ matrix.stack }}.sarif
           category: trivy-${{ matrix.stack }}
+
+  trivy-image-scan:
+    name: Trivy container image scan
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run Trivy image scan (postgres:17-alpine)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          scan-ref: postgres:17-alpine
+          format: sarif
+          output: trivy-postgres.sarif
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+      - name: Run Trivy image scan (redis:7-alpine)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          scan-ref: redis:7-alpine
+          format: sarif
+          output: trivy-redis.sarif
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+      - name: Upload SARIF to GitHub Security tab (postgres)
+        if: always()
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy-postgres.sarif
+          category: trivy-image-postgres
+
+      - name: Upload SARIF to GitHub Security tab (redis)
+        if: always()
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy-redis.sarif
+          category: trivy-image-redis
 
   contract-tests:
     name: Frontend ↔ Backend Pact contracts
@@ -279,22 +540,24 @@ jobs:
     needs: changes
     if: >
       needs.changes.outputs.frontend == 'true' ||
-      needs.changes.outputs.backend == 'true'
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.mobile == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: |
             frontend/pnpm-lock.yaml
             backend/pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -304,9 +567,17 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: backend
 
+      - name: Install mobile dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: mobile
+
       - name: Generate consumer pacts
         run: pnpm test:pact
         working-directory: frontend
+
+      - name: Generate mobile consumer pacts
+        run: pnpm test:pact
+        working-directory: mobile
 
       - name: Verify backend provider
         env:
@@ -317,9 +588,72 @@ jobs:
         working-directory: backend
 
       - name: Publish pact artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: amana-pacts
           path: frontend/tests/pact/pacts/*.json
           if-no-files-found: error
           retention-days: 14
+
+  # Issue #1457: loki/config.yml and promtail/config.yml were both committed as
+  # the 7-byte literal "content". Neither tool had a usable config, nothing
+  # validated them, and the staging containers fell back to image defaults
+  # without failing loudly. The Node check asserts the configs are real and
+  # consistent with docs/LOGGING_STANDARDS.md; the two container steps then hand
+  # the same files to the real Loki and Promtail binaries, so a config that
+  # parses as YAML but is rejected by the tools cannot land either.
+  observability-config:
+    name: Observability config validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Loki and Promtail configs
+        run: pnpm test:config
+
+      - name: Verify Loki config with the Loki binary
+        # Pinned to a real patch tag. docker-compose.yml asks for the bare
+        # grafana/loki:3.0, which is not a published tag, so the images are
+        # named explicitly here rather than copied from the compose file.
+        run: |
+          docker run --rm \
+            -v "$PWD/loki/config.yml:/etc/loki/config.yml:ro" \
+            grafana/loki:3.0.0 \
+            -config.file=/etc/loki/config.yml \
+            -verify-config=true
+
+      - name: Verify Promtail config with the Promtail binary
+        # Promtail has no --verify-config, so it is started against the real
+        # config and only a config error (or a non-timeout exit) fails the step.
+        # A still-running process at the timeout means the config loaded.
+        run: |
+          set +e
+          output=$(timeout 20 docker run --rm \
+            -v "$PWD/promtail/config.yml:/etc/promtail/promtail.yaml:ro" \
+            grafana/promtail:3.0.0 \
+            -config.file=/etc/promtail/promtail.yaml 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if echo "$output" | grep -iE 'error loading config|error parsing config|cannot unmarshal|field .* not found'; then
+            echo "::error file=promtail/config.yml::Promtail rejected the config"
+            exit 1
+          fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+            echo "::error file=promtail/config.yml::Promtail exited with status $status"
+            exit 1
+          fi

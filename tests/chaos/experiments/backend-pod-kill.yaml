@@ -1,0 +1,43 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: backend-random-pod-kill
+  namespace: default
+  labels:
+    experiment: pod-kill
+    severity: high
+    environment: staging
+  annotations:
+    hypothesis: |
+      When a random backend pod is killed:
+      1. K8s Service/Load Balancer routes traffic to remaining replicas
+      2. In-flight HTTP requests that were on killed pod:
+         - Idempotent GET/HEAD: retried by client automatically (200 on retry)
+         - Non-idempotent POST/PUT: fails with 502, client must retry manually
+      3. BullMQ in-flight jobs (jobs in "active" state when pod died):
+         - Worker heartbeat times out after 30s (BullMQ default)
+         - Jobs moved back to "waiting" and retried on surviving worker
+         - No data loss, no duplicate side effects (idempotent handlers)
+      4. HPA scales up replacement pod within 60s
+      5. Overall error rate < 5% during failover window
+    steady-state-check: |
+      - kubectl get pods -l app=backend shows 2/2 Running
+      - /health on each pod reports status="healthy"
+      - BullMQ "active" jobs count == 0 (no stuck jobs before experiment)
+    rollback: kubectl delete podchaos backend-random-pod-kill -n default
+    post-experiment-verification: |
+      - kubectl get pods -l app=backend shows 2/2 Running within 90s
+      - All BullMQ queues have 0 "failed" jobs that were added before kill
+      - HTTP 5xx rate returns to baseline within 60s
+      - EventListener processed events: no gaps in ledger sequence >15s
+spec:
+  action: pod-kill
+  mode: one
+  gracePeriod: 0
+  selector:
+    labelSelectors:
+      app: backend
+    namespaces:
+      - default
+  scheduler:
+    cron: "@never"

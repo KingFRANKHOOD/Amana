@@ -70,7 +70,7 @@ export function FinancialSummary({ trade }: FinancialSummaryProps) {
         />
         <FinancialRow
           label="Network Gas Est."
-          value={`${trade.networkGasEst} ETH`}
+          value={`${trade.networkGasEst} XLM`}
           dimmed
         />
       </div>

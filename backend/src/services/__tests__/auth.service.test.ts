@@ -1,11 +1,12 @@
 import Redis from 'ioredis';
 import jwt from 'jsonwebtoken';
 import { Keypair } from '@stellar/stellar-sdk';
-import { AppError, ErrorCode } from '../../errors/errorCodes';
+import { ErrorCode } from '../../errors/errorCodes';
 
 jest.mock('ioredis', () => {
   const m = {
     get: jest.fn(),
+    getdel: jest.fn(),
     set: jest.fn(),
     del: jest.fn(),
     exists: jest.fn(),
@@ -41,6 +42,7 @@ describe('AuthService', () => {
     jest.clearAllMocks();
     const redisMock = getRedisMock();
     redisMock.get.mockReset();
+    redisMock.getdel.mockReset();
     redisMock.set.mockReset();
     redisMock.del.mockReset();
     redisMock.exists.mockReset();
@@ -84,7 +86,7 @@ describe('AuthService', () => {
     it('should verify signature and issue a JWT', async () => {
       const challenge = 'test-challenge';
       const redisMock = getRedisMock();
-      redisMock.get.mockResolvedValue(challenge);
+      redisMock.getdel.mockResolvedValue(challenge);
       redisMock.del.mockResolvedValue(1);
       (findOrCreateUser as jest.Mock).mockResolvedValue({ id: 'user-1' });
 
@@ -92,8 +94,7 @@ describe('AuthService', () => {
       const token = await AuthService.verifySignatureAndIssueJWT(realWallet, signedChallenge);
 
       expect(token).toBeDefined();
-      expect(redisMock.get).toHaveBeenCalled();
-      expect(redisMock.del).toHaveBeenCalled();
+      expect(redisMock.getdel).toHaveBeenCalled();
       expect(findOrCreateUser).toHaveBeenCalledWith(realWallet);
       
       const decoded = jwt.verify(token, 'test-secret') as JWTPayload;
@@ -102,7 +103,7 @@ describe('AuthService', () => {
 
     it('should throw auth error if challenge not found', async () => {
       const redisMock = getRedisMock();
-      redisMock.get.mockResolvedValue(null);
+      redisMock.getdel.mockResolvedValue(null);
 
       await expect(AuthService.verifySignatureAndIssueJWT(realWallet, 'sig')).rejects.toMatchObject({
         code: ErrorCode.AUTH_ERROR,
@@ -113,7 +114,7 @@ describe('AuthService', () => {
     it('should throw auth error if signature is invalid', async () => {
       const challenge = 'test-challenge';
       const redisMock = getRedisMock();
-      redisMock.get.mockResolvedValue(challenge);
+      redisMock.getdel.mockResolvedValue(challenge);
 
       const invalidSignature = Buffer.from('invalid').toString('base64url');
       await expect(AuthService.verifySignatureAndIssueJWT(realWallet, invalidSignature)).rejects.toMatchObject({
@@ -125,7 +126,7 @@ describe('AuthService', () => {
     it('burns the challenge after a failed signature attempt to block replay guessing', async () => {
       const challenge = 'test-challenge';
       const redisMock = getRedisMock();
-      redisMock.get.mockResolvedValueOnce(challenge).mockResolvedValueOnce(null);
+      redisMock.getdel.mockResolvedValueOnce(challenge).mockResolvedValueOnce(null);
       redisMock.del.mockResolvedValue(1);
 
       const invalidSignature = Buffer.from('invalid').toString('base64url');
@@ -139,14 +140,14 @@ describe('AuthService', () => {
         code: ErrorCode.AUTH_ERROR,
         statusCode: 401
       });
-      expect(redisMock.del).toHaveBeenCalledTimes(1);
+      expect(redisMock.getdel).toHaveBeenCalledTimes(2);
       expect(findOrCreateUser).not.toHaveBeenCalled();
     });
 
     it('rejects nonce reuse after a successful verification', async () => {
       const challenge = 'single-use-challenge';
       const redisMock = getRedisMock();
-      redisMock.get.mockResolvedValueOnce(challenge).mockResolvedValueOnce(null);
+      redisMock.getdel.mockResolvedValueOnce(challenge).mockResolvedValueOnce(null);
       redisMock.del.mockResolvedValue(1);
       redisMock.exists.mockResolvedValue(0);
       (findOrCreateUser as jest.Mock).mockResolvedValue({ id: 'user-1' });
@@ -407,6 +408,48 @@ describe('AuthService', () => {
       const redisMock = getRedisMock();
       redisMock.exists.mockResolvedValue(1);
       expect(await AuthService.isTokenRevoked('jti-1')).toBe(true);
+    });
+  });
+
+  describe('HttpOnly refresh session rotation', () => {
+    it('stores only a hash of the refresh credential', async () => {
+      const redisMock = getRedisMock();
+      redisMock.set.mockResolvedValue('OK');
+
+      const session = await AuthService.issueSession(realWallet, 'access-jwt');
+
+      expect(session.accessToken).toBe('access-jwt');
+      expect(session.refreshToken).toHaveLength(64);
+      expect(redisMock.set).toHaveBeenCalledWith(
+        expect.stringMatching(/^refresh_token:[a-f0-9]{64}$/),
+        realWallet.toLowerCase(),
+        'EX',
+        7 * 24 * 60 * 60,
+      );
+      expect(redisMock.set.mock.calls[0][0]).not.toContain(session.refreshToken);
+    });
+
+    it('atomically consumes and replaces a refresh credential', async () => {
+      const redisMock = getRedisMock();
+      redisMock.getdel.mockResolvedValue(realWallet.toLowerCase());
+      redisMock.set.mockResolvedValue('OK');
+
+      const session = await AuthService.rotateRefreshToken('old-refresh');
+
+      expect(redisMock.getdel).toHaveBeenCalledWith(
+        expect.stringMatching(/^refresh_token:[a-f0-9]{64}$/),
+      );
+      expect(session.refreshToken).not.toBe('old-refresh');
+      expect(session.accessToken).toEqual(expect.any(String));
+    });
+
+    it('rejects a refresh credential after it has been consumed', async () => {
+      getRedisMock().getdel.mockResolvedValue(null);
+
+      await expect(AuthService.rotateRefreshToken('replayed-refresh')).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ERROR,
+        statusCode: 401,
+      });
     });
   });
 });

@@ -3,7 +3,7 @@ jest.mock("../../lib/redis", () => ({
     get: jest.fn(),
     set: jest.fn(),
     del: jest.fn(),
-    keys: jest.fn(),
+    scan: jest.fn(),
   },
 }));
 
@@ -14,7 +14,7 @@ const mockRedis = redis as unknown as {
   get: jest.Mock;
   set: jest.Mock;
   del: jest.Mock;
-  keys: jest.Mock;
+  scan: jest.Mock;
 };
 
 describe("FeatureFlagService", () => {
@@ -59,14 +59,14 @@ describe("FeatureFlagService", () => {
 
   describe("listFlags", () => {
     it("returns an empty object when no flags are set", async () => {
-      mockRedis.keys.mockResolvedValue([]);
+      mockRedis.scan.mockResolvedValue(["0", []]);
       expect(await service.listFlags()).toEqual({});
     });
 
     it("reads back every feature:* key, stripping the prefix", async () => {
       const a: FeatureFlagRecord = { enabled: true, updatedAt: "t1" };
       const b: FeatureFlagRecord = { enabled: false, updatedAt: "t2" };
-      mockRedis.keys.mockResolvedValue(["feature:a", "feature:b"]);
+      mockRedis.scan.mockResolvedValueOnce(["0", ["feature:a", "feature:b"]]);
       mockRedis.get.mockImplementation((key: string) => {
         if (key === "feature:a") return Promise.resolve(JSON.stringify(a));
         if (key === "feature:b") return Promise.resolve(JSON.stringify(b));
@@ -74,6 +74,23 @@ describe("FeatureFlagService", () => {
       });
 
       expect(await service.listFlags()).toEqual({ a, b });
+    });
+
+    it("paginates through multiple scan cursors", async () => {
+      const flag: FeatureFlagRecord = { enabled: true, updatedAt: "t1" };
+      mockRedis.scan
+        .mockResolvedValueOnce(["42", ["feature:x"]])
+        .mockResolvedValueOnce(["0", ["feature:y"]]);
+      mockRedis.get.mockImplementation((key: string) => {
+        if (key === "feature:x") return Promise.resolve(JSON.stringify(flag));
+        if (key === "feature:y") return Promise.resolve(JSON.stringify(flag));
+        return Promise.resolve(null);
+      });
+
+      const result = await service.listFlags();
+      expect(result).toHaveProperty("x");
+      expect(result).toHaveProperty("y");
+      expect(mockRedis.scan).toHaveBeenCalledTimes(2);
     });
   });
 

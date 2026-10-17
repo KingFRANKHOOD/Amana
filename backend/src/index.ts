@@ -12,15 +12,51 @@ import { env } from "./config/env";
 import { appLogger } from "./middleware/logger";
 import { initializeTracing } from "./config/tracing";
 import { HealthService } from "./services/health.service";
+import { metricsService } from "./services/metrics.service";
 import { createEvidenceVerificationWorker } from "./jobs/workers/evidence-verification.worker";
 import { createTrustScoreRecalculationWorker } from "./jobs/workers/trust-score-recalculation.worker";
-import { createIdempotencyCleanupWorker, scheduleIdempotencyCleanup } from "./jobs/workers/idempotency-cleanup.worker";
-import { evidenceVerificationQueue, trustScoreRecalculationQueue, webhookQueue, notificationQueue, exportQueue } from "./jobs/queue";
-import { registerQueueForMetrics, startQueueMetricsCollection } from "./lib/bullMetrics";
-
+import {
+  createIdempotencyCleanupWorker,
+  idempotencyCleanupQueue,
+  scheduleIdempotencyCleanup,
+} from "./jobs/workers/idempotency-cleanup.worker";
+import {
+  createAuditLogRetentionWorker,
+  auditLogRetentionQueue,
+  scheduleAuditLogRetention,
+} from "./jobs/workers/audit-log-retention.worker";
+import {
+  createDataRetentionCleanupWorker,
+  scheduleDataRetentionCleanup,
+} from "./jobs/workers/data-retention-cleanup.worker";
+import {
+  createDataArchivalWorker,
+  scheduleDataArchival,
+} from "./jobs/workers/data-archival.worker";
+import {
+  evidenceVerificationQueue,
+  trustScoreRecalculationQueue,
+  webhookQueue,
+  notificationQueue,
+  exportQueue,
+  dataRetentionCleanupQueue,
+  dataArchivalQueue,
+} from "./jobs/queue";
+import { storageMonitoringService } from "./services/storageMonitoring.service";
+import {
+  registerQueueForMetrics,
+  startQueueMetricsCollection,
+  stopQueueMetricsCollection,
+} from "./lib/bullMetrics";
+import { createGracefulShutdown } from "./lib/gracefulShutdown";
+import type { Server } from "http";
 
 // Initialize distributed tracing before any other imports
 initializeTracing();
+
+// Wire the live Prisma client into MetricsService so observable gauge
+// callbacks (trades_active_count, disputes_open_count) emit real values.
+metricsService.initialize(prisma);
 
 const eventIndexerService = new EventIndexerService(prisma);
 const app = createApp({ prisma, eventIndexer: eventIndexerService });
@@ -52,14 +88,19 @@ if (env.NODE_ENV !== "production" && openapiSpec) {
       for (const [method, operation] of Object.entries(
         methods as Record<string, unknown>,
       )) {
-        if (typeof operation === "object" && operation !== null && !(operation as Record<string, unknown>).operationId) {
+        if (
+          typeof operation === "object" &&
+          operation !== null &&
+          !(operation as Record<string, unknown>).operationId
+        ) {
           const safePath = path
             .replace(/[{}]/g, "")
             .replace(/[^a-zA-Z0-9_/]/g, "_")
             .replace(/\/+/g, ".")
             .replace(/^\.|\.$/g, "")
             .replace(/\.+/g, ".");
-          (operation as Record<string, unknown>).operationId = `${method}${safePath ? `.${safePath}` : ""}`;
+          (operation as Record<string, unknown>).operationId =
+            `${method}${safePath ? `.${safePath}` : ""}`;
         }
       }
     }
@@ -80,6 +121,13 @@ if (env.NODE_ENV !== "production" && openapiSpec) {
 
 const eventListenerService = new EventListenerService(prisma);
 const healthService = new HealthService();
+let eventStreamService: EventStreamService | null = null;
+const workers = [] as Array<{ close: () => Promise<void> }>;
+const services: Array<{ close: () => Promise<void> | void }> = [
+  { close: () => eventListenerService.stop() },
+  { close: () => eventIndexerService.stop() },
+];
+let httpServer: Server | null = null;
 
 async function bootstrap() {
   const isTest = (process.env.NODE_ENV ?? env.NODE_ENV) === "test";
@@ -89,7 +137,10 @@ async function bootstrap() {
     try {
       const startupCheck = await healthService.performStartupCheck();
       if (startupCheck.status !== "ready") {
-        appLogger.fatal({ checks: startupCheck.checks }, "Critical startup dependencies are not ready. Exiting.");
+        appLogger.fatal(
+          { checks: startupCheck.checks },
+          "Critical startup dependencies are not ready. Exiting.",
+        );
         process.exit(1);
       }
       appLogger.info("Startup readiness check passed.");
@@ -99,7 +150,7 @@ async function bootstrap() {
     }
   }
 
-  const server = app.listen(port, async () => {
+  httpServer = app.listen(port, async () => {
     appLogger.info({ port }, "Amana backend listening");
 
     try {
@@ -117,7 +168,8 @@ async function bootstrap() {
     }
 
     try {
-      new EventStreamService(server);
+      eventStreamService = new EventStreamService(httpServer!);
+      services.push({ close: () => eventStreamService?.stop() });
       appLogger.info("EventStreamService initialized");
     } catch (error) {
       appLogger.warn({ error }, "Failed to initialize EventStreamService");
@@ -128,12 +180,20 @@ async function bootstrap() {
     registerQueueForMetrics("notifications", notificationQueue);
     registerQueueForMetrics("exports", exportQueue);
     registerQueueForMetrics("evidence-verification", evidenceVerificationQueue);
-    registerQueueForMetrics("trust-score-recalculation", trustScoreRecalculationQueue);
+    registerQueueForMetrics(
+      "trust-score-recalculation",
+      trustScoreRecalculationQueue,
+    );
+    registerQueueForMetrics(
+      "data-retention-cleanup",
+      dataRetentionCleanupQueue,
+    );
+    registerQueueForMetrics("data-archival", dataArchivalQueue);
     startQueueMetricsCollection();
 
     // Start evidence verification worker for async jobs
     try {
-      createEvidenceVerificationWorker();
+      workers.push(createEvidenceVerificationWorker());
       appLogger.info("EvidenceVerificationWorker started");
     } catch (error) {
       appLogger.error({ error }, "Failed to start EvidenceVerificationWorker");
@@ -141,26 +201,59 @@ async function bootstrap() {
 
     // Start trust score recalculation worker
     try {
-      createTrustScoreRecalculationWorker();
+      workers.push(createTrustScoreRecalculationWorker());
       appLogger.info("TrustScoreRecalculationWorker started");
     } catch (error) {
-      appLogger.error({ error }, "Failed to start TrustScoreRecalculationWorker");
+      appLogger.error(
+        { error },
+        "Failed to start TrustScoreRecalculationWorker",
+      );
     }
 
     // Start idempotency key GC worker and schedule daily cron
     try {
-      createIdempotencyCleanupWorker();
+      workers.push(createIdempotencyCleanupWorker());
       await scheduleIdempotencyCleanup();
       appLogger.info("IdempotencyCleanupWorker started");
     } catch (error) {
       appLogger.error({ error }, "Failed to start IdempotencyCleanupWorker");
     }
 
-    // Schedule periodic evidence pin verification
+    // Start audit log retention worker and schedule daily cron
+    try {
+      workers.push(createAuditLogRetentionWorker());
+      await scheduleAuditLogRetention();
+      appLogger.info("AuditLogRetentionWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start AuditLogRetentionWorker");
+    }
+
+    // Start comprehensive data retention cleanup worker and schedule daily cron
+    try {
+      workers.push(createDataRetentionCleanupWorker());
+      await scheduleDataRetentionCleanup();
+      appLogger.info("DataRetentionCleanupWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start DataRetentionCleanupWorker");
+    }
+
+    // Start cold data archival worker and schedule weekly cron
+    try {
+      workers.push(createDataArchivalWorker());
+      await scheduleDataArchival();
+      appLogger.info("DataArchivalWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start DataArchivalWorker");
+    }
+
+    // Schedule periodic evidence pin verification & storage monitoring
     const isTest = (process.env.NODE_ENV ?? env.NODE_ENV) === "test";
     if (!isTest) {
       const intervalMs = env.EVIDENCE_PIN_VERIFICATION_INTERVAL_MS;
-      appLogger.info({ intervalMs }, "Scheduling periodic evidence pin verification");
+      appLogger.info(
+        { intervalMs },
+        "Scheduling periodic evidence pin verification",
+      );
 
       const runVerification = async () => {
         try {
@@ -169,9 +262,15 @@ async function bootstrap() {
             triggeredBy: "scheduled",
             repairMissing: false,
           });
-          appLogger.info({ jobId: job.id }, "Scheduled verification job queued");
+          appLogger.info(
+            { jobId: job.id },
+            "Scheduled verification job queued",
+          );
         } catch (error) {
-          appLogger.error({ error }, "Failed to schedule evidence verification");
+          appLogger.error(
+            { error },
+            "Failed to schedule evidence verification",
+          );
         }
       };
 
@@ -187,7 +286,10 @@ async function bootstrap() {
 
       // Schedule periodic trust score recalculation
       const trustScoreIntervalMs = env.TRUST_SCORE_RECALCULATION_INTERVAL_MS;
-      appLogger.info({ intervalMs: trustScoreIntervalMs }, "Scheduling periodic trust score recalculation");
+      appLogger.info(
+        { intervalMs: trustScoreIntervalMs },
+        "Scheduling periodic trust score recalculation",
+      );
 
       const runTrustScoreRecalculation = async () => {
         try {
@@ -195,9 +297,15 @@ async function bootstrap() {
           const job = await trustScoreRecalculationQueue.add("recalculate", {
             triggeredBy: "scheduled",
           });
-          appLogger.info({ jobId: job.id }, "Scheduled trust score recalculation job queued");
+          appLogger.info(
+            { jobId: job.id },
+            "Scheduled trust score recalculation job queued",
+          );
         } catch (error) {
-          appLogger.error({ error }, "Failed to schedule trust score recalculation");
+          appLogger.error(
+            { error },
+            "Failed to schedule trust score recalculation",
+          );
         }
       };
 
@@ -208,6 +316,33 @@ async function bootstrap() {
       setInterval(() => {
         runTrustScoreRecalculation().catch(() => {});
       }, trustScoreIntervalMs);
+
+      // Schedule periodic storage growth monitoring
+      const storageIntervalMs = env.STORAGE_MONITORING_INTERVAL_MS;
+      appLogger.info(
+        { intervalMs: storageIntervalMs },
+        "Scheduling periodic storage monitoring",
+      );
+
+      const runStorageCollection = async () => {
+        try {
+          appLogger.info("Running scheduled storage growth metrics collection");
+          await storageMonitoringService.collectStorageMetrics();
+        } catch (error) {
+          appLogger.warn(
+            { error },
+            "Failed to collect scheduled storage metrics",
+          );
+        }
+      };
+
+      setTimeout(() => {
+        runStorageCollection().catch(() => {});
+      }, 30_000);
+
+      setInterval(() => {
+        runStorageCollection().catch(() => {});
+      }, storageIntervalMs);
     }
   });
 }
@@ -217,12 +352,25 @@ bootstrap().catch((error) => {
   process.exit(1);
 });
 
-const shutdown = async (signal: string) => {
-  appLogger.info({ signal }, "Received shutdown signal. Shutting down gracefully...");
-  eventListenerService.stop();
-  await prisma.$disconnect();
-  process.exit(0);
-};
+const shutdown = createGracefulShutdown({
+  getServer: () => httpServer,
+  services,
+  workers,
+  queues: [
+    webhookQueue,
+    notificationQueue,
+    exportQueue,
+    evidenceVerificationQueue,
+    trustScoreRecalculationQueue,
+    idempotencyCleanupQueue,
+    auditLogRetentionQueue,
+    dataRetentionCleanupQueue,
+    dataArchivalQueue,
+  ],
+  stopMetrics: stopQueueMetricsCollection,
+  disconnectDatabase: () => prisma.$disconnect(),
+  exit: (code) => process.exit(code),
+});
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));

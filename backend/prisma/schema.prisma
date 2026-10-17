@@ -29,6 +29,11 @@ enum DisputeStatus {
   CLOSED
 }
 
+enum DisputeOutcome {
+  WON
+  LOST
+}
+
 enum GoalStatus {
   ACTIVE
   COMPLETED
@@ -116,6 +121,8 @@ model Trade {
   @@index([buyerAddress])
   @@index([sellerAddress])
   @@index([status])
+  @@index([buyerAddress, status])
+  @@index([sellerAddress, status])
 }
 
 /// TradeTemplate stores a user's reusable trade terms. The buyer is always the
@@ -188,6 +195,9 @@ model Dispute {
   version      Int              @default(0)
   resolvedAt   DateTime?
   categoryId   Int?
+  /// Outcome from the initiator's perspective when status is RESOLVED/CLOSED.
+  /// Only disputes with outcome = LOST penalize the initiator's trust score.
+  outcome      DisputeOutcome?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -200,6 +210,7 @@ model Dispute {
   @@index([initiator])
   @@index([status])
   @@index([categoryId])
+  @@index([outcome])
 }
 
 /// DeliveryManifest — submitted by the seller before shipping.
@@ -298,6 +309,27 @@ model IndexedEvent {
   @@index([tradeId, eventType, ledgerSequence])
   @@index([eventType, ledgerSequence])
   @@index([ledgerSequence])
+}
+
+/// Append-only audit trail for financial operations (trade creation, fund
+/// movement, dispute resolution). Rows are created via AuditLogService and
+/// are never updated or deleted by application code — only the scheduled
+/// retention job prunes rows past AUDIT_LOG_RETENTION_DAYS.
+model AuditLog {
+  id             Int      @id @default(autoincrement())
+  tradeId        String   @db.VarChar(255)
+  eventType      String   @db.VarChar(100)
+  toStatus       String   @db.VarChar(50)
+  actor          String?  @db.VarChar(255)
+  amountUsdc     String?  @db.VarChar(78)
+  ledgerSequence Int?
+  contractId     String?  @db.VarChar(255)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([tradeId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([createdAt])
 }
 
 /// Vault model representing a savings vault on Soroban
@@ -436,6 +468,26 @@ model WebhookSubscription {
 
   @@index([userId])
   @@index([isActive])
+}
+
+/// WebhookDeadLetter stores permanently failed webhook deliveries after all
+/// retry attempts have been exhausted. These records are retained for
+/// investigation and can be replayed via the admin API.
+model WebhookDeadLetter {
+  id              Int      @id @default(autoincrement())
+  webhookUrl      String   @db.VarChar(2048)
+  subscriptionId  Int?
+  secretHash      String?  @db.VarChar(64)
+  event           String   @db.VarChar(100)
+  tradeId         String   @db.VarChar(255)
+  status          String?  @db.VarChar(50)
+  payload         Json
+  lastError       String?  @db.Text
+  attempts        Int      @default(0)
+  deadLetteredAt  DateTime @default(now())
+
+  @@index([webhookUrl, deadLetteredAt])
+  @@index([tradeId])
 }
 
 /// InAppNotification represents an in-app notification for a user

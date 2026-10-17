@@ -1,0 +1,84 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: IOChaos
+metadata:
+  name: postgres-disk-pressure-90pct
+  namespace: default
+  labels:
+    experiment: disk-pressure
+    severity: medium
+    environment: staging
+  annotations:
+    hypothesis: |
+      When PVC reaches 90% capacity (simulated via IO latency + errno injection):
+      1. Prometheus node_filesystem_avail_bytes fires alert "DiskAlmostFull"
+      2. Postgres continues serving reads (WAL writes may slow or fail)
+      3. Backend health check may transition to "degraded"
+      4. Prisma write transactions that need WAL write fail with 5xx
+      5. No data corruption (Postgres fsync correctness preserved)
+      6. Alert service dispatches DB-related alerts
+      7. After pressure removed: writes resume, alert clears within 5m
+    steady-state-check: |
+      - kubectl exec postgres-0 -- df -h /var/lib/postgresql/data shows < 70% usage
+      - No active Prometheus alerts for disk on postgres nodes
+      - Postgres pg_stat_activity shows 0 "waiting" queries
+    rollback: kubectl delete iochaos postgres-disk-pressure-90pct -n default
+    post-experiment-verification: |
+      - DiskAlmostFull alert resolves within 5m
+      - Postgres writes succeed (INSERT test via API returns 201)
+      - pg_stat_database shows xact_commit increasing
+      - No data inconsistency: count of trades via API == count via psql direct
+      - WAL archive healthy (if archiving is enabled in staging)
+spec:
+  action: latency
+  mode: all
+  duration: "180s"
+  selector:
+    labelSelectors:
+      app: postgres
+    namespaces:
+      - default
+  delay:
+    latency: "500ms"
+  methods:
+    - READ
+    - WRITE
+  path: "/var/lib/postgresql/data"
+  percent: 90
+  scheduler:
+    cron: "@never"
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: IOChaos
+metadata:
+  name: postgres-disk-errno-ENOSPC
+  namespace: default
+  labels:
+    experiment: disk-pressure
+    severity: high
+    environment: staging
+  annotations:
+    hypothesis: |
+      When disk returns ENOSPC (No space left) on 50% of write operations:
+      1. Postgres cannot commit writes that require WAL flush
+      2. Backend returns 503 for write endpoints safely
+      3. Read endpoints continue serving cached/stale data
+      4. No partial transaction commits
+      5. Alert fires for DB write failures
+spec:
+  action: fault
+  mode: all
+  duration: "120s"
+  selector:
+    labelSelectors:
+      app: postgres
+    namespaces:
+      - default
+  fault:
+    errno: 28
+  methods:
+    - WRITE
+    - FSYNC
+  path: "/var/lib/postgresql/data"
+  percent: 50
+  scheduler:
+    cron: "@never"

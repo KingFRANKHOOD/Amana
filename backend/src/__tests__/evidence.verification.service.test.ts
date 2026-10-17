@@ -8,11 +8,26 @@ import { IPFSService } from "../services/ipfs.service";
 
 const mockAxiosGet = axios.get as jest.Mock;
 
+/** In-memory `findMany` that honours Prisma cursor pagination args. */
+function paginatingFindMany(records: Array<{ id: number }>) {
+  return jest.fn(async (args: any = {}) => {
+    const sorted = [...records].sort((a, b) => Number(a.id) - Number(b.id));
+    let start = 0;
+    if (args.cursor?.id !== undefined) {
+      const idx = sorted.findIndex((r) => r.id === args.cursor.id);
+      start = idx === -1 ? sorted.length : idx + (args.skip ?? 0);
+    }
+    const take = args.take ?? sorted.length;
+    return sorted.slice(start, start + take);
+  });
+}
+
 describe("EvidenceVerificationService", () => {
   let mockPrisma: {
     tradeEvidence: {
       findMany: jest.Mock;
       update: jest.Mock;
+      count: jest.Mock;
     };
   };
   let mockIpfs: jest.Mocked<Pick<IPFSService, "verifyPin" | "uploadFile" | "getFileUrl">>;
@@ -22,8 +37,9 @@ describe("EvidenceVerificationService", () => {
     jest.clearAllMocks();
     mockPrisma = {
       tradeEvidence: {
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
     mockIpfs = {
@@ -32,12 +48,23 @@ describe("EvidenceVerificationService", () => {
       getFileUrl: jest.fn(),
     };
     mockAxiosGet.mockReset();
-    service = new EvidenceVerificationService(mockPrisma as any, mockIpfs as any, 10);
+    // Retries disabled by default so the error-path tests stay fast; the
+    // dedicated "retry" block opts back in with an instant injected sleep.
+    service = new EvidenceVerificationService(mockPrisma as any, mockIpfs as any, 10, {
+      maxRetries: 0,
+      retryBackoffMs: 0,
+    });
   });
+
+  /** Wire both `findMany` (paginated) and `count` from one record list. */
+  function seedEvidence(records: Array<{ id: number }>) {
+    mockPrisma.tradeEvidence.findMany = paginatingFindMany(records);
+    mockPrisma.tradeEvidence.count.mockResolvedValue(records.length);
+  }
 
   function makeEvidence(overrides: Record<string, unknown> = {}) {
     return {
-      id: overrides.id ?? 1,
+      id: (overrides.id as number) ?? 1,
       tradeId: overrides.tradeId ?? "trade-001",
       cid: overrides.cid ?? "QmTest123",
       filename: overrides.filename ?? "evidence.jpg",
@@ -49,7 +76,7 @@ describe("EvidenceVerificationService", () => {
 
   describe("verifyAll", () => {
     it("should return VerificationReport structure with no evidence", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([]);
+      seedEvidence([]);
 
       const report = await service.verifyAll();
 
@@ -64,9 +91,7 @@ describe("EvidenceVerificationService", () => {
     });
 
     it("should report evidence as pinned when verified", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
-        makeEvidence({ id: 1, cid: "QmPinned1" }),
-      ]);
+      seedEvidence([makeEvidence({ id: 1, cid: "QmPinned1" })]);
       mockIpfs.verifyPin.mockResolvedValue({
         pinned: true,
         cid: "QmPinned1",
@@ -84,9 +109,7 @@ describe("EvidenceVerificationService", () => {
     });
 
     it("should report evidence as missing when not pinned", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
-        makeEvidence({ id: 1, cid: "QmMissing1" }),
-      ]);
+      seedEvidence([makeEvidence({ id: 1, cid: "QmMissing1" })]);
       mockIpfs.verifyPin.mockResolvedValue({
         pinned: false,
         cid: "QmMissing1",
@@ -102,9 +125,7 @@ describe("EvidenceVerificationService", () => {
     });
 
     it("should report errors when verification fails", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
-        makeEvidence({ id: 1, cid: "QmError1" }),
-      ]);
+      seedEvidence([makeEvidence({ id: 1, cid: "QmError1" })]);
       mockIpfs.verifyPin.mockResolvedValue({
         pinned: false,
         cid: "QmError1",
@@ -120,9 +141,9 @@ describe("EvidenceVerificationService", () => {
 
     it("should handle multiple evidence records with batch processing", async () => {
       const records = Array.from({ length: 25 }, (_, i) =>
-        makeEvidence({ id: i, cid: `QmTest${i}` }),
+        makeEvidence({ id: i + 1, cid: `QmTest${i}` }),
       );
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue(records);
+      seedEvidence(records);
       mockIpfs.verifyPin.mockResolvedValue({
         pinned: true,
         cid: "placeholder",
@@ -135,7 +156,7 @@ describe("EvidenceVerificationService", () => {
     });
 
     it("should handle duplicate CIDs efficiently", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
+      seedEvidence([
         makeEvidence({ id: 1, cid: "QmDup" }),
         makeEvidence({ id: 2, cid: "QmDup" }),
         makeEvidence({ id: 3, cid: "QmDup" }),
@@ -150,6 +171,183 @@ describe("EvidenceVerificationService", () => {
       expect(report.totalChecked).toBe(3);
       expect(report.pinnedCount).toBe(3);
       expect(mockIpfs.verifyPin).toHaveBeenCalledTimes(1);
+    });
+
+    it("streams the datastore in pages instead of one findMany", async () => {
+      const records = Array.from({ length: 23 }, (_, i) =>
+        makeEvidence({ id: i + 1, cid: `QmPage${i}` }),
+      );
+      seedEvidence(records);
+      mockIpfs.verifyPin.mockImplementation(async (cid: string) => ({
+        pinned: true,
+        cid,
+      }));
+
+      const report = await service.verifyAll({ batchSize: 10 });
+
+      // 23 records / batchSize 10 => 3 pages
+      expect(report.totalChecked).toBe(23);
+      expect(report.batchCount).toBe(3);
+      expect(mockPrisma.tradeEvidence.findMany).toHaveBeenCalledTimes(3);
+      const firstCall = mockPrisma.tradeEvidence.findMany.mock.calls[0]![0];
+      expect(firstCall).toMatchObject({ take: 10, orderBy: { id: "asc" } });
+      expect(firstCall.cursor).toBeUndefined();
+      const secondCall = mockPrisma.tradeEvidence.findMany.mock.calls[1]![0];
+      expect(secondCall).toMatchObject({ take: 10, skip: 1, cursor: { id: 10 } });
+    });
+
+    it("uses a configurable batch size", async () => {
+      const records = Array.from({ length: 6 }, (_, i) =>
+        makeEvidence({ id: i + 1, cid: `QmCfg${i}` }),
+      );
+      seedEvidence(records);
+      mockIpfs.verifyPin.mockImplementation(async (cid: string) => ({
+        pinned: true,
+        cid,
+      }));
+
+      const report = await service.verifyAll({ batchSize: 2 });
+
+      expect(report.batchCount).toBe(3);
+      expect(report.batchMetrics).toHaveLength(3);
+      expect(report.batchMetrics.every((b) => b.recordCount === 2)).toBe(true);
+    });
+
+    it("reports progress after every batch", async () => {
+      const records = Array.from({ length: 5 }, (_, i) =>
+        makeEvidence({ id: i + 1, cid: `QmProg${i}` }),
+      );
+      seedEvidence(records);
+      mockIpfs.verifyPin.mockImplementation(async (cid: string) => ({
+        pinned: true,
+        cid,
+      }));
+
+      const progress: number[] = [];
+      const report = await service.verifyAll({
+        batchSize: 2,
+        onProgress: (p) => {
+          expect(p.totalRecords).toBe(5);
+          progress.push(p.processedRecords);
+        },
+      });
+
+      expect(progress).toEqual([2, 4, 5]);
+      expect(report.performance.batchCount).toBe(3);
+    });
+
+    it("still works when the datastore cannot be counted", async () => {
+      const records = [makeEvidence({ id: 1, cid: "QmNoCount" })];
+      mockPrisma.tradeEvidence.findMany = paginatingFindMany(records);
+      mockPrisma.tradeEvidence.count = undefined as unknown as jest.Mock;
+      mockIpfs.verifyPin.mockResolvedValue({ pinned: true, cid: "QmNoCount" });
+
+      const seen: Array<number | null> = [];
+      const report = await service.verifyAll({
+        onProgress: (p) => {
+          seen.push(p.totalRecords);
+        },
+      });
+
+      expect(report.totalChecked).toBe(1);
+      expect(seen).toEqual([null]);
+    });
+
+    it("retries transient pin-check failures with backoff", async () => {
+      seedEvidence([makeEvidence({ id: 1, cid: "QmFlaky" })]);
+      mockIpfs.verifyPin
+        .mockResolvedValueOnce({ pinned: false, cid: "QmFlaky", error: "Network error" })
+        .mockResolvedValueOnce({ pinned: false, cid: "QmFlaky", error: "Network error" })
+        .mockResolvedValueOnce({ pinned: true, cid: "QmFlaky" });
+
+      const sleep = jest.fn().mockResolvedValue(undefined);
+      const retryingService = new EvidenceVerificationService(
+        mockPrisma as any,
+        mockIpfs as any,
+        10,
+        { maxRetries: 3, retryBackoffMs: 5 },
+      );
+
+      const report = await retryingService.verifyAll({ sleep });
+
+      expect(mockIpfs.verifyPin).toHaveBeenCalledTimes(3);
+      expect(sleep).toHaveBeenCalledTimes(2);
+      expect(sleep.mock.calls.map((c) => c[0])).toEqual([5, 10]);
+      expect(report.pinnedCount).toBe(1);
+      expect(report.errorCount).toBe(0);
+      expect(report.batchMetrics[0]!.retries).toBe(2);
+      expect(report.performance.totalRetries).toBe(2);
+    });
+
+    it("gives up after maxRetries and records the failure", async () => {
+      seedEvidence([makeEvidence({ id: 1, cid: "QmDead" })]);
+      mockIpfs.verifyPin.mockResolvedValue({
+        pinned: false,
+        cid: "QmDead",
+        error: "Circuit breaker open",
+      });
+
+      const sleep = jest.fn().mockResolvedValue(undefined);
+      const retryingService = new EvidenceVerificationService(
+        mockPrisma as any,
+        mockIpfs as any,
+        10,
+        { maxRetries: 2, retryBackoffMs: 1 },
+      );
+
+      const report = await retryingService.verifyAll({ sleep });
+
+      expect(mockIpfs.verifyPin).toHaveBeenCalledTimes(3); // initial + 2 retries
+      expect(report.errorCount).toBe(1);
+      expect(report.batchMetrics[0]!.retries).toBe(2);
+      expect(report.batchMetrics[0]!.failedCidCount).toBe(1);
+    });
+
+    it("does not retry permanent misconfiguration errors", async () => {
+      seedEvidence([makeEvidence({ id: 1, cid: "QmNoJwt" })]);
+      mockIpfs.verifyPin.mockResolvedValue({
+        pinned: false,
+        cid: "QmNoJwt",
+        error: "PINATA_JWT not configured",
+      });
+
+      const sleep = jest.fn().mockResolvedValue(undefined);
+      const retryingService = new EvidenceVerificationService(
+        mockPrisma as any,
+        mockIpfs as any,
+        10,
+        { maxRetries: 3, retryBackoffMs: 1 },
+      );
+
+      const report = await retryingService.verifyAll({ sleep });
+
+      expect(mockIpfs.verifyPin).toHaveBeenCalledTimes(1);
+      expect(sleep).not.toHaveBeenCalled();
+      expect(report.errorCount).toBe(1);
+    });
+
+    it("summarizes batch-processing performance", async () => {
+      const records = Array.from({ length: 4 }, (_, i) =>
+        makeEvidence({ id: i + 1, cid: `QmPerf${i}` }),
+      );
+      seedEvidence(records);
+      mockIpfs.verifyPin.mockImplementation(async (cid: string) => ({
+        pinned: true,
+        cid,
+      }));
+
+      const report = await service.verifyAll({ batchSize: 2 });
+
+      expect(report.performance).toMatchObject({
+        batchCount: 2,
+        batchesWithRetries: 0,
+        totalRetries: 0,
+      });
+      expect(report.performance.avgBatchMs).toBeGreaterThanOrEqual(0);
+      expect(report.performance.maxBatchMs).toBeGreaterThanOrEqual(
+        report.performance.minBatchMs,
+      );
+      expect(report.performance.recordsPerSecond).toBeGreaterThanOrEqual(0);
     });
   });
 

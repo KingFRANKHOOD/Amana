@@ -18,28 +18,37 @@ describe("Health Routes", () => {
     beforeEach(() => {
         mockPerformHealthCheck.mockReset();
         mockPerformStartupCheck.mockReset();
+        mockPerformHealthCheck.mockResolvedValue({
+            status: "healthy",
+            timestamp: "2025-01-01T00:00:00.000Z",
+            uptime: 1000,
+            checks: {
+                database: { status: "up", message: "ok", responseTime: 5 },
+                redis: { status: "up", message: "ok", responseTime: 3 },
+                indexer: { status: "up", message: "ok", responseTime: 10 },
+                stellar: { status: "up", message: "ok", responseTime: 50 },
+                ipfs: { status: "up", message: "ok", responseTime: 100 },
+                config: { status: "up", message: "ok", responseTime: 0 },
+                encryptionKey: { status: "up", message: "ok", responseTime: 0 },
+            },
+            details: {
+                databaseLatency: 5,
+                redisLatency: 3,
+                indexerLagSeconds: 2,
+                lastProcessedLedger: 12345,
+                stellarNetwork: "testnet",
+                ipfsGateway: "https://ipfs.io",
+                missingEnvVars: [],
+                encryptionKeyConfigured: true,
+                circuitBreakers: [],
+                websocketConnections: { total: 0, perUserLimit: 5, globalLimit: 1000, maxPerUser: 0 },
+            },
+        });
         app = createApp();
     });
 
     describe("GET /health", () => {
         it("should return healthy status", async () => {
-            mockPerformHealthCheck.mockResolvedValue({
-                status: "healthy",
-                timestamp: "2025-01-01T00:00:00.000Z",
-                uptime: 1000,
-                checks: {
-                    database: { status: "up", message: "ok", responseTime: 5 },
-                    redis: { status: "up", message: "ok", responseTime: 3 },
-                    indexer: { status: "up", message: "ok", responseTime: 10 },
-                },
-                details: {
-                    databaseLatency: 5,
-                    redisLatency: 3,
-                    indexerLagSeconds: 2,
-                    lastProcessedLedger: 12345,
-                },
-            });
-
             const response = await request(app).get("/health");
             expect([200, 503]).toContain(response.status);
             expect(response.body).toHaveProperty("status");
@@ -78,6 +87,9 @@ describe("Health Routes", () => {
                     redisLatency: 5,
                     indexerLagSeconds: 2,
                     lastProcessedLedger: 12345,
+                    stellarNetwork: "testnet",
+                    ipfsGateway: "https://ipfs.io",
+                    missingEnvVars: [],
                 },
             });
 

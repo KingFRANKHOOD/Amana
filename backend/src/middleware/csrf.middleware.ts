@@ -44,6 +44,7 @@ import type { Request, Response, NextFunction } from "express";
 import { featureFlagService } from "../services/feature-flags.service";
 import { appLogger } from "../middleware/logger";
 import { env } from "../config/env";
+import { hasAuthCookie } from "../lib/authCookies";
 
 /** Feature-flag name that controls whether CSRF protection is enforced. */
 export const CSRF_FEATURE_FLAG = "CSRF_PROTECTION";
@@ -163,9 +164,17 @@ export function csrfProtection(options: { allowMissingOrigin?: boolean } = {}) {
     res: Response,
     next: NextFunction,
   ): Promise<void> {
-    // Check feature flag — guard is disabled by default and opt-in via admin API.
-    const flagEnabled = await featureFlagService.isEnabled(CSRF_FEATURE_FLAG);
-    if (!flagEnabled) {
+    if (!STATE_CHANGING_METHODS.has(req.method.toUpperCase())) {
+      return next();
+    }
+
+    // Cookie-authenticated mutations must always be protected. The feature
+    // flag continues to support incremental enforcement for bearer clients.
+    const cookieAuthenticated = hasAuthCookie(req);
+    const flagEnabled = cookieAuthenticated
+      ? false
+      : await featureFlagService.isEnabled(CSRF_FEATURE_FLAG);
+    if (!flagEnabled && !cookieAuthenticated) {
       return next();
     }
 
@@ -175,7 +184,7 @@ export function csrfProtection(options: { allowMissingOrigin?: boolean } = {}) {
       req.headers["origin"],
       req.headers["referer"],
       allowedOrigins,
-      allowMissingOrigin,
+      cookieAuthenticated ? false : allowMissingOrigin,
     );
 
     if (error) {

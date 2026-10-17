@@ -28,6 +28,7 @@ export function createHealthDetailRouter(): Router {
             res.status(statusCode).json({
                 status: result.status,
                 timestamp: new Date().toISOString(),
+                apiResponseTimeMs: result.apiResponseTimeMs,
                 checks: Object.fromEntries(
                     Object.entries(result.checks).map(([service, check]) => [
                         service,

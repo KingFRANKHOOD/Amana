@@ -20,9 +20,9 @@ describe('Security headers middleware', () => {
     expect(res.headers['x-frame-options']).toBe('DENY');
   });
 
-  it('sets X-XSS-Protection: 0', async () => {
+  it('sets X-XSS-Protection in blocking mode', async () => {
     const res = await request(buildApp()).get('/test');
-    expect(res.headers['x-xss-protection']).toBe('0');
+    expect(res.headers['x-xss-protection']).toBe('1; mode=block');
   });
 
   it('sets X-DNS-Prefetch-Control: off', async () => {

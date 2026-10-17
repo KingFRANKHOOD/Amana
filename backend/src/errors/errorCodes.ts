@@ -1,80 +1,90 @@
-export enum ErrorCode {
-  VALIDATION_ERROR = "VALIDATION_ERROR",
-  AUTH_ERROR = "AUTH_ERROR",
-  FORBIDDEN = "FORBIDDEN",
-  DOMAIN_ERROR = "DOMAIN_ERROR",
-  INFRA_ERROR = "INFRA_ERROR",
-  NOT_FOUND = "NOT_FOUND",
-  INTERNAL_ERROR = "INTERNAL_ERROR",
-  // Transaction-specific codes
-  TRADE_NOT_FOUND = "TRADE_NOT_FOUND",
-  TRADE_ACCESS_DENIED = "TRADE_ACCESS_DENIED",
-  TRADE_INVALID_STATUS = "TRADE_INVALID_STATUS",
-  TRADE_BUILD_FAILED = "TRADE_BUILD_FAILED",
-  // Dispute-specific codes
-  DISPUTE_INVALID_CATEGORY = "DISPUTE_INVALID_CATEGORY",
-  DISPUTE_STATUS_TRANSITION_INVALID = "DISPUTE_STATUS_TRANSITION_INVALID",
-  DISPUTE_STATUS_CONFLICT = "DISPUTE_STATUS_CONFLICT",
-  DISPUTE_NOT_FOUND = "DISPUTE_NOT_FOUND",
-  // Payment provider codes
-  PAYMENT_PROVIDER_ERROR = "PAYMENT_PROVIDER_ERROR",
-  PAYMENT_PROVIDER_TIMEOUT = "PAYMENT_PROVIDER_TIMEOUT",
-  PAYMENT_INSUFFICIENT_FUNDS = "PAYMENT_INSUFFICIENT_FUNDS",
-  RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED",
-}
-
-export interface StructuredErrorPayload {
-  code: ErrorCode | string;
-  message: string;
-  details: Record<string, unknown>;
-  timestamp: string;
-  path?: string;
-  requestId?: string;
-  correlationId?: string;
-}
-
-export class AppError extends Error {
-  constructor(
-    public code: ErrorCode | string,
-    public message: string,
-    public statusCode: number = 400,
-    public details: Record<string, unknown> = {}
-  ) {
-    super(message);
-    this.name = "AppError";
-  }
-
-  toPayload(path?: string, requestId?: string, correlationId?: string): StructuredErrorPayload {
-    return {
-      code: this.code,
-      message: this.message,
-      details: this.details,
-      timestamp: new Date().toISOString(),
-      ...(path && { path }),
-      ...(requestId && { requestId }),
-      ...(correlationId && { correlationId }),
-    };
-  }
-}
-
 /**
- * Robust AppError type guard.
+ * Canonical error codes and HTTP status mapping for the backend.
  *
- * `error instanceof AppError` can return `false` for an AppError that crossed a
- * module or async boundary (e.g. a duplicated module instance under bundling or
- * transpilation), which would cause callers to drop the error's real
- * `statusCode`/`message` and fall back to a generic response. `AuthService`
- * already recognises AppError by `name`; this guard applies the same structural
- * check everywhere so a failed authorization keeps its intended status code and
- * message instead of being masked as a generic 401.
+ * NOTE: `AppError`, `isAppError` and `StructuredErrorPayload` live in
+ * `./appError` but are re-exported here for backwards compatibility with the
+ * many consumers that import them from `../errors/errorCodes`.
  */
-export function isAppError(error: unknown): error is AppError {
-  if (error instanceof AppError) return true;
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { name?: unknown }).name === "AppError" &&
-    typeof (error as { statusCode?: unknown }).statusCode === "number" &&
-    typeof (error as { message?: unknown }).message === "string"
-  );
+export enum ErrorCode {
+  // Auth
+  AUTH_ERROR = 'AUTH_ERROR',
+  UNAUTHORIZED = 'UNAUTHORIZED',
+  FORBIDDEN = 'FORBIDDEN',
+  TOKEN_EXPIRED = 'TOKEN_EXPIRED',
+  INVALID_TOKEN = 'INVALID_TOKEN',
+
+  // Validation
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
+  INVALID_INPUT = 'INVALID_INPUT',
+  MISSING_FIELD = 'MISSING_FIELD',
+
+  // Resources
+  NOT_FOUND = 'NOT_FOUND',
+  CONFLICT = 'CONFLICT',
+  ALREADY_EXISTS = 'ALREADY_EXISTS',
+
+  // Rate limiting
+  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+
+  // Domain / infrastructure
+  DOMAIN_ERROR = 'DOMAIN_ERROR',
+  INFRA_ERROR = 'INFRA_ERROR',
+
+  // Trades
+  TRADE_BUILD_FAILED = 'TRADE_BUILD_FAILED',
+  TRADE_INVALID_STATUS = 'TRADE_INVALID_STATUS',
+
+  // Disputes
+  DISPUTE_INVALID_CATEGORY = 'DISPUTE_INVALID_CATEGORY',
+  DISPUTE_STATUS_TRANSITION_INVALID = 'DISPUTE_STATUS_TRANSITION_INVALID',
+  DISPUTE_STATUS_CONFLICT = 'DISPUTE_STATUS_CONFLICT',
+
+  // Payments
+  PAYMENT_PROVIDER_ERROR = 'PAYMENT_PROVIDER_ERROR',
+  PAYMENT_PROVIDER_TIMEOUT = 'PAYMENT_PROVIDER_TIMEOUT',
+  PAYMENT_INSUFFICIENT_FUNDS = 'PAYMENT_INSUFFICIENT_FUNDS',
+
+  // Generic
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
+  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
 }
+
+export const ERROR_STATUS_MAP: Record<ErrorCode, number> = {
+  [ErrorCode.AUTH_ERROR]: 401,
+  [ErrorCode.UNAUTHORIZED]: 401,
+  [ErrorCode.FORBIDDEN]: 403,
+  [ErrorCode.TOKEN_EXPIRED]: 401,
+  [ErrorCode.INVALID_TOKEN]: 401,
+
+  [ErrorCode.VALIDATION_ERROR]: 400,
+  [ErrorCode.INVALID_INPUT]: 400,
+  [ErrorCode.MISSING_FIELD]: 400,
+
+  [ErrorCode.NOT_FOUND]: 404,
+  [ErrorCode.CONFLICT]: 409,
+  [ErrorCode.ALREADY_EXISTS]: 409,
+
+  [ErrorCode.RATE_LIMIT_EXCEEDED]: 429,
+
+  [ErrorCode.DOMAIN_ERROR]: 400,
+  [ErrorCode.INFRA_ERROR]: 500,
+
+  [ErrorCode.TRADE_BUILD_FAILED]: 400,
+  [ErrorCode.TRADE_INVALID_STATUS]: 409,
+
+  [ErrorCode.DISPUTE_INVALID_CATEGORY]: 400,
+  [ErrorCode.DISPUTE_STATUS_TRANSITION_INVALID]: 409,
+  [ErrorCode.DISPUTE_STATUS_CONFLICT]: 409,
+
+  [ErrorCode.PAYMENT_PROVIDER_ERROR]: 502,
+  [ErrorCode.PAYMENT_PROVIDER_TIMEOUT]: 504,
+  [ErrorCode.PAYMENT_INSUFFICIENT_FUNDS]: 402,
+
+  [ErrorCode.INTERNAL_ERROR]: 500,
+  [ErrorCode.SERVICE_UNAVAILABLE]: 503,
+};
+
+// Re-export the canonical error primitives so existing imports from
+// `../errors/errorCodes` keep resolving (issue #1393).
+export { AppError, isAppError } from './appError';
+export type { StructuredErrorPayload } from './appError';

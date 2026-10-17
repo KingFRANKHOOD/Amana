@@ -1,6 +1,8 @@
 import { Request } from 'express';
-import { AppError, ErrorCode } from '../errors/errorCodes';
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { ServiceErrorConverter, ServiceType } from '../errors/serviceErrorConverter';
+import { ACCESS_TOKEN_COOKIE, getCookie } from './authCookies';
 
 /**
  * Authentication header parsing result
@@ -37,6 +39,10 @@ export class AuthHelper {
 
     // Missing header
     if (!authHeader) {
+      const cookieToken = getCookie(req, ACCESS_TOKEN_COOKIE);
+      if (cookieToken) {
+        return { valid: true, token: cookieToken };
+      }
       return {
         valid: false,
         error: new AppError(
@@ -149,7 +155,7 @@ export class AuthHelper {
     // Generic auth error (not network)
     return new AppError(
       ErrorCode.AUTH_ERROR,
-      'Authentication failed',
+      'Unauthorized',
       401,
       { errorType: AuthErrorType.INVALID_TOKEN, originalError: err.message }
     );

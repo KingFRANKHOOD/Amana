@@ -10,8 +10,7 @@ import {
 
 jest.mock("pino", () => jest.fn(() => ({ mocked: true, warn: jest.fn(), error: jest.fn(), info: jest.fn() })));
 
-const pinoHttpMock = jest.fn(() => "logger-middleware");
-jest.mock("pino-http", () => pinoHttpMock);
+jest.mock("pino-http", () => jest.fn(() => "logger-middleware"));
 
 describe("requestIdMiddleware", () => {
   afterEach(() => {
@@ -150,8 +149,10 @@ describe("errorHandler middleware", () => {
 describe("logger middleware config contracts", () => {
   it("wires custom lifecycle, tracing and ignore behavior without brittle log coupling", () => {
     let loggerModule: any;
+    let pinoHttpMock: any;
 
     jest.isolateModules(() => {
+      pinoHttpMock = require("pino-http");
       loggerModule = require("../middleware/logger");
     });
 

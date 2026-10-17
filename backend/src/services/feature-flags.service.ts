@@ -47,25 +47,35 @@ export class FeatureFlagService {
   }
 
   async listFlags(): Promise<Record<string, FeatureFlagRecord>> {
-    const keys = (await redis.keys(`${FLAG_KEY_PREFIX}*`)) as string[];
-    if (keys.length === 0) {
-      return {};
-    }
-
-    const values = await Promise.all(keys.map((key: string) => redis.get(key)));
     const result: Record<string, FeatureFlagRecord> = {};
+    let cursor = "0";
+    const pattern = `${FLAG_KEY_PREFIX}*`;
 
-    keys.forEach((key: string, index: number) => {
-      const raw = values[index];
-      if (!raw) {
-        return;
+    do {
+      const [nextCursor, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        100,
+      ) as [string, string[]];
+      cursor = nextCursor;
+
+      if (keys.length > 0) {
+        const values = await Promise.all(keys.map((key: string) => redis.get(key)));
+        keys.forEach((key: string, index: number) => {
+          const raw = values[index];
+          if (!raw) {
+            return;
+          }
+          try {
+            result[key.slice(FLAG_KEY_PREFIX.length)] = JSON.parse(raw) as FeatureFlagRecord;
+          } catch {
+            // Skip a corrupt entry rather than failing the whole listing.
+          }
+        });
       }
-      try {
-        result[key.slice(FLAG_KEY_PREFIX.length)] = JSON.parse(raw) as FeatureFlagRecord;
-      } catch {
-        // Skip a corrupt entry rather than failing the whole listing.
-      }
-    });
+    } while (cursor !== "0");
 
     return result;
   }

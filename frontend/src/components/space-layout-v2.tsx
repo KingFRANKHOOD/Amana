@@ -55,7 +55,7 @@ export function VideoUploadCard({ tradeId, onUpload }: VideoUploadCardProps) {
         };
         xhr.onerror = () => reject(new Error("Network error during upload"));
         xhr.open("POST", `${apiConfig.getBaseUrl()}/evidence/video`);
-        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.withCredentials = true;
         xhr.send(data);
       });
 

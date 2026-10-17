@@ -12,8 +12,10 @@ import {
   TradeService,
   DisputeTradeStatusError,
   DisputeCategoryValidationError,
+  TradeNotFoundError,
 } from "../services/trade.service";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { getMediatorAllowlist } from "../lib/accessControl";
 import { logErrorWithContext, logBusinessEvent } from "../lib/logging";
 import { tradeStatusEvents } from "../services/tradeStatusEvents";
@@ -44,7 +46,8 @@ export function isBuyerOrAdmin(
   caller: string,
   admins: Set<string> = parseAdminPubkeys(),
 ): boolean {
-  return tradeBuyer === caller || admins.has(caller);
+  const normalizedCaller = caller.trim().toLowerCase();
+  return tradeBuyer.toLowerCase() === normalizedCaller || admins.has(normalizedCaller);
 }
 
 export class TradeController {
@@ -375,7 +378,7 @@ export class TradeController {
           new AppError(ErrorCode.DISPUTE_INVALID_CATEGORY, error.message, 400),
         );
       }
-      if (error instanceof Error && error.message === "Trade not found") {
+      if (error instanceof TradeNotFoundError) {
         return next(new AppError(ErrorCode.TRADE_NOT_FOUND, "Trade not found", 404));
       }
 

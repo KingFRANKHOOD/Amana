@@ -30,7 +30,7 @@ describe("API Client", () => {
       );
     });
 
-    it("should auto-inject auth token from storage", async () => {
+    it("uses credentials without reading or sending a stored token", async () => {
       sessionStorage.setItem("amana_jwt", "test-token");
       global.fetch = jest.fn(() =>
         Promise.resolve({
@@ -41,6 +41,13 @@ describe("API Client", () => {
 
       const result = await request<{ data: string }>("/test");
       expect(result).toEqual({ data: "test" });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          credentials: "include",
+          headers: expect.not.objectContaining({ Authorization: expect.anything() }),
+        }),
+      );
     });
 
     it("should handle 401 and trigger disconnect", async () => {
@@ -56,6 +63,31 @@ describe("API Client", () => {
       await expect(request<{ data: string }>("/test")).rejects.toThrow(
         "Unauthorized",
       );
+    });
+
+    it("rotates the HttpOnly refresh cookie and retries once after a 401", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "Expired" }),
+        } as Response)
+        .mockResolvedValueOnce({ ok: true, status: 200 } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ data: "retried" }),
+        } as Response);
+
+      await expect(request<{ data: string }>("/test")).resolves.toEqual({ data: "retried" });
+
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/auth/refresh"),
+        expect.objectContaining({ method: "POST", credentials: "include" }),
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(3);
     });
 
     it("should handle network errors", async () => {
@@ -164,7 +196,7 @@ describe("API Client", () => {
       if (!result.success) {
         expect(result.error.status).toBe(401);
       }
-      expect(sessionStorage.getItem("amana_jwt")).toBeNull();
+      expect(sessionStorage.getItem("amana_jwt")).toBe("test-token");
       expect(reloadSpy).toHaveBeenCalled();
     });
 

@@ -12,29 +12,29 @@ function adminPubkeysRaw(): string {
   return process.env.ADMIN_STELLAR_PUBKEYS ?? env.ADMIN_STELLAR_PUBKEYS ?? "";
 }
 
-/** Returns the set of mediator/arbitrator addresses from the environment. */
+/** Normalizes a Stellar address to lowercase for consistent comparison. */
+export function normalizeAddress(address: string): string {
+  return address.trim().toLowerCase();
+}
+
+/** Returns the set of mediator/arbitrator addresses from the environment, normalized to lowercase. */
 export function getMediatorAllowlist(): Set<string> {
   return new Set(
     adminPubkeysRaw()
       .split(",")
-      .map((a: string) => a.trim())
+      .map((a: string) => normalizeAddress(a))
       .filter(Boolean)
   );
 }
 
-/** Case-normalized admin allowlist for services that compare lowercase addresses. */
+/** Case-normalized admin allowlist (same as getMediatorAllowlist after normalization). */
 export function getAdminAllowlistLowercase(): Set<string> {
-  return new Set(
-    adminPubkeysRaw()
-      .split(",")
-      .map((a: string) => a.trim().toLowerCase())
-      .filter(Boolean)
-  );
+  return getMediatorAllowlist();
 }
 
 /** Returns true when `address` appears in the ADMIN_STELLAR_PUBKEYS allowlist. */
 export function isMediatorAddress(address: string): boolean {
-  return getMediatorAllowlist().has(address);
+  return getMediatorAllowlist().has(normalizeAddress(address));
 }
 
 /**
@@ -44,5 +44,18 @@ export function isMediatorAddress(address: string): boolean {
  * casing a caller's wallet address happens to arrive in.
  */
 export function isAdminAddress(address: string): boolean {
-  return getAdminAllowlistLowercase().has(address.trim().toLowerCase());
+  return getAdminAllowlistLowercase().has(normalizeAddress(address));
+}
+
+/**
+ * Test helper: clears any cached allowlist state.
+ *
+ * The allowlist is intentionally read fresh from the environment on every
+ * call (no module-level cache), so there is nothing to reset in production.
+ * This helper exists so tests that mutate `process.env.ADMIN_STELLAR_PUBKEYS`
+ * can explicitly signal a reset point and so callers migrating off the old
+ * `trade.service.ts` cache keep a stable, no-op API.
+ */
+export function resetAdminPubkeys(): void {
+  // No cache to clear — kept as a test helper for API compatibility.
 }

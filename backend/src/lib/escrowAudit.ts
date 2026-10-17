@@ -1,5 +1,6 @@
-import { TradeStatus } from "@prisma/client";
+import { Prisma, TradeStatus } from "@prisma/client";
 import { appLogger } from "../middleware/logger";
+import { AuditLogService } from "../services/auditLog.service";
 
 export interface EscrowAuditContext {
   tradeId: string;
@@ -12,14 +13,19 @@ export interface EscrowAuditContext {
   extra?: Record<string, unknown>;
 }
 
+const auditLogService = new AuditLogService();
+
 /**
- * Writes a durable, structured audit log entry for an escrow lifecycle transition.
+ * Writes a durable, structured audit log entry for an escrow lifecycle
+ * transition: a structured log line (for log-aggregator search) plus an
+ * append-only row in the AuditLog table (for the audit dashboard and
+ * compliance/dispute review), persisted in the same DB transaction as the
+ * state change it documents so the two can never diverge.
  *
- * All fields are flat (no nesting beyond `extra`) so log aggregators can index
- * them without schema gymnastics. The `audit: true` sentinel lets operations
- * filter for audit events independently of debug/info noise.
+ * The `audit: true` sentinel lets operations filter for audit events
+ * independently of debug/info noise.
  */
-export function logEscrowEvent(ctx: EscrowAuditContext): void {
+export async function logEscrowEvent(tx: Prisma.TransactionClient, ctx: EscrowAuditContext): Promise<void> {
   appLogger.info(
     {
       audit: true,
@@ -35,4 +41,15 @@ export function logEscrowEvent(ctx: EscrowAuditContext): void {
     },
     `[EscrowAudit] ${ctx.eventType} → ${ctx.toStatus}`,
   );
+
+  await auditLogService.record(tx, {
+    tradeId: ctx.tradeId,
+    eventType: ctx.eventType,
+    toStatus: ctx.toStatus,
+    actor: ctx.actor,
+    amountUsdc: ctx.amountUsdc,
+    ledgerSequence: ctx.ledgerSequence,
+    contractId: ctx.contractId,
+    metadata: ctx.extra,
+  });
 }

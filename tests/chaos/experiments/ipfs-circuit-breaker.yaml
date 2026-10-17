@@ -1,0 +1,86 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: ipfs-pinata-service-outage-5m
+  namespace: default
+  labels:
+    experiment: ipfs-failure
+    severity: medium
+    environment: staging
+  annotations:
+    hypothesis: |
+      When IPFS Pinata API returns 500/503 for 5 minutes:
+      1. IPFS service circuit breaker opens after 5 consecutive failures (30s cooldown)
+      2. Evidence upload returns 503 "Service Unavailable" with circuit_breaker=OPEN flag
+      3. Existing evidence already pinned to IPFS remains retrievable via gateway fallback
+      4. Trade creation and trade status updates continue working (no IPFS dependency for core flows)
+      5. Evidence manifest read operations use cached DB copy, not live IPFS fetch
+      6. Health check reports status="degraded" with ipfs.status="down" (not "unhealthy" — IPFS is optional)
+      7. Alert service dispatches ipfs_failure alert
+      8. After Pinata recovers: circuit breaker transitions HALF_OPEN -> CLOSED after 2 successes
+    steady-state-check: |
+      - GET /health/detail shows ipfs.status="up" and circuitBreakers includes "ipfs" state="CLOSED"
+      - Pinata testAuthentication succeeds in < 2s
+      - Evidence upload test returns 201 with IPFS CID
+    rollback: kubectl delete httpchaos ipfs-pinata-service-outage-5m -n default
+    post-experiment-verification: |
+      - GET /health/detail shows ipfs.status="up" within 60s
+      - Circuit breaker "ipfs" returns to state="CLOSED" within 60s
+      - Evidence upload succeeds on first attempt after recovery
+      - No stuck evidence-verification BullMQ jobs (all completed or retried)
+      - Alert for ipfs_failure resolves
+spec:
+  mode: all
+  duration: "300s"
+  selector:
+    labelSelectors:
+      app: backend
+    namespaces:
+      - default
+  target:
+    host: api.pinata.cloud
+    ports:
+      - 443
+      - 80
+  method: ALL
+  abort: true
+  code: 503
+  scheduler:
+    cron: "@never"
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: ipfs-gateway-packet-loss
+  namespace: default
+  labels:
+    experiment: ipfs-failure
+    severity: low
+    environment: staging
+  annotations:
+    hypothesis: |
+      When IPFS gateway has 80% packet loss:
+      1. Evidence fetch falls back to cached DB copy within timeout (5s)
+      2. Circuit breaker opens after threshold
+      3. No UI crash — evidence sections show "Unavailable" fallback
+spec:
+  action: loss
+  mode: all
+  duration: "180s"
+  selector:
+    labelSelectors:
+      app: backend
+    namespaces:
+      - default
+  loss:
+    loss: "80"
+    correlation: "50"
+  target:
+    selector:
+      pods:
+        default: []
+    mode: all
+  externalTargets:
+    - gateway.pinata.cloud
+  scheduler:
+    cron: "@never"

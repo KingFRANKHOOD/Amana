@@ -1,15 +1,47 @@
 import { PrismaClient, TradeStatus } from "@prisma/client";
+import { Keypair } from "@stellar/stellar-sdk";
 import { TradeAccessDeniedError, TradeService } from "../services/trade.service";
 
+jest.mock("../lib/cache", () => ({
+  cacheService: {
+    getOrSet: jest.fn((key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+    invalidateOne: jest.fn(),
+    invalidate: jest.fn(),
+  },
+  cacheGet: jest.fn(),
+  cacheSet: jest.fn(),
+}));
+
+jest.mock("ioredis", () =>
+  jest.fn().mockImplementation(() => ({
+    on: jest.fn(),
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue("OK"),
+    del: jest.fn().mockResolvedValue(1),
+    exists: jest.fn().mockResolvedValue(0),
+    scan: jest.fn().mockResolvedValue(["0", []]),
+  }))
+);
+
 function createMockPrisma() {
-  return {
+  const prisma: Record<string, unknown> = {
     trade: {
       create: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
       findFirst: jest.fn(),
+      groupBy: jest.fn(),
     },
-  } as unknown as PrismaClient;
+    auditLog: {
+      create: jest.fn(),
+    },
+    user: {
+      upsert: jest.fn().mockResolvedValue({}),
+    },
+  };
+  prisma.$transaction = jest.fn(async (callback: (tx: unknown) => unknown) => callback(prisma));
+  prisma.$queryRaw = jest.fn().mockResolvedValue([{ total_volume: "0" }]);
+  return prisma as unknown as PrismaClient;
 }
 
 describe("TradeService", () => {
@@ -22,7 +54,7 @@ describe("TradeService", () => {
   });
 
   it("stores a pending trade with PENDING_SIGNATURE status", async () => {
-    prisma.trade.create = jest.fn().mockResolvedValue({});
+    (prisma.trade.create as jest.Mock).mockResolvedValue({ tradeId: "4294967297" });
 
     await service.createPendingTrade({
       tradeId: "4294967297",
@@ -44,6 +76,30 @@ describe("TradeService", () => {
         status: TradeStatus.PENDING_SIGNATURE,
       },
     });
+  });
+
+  it("records an audit log entry for trade creation", async () => {
+    (prisma.trade.create as jest.Mock).mockResolvedValue({ tradeId: "4294967297" });
+
+    await service.createPendingTrade({
+      tradeId: "4294967297",
+      buyerAddress: "buyer-address",
+      sellerAddress: "seller-address",
+      amountUsdc: "15.5000000",
+      buyerLossBps: 5000,
+      sellerLossBps: 5000,
+    });
+
+    expect((prisma as any).auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tradeId: "4294967297",
+          eventType: "TradeCreationRequested",
+          toStatus: TradeStatus.PENDING_SIGNATURE,
+          actor: "buyer-address",
+        }),
+      }),
+    );
   });
 
   it("GET /trades returns only caller's trades", async () => {
@@ -174,10 +230,12 @@ describe("TradeService", () => {
   });
 
   it("GET /trades/stats returns correct counts and volume", async () => {
-    prisma.trade.findMany = jest.fn().mockResolvedValue([
-      { amountUsdc: "100", status: TradeStatus.PENDING_SIGNATURE },
-      { amountUsdc: "25.5", status: TradeStatus.FUNDED },
-      { amountUsdc: "50", status: TradeStatus.COMPLETED },
+    (prisma.trade.count as jest.Mock).mockResolvedValue(3);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ total_volume: "175.5" }]);
+    (prisma.trade.groupBy as jest.Mock).mockResolvedValue([
+      { status: TradeStatus.PENDING_SIGNATURE, _count: { _all: 1 } },
+      { status: TradeStatus.FUNDED, _count: { _all: 1 } },
+      { status: TradeStatus.COMPLETED, _count: { _all: 1 } },
     ]);
 
     const stats = await service.getUserStats("GA_CALLER");
@@ -185,5 +243,49 @@ describe("TradeService", () => {
     expect(stats.totalTrades).toBe(3);
     expect(stats.totalVolume).toBeCloseTo(175.5);
     expect(stats.openTrades).toBe(2);
+  });
+
+  it("ensures Prisma user rows for fresh buyer and seller before creating trade (FK integrity)", async () => {
+    const buyer = Keypair.random().publicKey();
+    const seller = Keypair.random().publicKey();
+    (prisma.trade.create as jest.Mock).mockResolvedValue({ tradeId: "T-FRESH" });
+
+    await service.createPendingTrade({
+      tradeId: "T-FRESH",
+      buyerAddress: buyer,
+      sellerAddress: seller,
+      amountUsdc: "10.0000000",
+      buyerLossBps: 5000,
+      sellerLossBps: 5000,
+    });
+
+    // Upsert should be called for both buyer and seller (lowercased) — ensures FK integrity for fresh Supabase-only users
+    expect((prisma as any).user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { walletAddress: buyer.toLowerCase() } }),
+    );
+    expect((prisma as any).user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { walletAddress: seller.toLowerCase() } }),
+    );
+    expect(prisma.trade.create).toHaveBeenCalled();
+  });
+
+  it("creates trade successfully for a fresh user who exists only in Supabase (no prior Prisma row)", async () => {
+    const freshBuyer = Keypair.random().publicKey();
+    const freshSeller = Keypair.random().publicKey();
+    (prisma.trade.create as jest.Mock).mockResolvedValue({ tradeId: "T-INTEGRATION-FRESH" });
+
+    // Simulate fresh users: Prisma findUnique would return null, but upsert handles creation
+    await expect(
+      service.createPendingTrade({
+        tradeId: "T-INTEGRATION-FRESH",
+        buyerAddress: freshBuyer,
+        sellerAddress: freshSeller,
+        amountUsdc: "25.00",
+        buyerLossBps: 5000,
+        sellerLossBps: 5000,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ tradeId: "T-INTEGRATION-FRESH" }));
+
+    expect((prisma as any).user.upsert).toHaveBeenCalled();
   });
 });

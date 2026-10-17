@@ -61,7 +61,12 @@ export const tradesApi = {
     request<CreateTradeResponse>("/trades", {
       method: "POST",
       token,
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        sellerAddress: data.sellerAddress,
+        amountUsdc: data.amountUsdc,
+        buyerLossBps: data.buyerLossBps,
+        sellerLossBps: data.sellerLossBps,
+      }),
     }),
 
   deposit: (token: string, tradeId: string) =>
@@ -100,7 +105,7 @@ export const tradesApi = {
         from: params?.from,
         to: params?.to,
       })}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { credentials: "include" },
     );
     if (!response.ok) {
       throw new Error(response.statusText || "Failed to export trades");

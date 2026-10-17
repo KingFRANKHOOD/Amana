@@ -177,6 +177,8 @@ export function __resetFreighterIdentityStoreForTests(): void {
   listeners.clear();
 }
 
+export { refreshIdentityStore };
+
 export function useFreighterIdentity(): FreighterIdentityState {
   const { address, isAuthorized, isWalletDetected, isLoading } =
     useSyncExternalStore(subscribe, getSnapshot, getSnapshot);

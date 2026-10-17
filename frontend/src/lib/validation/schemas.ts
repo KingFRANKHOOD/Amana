@@ -6,7 +6,8 @@ export const TradeSchema = z.object({
   sellerAddress: z.string().min(1, "Seller address is required"),
   amountCngn: z
     .string()
-    .regex(/^\d+(\.\d+)?$/, "Amount must be a valid positive number"),
+    .regex(/^\d+(\.\d+)?$/, "Amount must be a valid positive number")
+    .refine((value) => parseFloat(value) > 0, "Amount must be greater than zero"),
   buyerLossBps: z
     .number()
     .int("Must be a whole number")

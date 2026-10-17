@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { apiUrl } from "../support/api";
 
 const MEDIATOR_ADDRESS = "GEXAMPLEMEDIATORPUBLICKEY1";
 const SELLER_ADDRESS = `G${"S".repeat(55)}`;
@@ -54,7 +55,7 @@ test.describe("E2E coverage gaps", () => {
     await seedAuthenticatedWallet(page);
     await mockRpc(page);
 
-    await page.route("http://localhost:4000/trades", async (route) => {
+    await page.route(apiUrl("/trades"), async (route) => {
       if (route.request().method() !== "POST") {
         await route.fallback();
         return;
@@ -89,21 +90,21 @@ test.describe("E2E coverage gaps", () => {
 
     let disputeRequestBody: unknown;
 
-    await page.route("http://localhost:4000/trades/stats", async (route) => {
+    await page.route(apiUrl("/trades/stats"), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ totalTrades: 1, totalVolume: 25000, openTrades: 1 }),
       });
     });
-    await page.route("http://localhost:4000/wallet/balance", async (route) => {
+    await page.route(apiUrl("/wallet/balance"), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ balance: "25000", asset: "cNGN" }),
       });
     });
-    await page.route("http://localhost:4000/trades?**", async (route) => {
+    await page.route(apiUrl("/trades?**"), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -125,7 +126,7 @@ test.describe("E2E coverage gaps", () => {
         }),
       });
     });
-    await page.route("http://localhost:4000/trades/T-DISPUTE-1/dispute", async (route) => {
+    await page.route(apiUrl("/trades/T-DISPUTE-1/dispute"), async (route) => {
       disputeRequestBody = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
@@ -150,7 +151,7 @@ test.describe("E2E coverage gaps", () => {
     await seedAuthenticatedWallet(page);
     await mockRpc(page);
 
-    await page.route("http://localhost:4000/disputes?**", async (route) => {
+    await page.route(apiUrl("/disputes?**"), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -175,7 +176,7 @@ test.describe("E2E coverage gaps", () => {
         }),
       });
     });
-    await page.route("http://localhost:4000/trades/4294967297/evidence", async (route) => {
+    await page.route(apiUrl("/trades/4294967297/evidence"), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",

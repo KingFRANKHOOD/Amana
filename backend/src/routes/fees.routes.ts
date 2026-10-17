@@ -46,12 +46,16 @@ export function createFeeAccountingRouter(prisma: PrismaClient = defaultPrisma):
         const dateTo = query.dateTo ? new Date(query.dateTo) : undefined;
 
         if (query.format === "csv") {
-          const csv = await feeService.exportCsv({ dateFrom, dateTo });
+          const { csv, totalExported, truncated } = await feeService.exportCsv({ dateFrom, dateTo });
           res.setHeader("Content-Type", "text/csv; charset=utf-8");
           res.setHeader(
             "Content-Disposition",
             "attachment; filename=\"platform-fees-export.csv\"",
           );
+          if (truncated) {
+            res.setHeader("X-Export-Truncated", "true");
+            res.setHeader("X-Export-Total", String(totalExported));
+          }
           res.status(200).send(`\ufeff${csv}`);
           return;
         }

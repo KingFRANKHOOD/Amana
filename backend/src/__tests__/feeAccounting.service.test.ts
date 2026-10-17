@@ -1,4 +1,8 @@
-import { FeeAccountingService, FEE_RATE } from "../services/feeAccounting.service";
+import {
+  FeeAccountingService,
+  DEFAULT_FEE_BPS,
+  BPS_DIVISOR,
+} from "../services/feeAccounting.service";
 
 // ─── Mock Prisma ────────────────────────────────────────────────────────────────
 
@@ -43,12 +47,36 @@ describe("FeeAccountingService", () => {
           data: expect.objectContaining({
             tradeId: "trade-001",
             tradeAmountUsdc: "100.00",
-            feeUsdc: (100 * FEE_RATE).toFixed(6),
+            feeUsdc: ((100 * DEFAULT_FEE_BPS) / BPS_DIVISOR).toFixed(6),
             ledgerSequence: 42,
           }),
         }),
       );
       expect(result.tradeId).toBe("trade-001");
+    });
+
+    it("uses the live fee rate after setFeeBps (e.g. admin raises fee to 3%)", async () => {
+      const tx = makeMockTx();
+      tx.platformFeeEvent.findUnique.mockResolvedValue(null);
+      tx.platformFeeEvent.create.mockResolvedValue({ tradeId: "trade-300" });
+
+      const svc = new FeeAccountingService({} as any);
+      svc.setFeeBps(300);
+      await svc.recordFee(tx as any, "trade-300", "100.00");
+
+      expect(tx.platformFeeEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ feeUsdc: "3.000000" }),
+        }),
+      );
+    });
+
+    it("ignores out-of-range fee_bps updates", () => {
+      const svc = new FeeAccountingService({} as any, 100);
+      svc.setFeeBps(0);
+      svc.setFeeBps(501);
+      svc.setFeeBps(NaN);
+      expect(svc.getFeeBps()).toBe(100);
     });
 
     it("is idempotent — returns existing record without re-creating", async () => {
@@ -231,7 +259,7 @@ describe("FeeAccountingService", () => {
       ]);
 
       const svc = new FeeAccountingService(db as any);
-      const csv = await svc.exportCsv({});
+      const { csv, totalExported, truncated } = await svc.exportCsv({});
 
       expect(csv).toContain('"id"');
       expect(csv).toContain('"tradeId"');
@@ -239,6 +267,8 @@ describe("FeeAccountingService", () => {
       expect(csv).toContain('"tradeAmountUsdc"');
       expect(csv).toContain("trade-001");
       expect(csv).toContain("1.000000");
+      expect(totalExported).toBe(1);
+      expect(truncated).toBe(false);
     });
 
     it("returns empty CSV rows when no records", async () => {
@@ -246,12 +276,33 @@ describe("FeeAccountingService", () => {
       db.platformFeeEvent.findMany.mockResolvedValue([]);
 
       const svc = new FeeAccountingService(db as any);
-      const csv = await svc.exportCsv({});
+      const { csv, totalExported, truncated } = await svc.exportCsv({});
 
       // Headers still present, no data rows beyond header
       expect(csv).toContain('"id"');
       const lines = csv.trim().split("\n");
       expect(lines).toHaveLength(1); // header only
+      expect(totalExported).toBe(0);
+      expect(truncated).toBe(false);
+    });
+
+    it("enforces max row limit", async () => {
+      const db = makeMockDb();
+      const records = Array.from({ length: 3 }, (_, i) => ({
+        id: i + 1,
+        tradeId: `trade-${i + 1}`,
+        tradeAmountUsdc: "100.00",
+        feeUsdc: "1.000000",
+        collectedAt: new Date("2026-07-01T00:00:00.000Z"),
+        ledgerSequence: 42,
+      }));
+      db.platformFeeEvent.findMany.mockResolvedValue(records);
+
+      const svc = new FeeAccountingService(db as any);
+      const { csv, totalExported, truncated } = await svc.exportCsv({ maxRows: 2 });
+
+      expect(totalExported).toBe(2);
+      expect(truncated).toBe(true);
     });
   });
 });

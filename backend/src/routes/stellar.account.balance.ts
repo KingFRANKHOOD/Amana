@@ -1,6 +1,15 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
+import { StrKey } from "@stellar/stellar-sdk";
 import { horizonServer } from "../config/stellar";
 import { appLogger } from "../middleware/logger";
+import { validateRequest } from "../middleware/validateRequest";
+
+const accountBalanceParamsSchema = z.object({
+  address: z.string().refine((value: string) => StrKey.isValidEd25519PublicKey(value), {
+    message: "Invalid Stellar account address",
+  }),
+});
 
 interface Balance {
   assetType: string;
@@ -35,11 +44,11 @@ export function createStellarAccountBalanceRouter(): Router {
   const router = Router();
 
   // GET /stellar/account/:address/balance
-  router.get("/:address/balance", async (req: Request, res: Response) => {
+  router.get("/:address/balance", validateRequest({ params: accountBalanceParamsSchema }), async (req: Request, res: Response) => {
     const address = req.params.address as string;
 
-    if (!address || address.length !== 56 || !address.startsWith("G")) {
-      res.status(400).json({ error: "Invalid Stellar account address" });
+    if (!address || !StrKey.isValidEd25519PublicKey(address)) {
+      res.status(400).json({ error: { code: "INVALID_ADDRESS", message: "Invalid Stellar account address" } });
       return;
     }
 
@@ -50,13 +59,16 @@ export function createStellarAccountBalanceRouter(): Router {
       res.json({ address, balances });
     } catch (error: any) {
       if (error?.response?.status === 404) {
-        // Account exists on the Stellar network but is not funded
-        res.json({ address, balances: [] });
+        res
+          .status(404)
+          .json({ error: { code: "ACCOUNT_NOT_FOUND", message: "Stellar account not found" } });
         return;
       }
 
       appLogger.error({ error, address }, "Failed to fetch account balances");
-      res.status(502).json({ error: "Failed to fetch account data from Stellar network" });
+      res
+        .status(502)
+        .json({ error: { code: "STELLAR_FETCH_FAILED", message: "Failed to fetch account data from Stellar network" } });
     }
   });
 

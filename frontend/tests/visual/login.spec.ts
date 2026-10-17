@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { apiUrl } from "../support/api";
 
 const WALLET_ADDRESS = `G${"A".repeat(55)}`;
 
@@ -31,7 +32,7 @@ async function mockFreighter(page: Page, address: string) {
 }
 
 async function mockAuthApi(page: Page, address: string) {
-  await page.route("http://localhost:4000/auth/challenge", async (route) => {
+  await page.route(apiUrl("/auth/challenge"), async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -39,7 +40,7 @@ async function mockAuthApi(page: Page, address: string) {
     });
   });
 
-  await page.route("http://localhost:4000/auth/verify", async (route) => {
+  await page.route(apiUrl("/auth/verify"), async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -47,7 +48,7 @@ async function mockAuthApi(page: Page, address: string) {
     });
   });
 
-  await page.route("http://localhost:4000/auth/logout", async (route) => {
+  await page.route(apiUrl("/auth/logout"), async (route) => {
     await route.fulfill({ status: 204, body: "" });
   });
 }

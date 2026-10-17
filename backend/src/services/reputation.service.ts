@@ -1,4 +1,5 @@
 import { PrismaClient, TradeStatus } from "@prisma/client";
+import { withDatabaseQueryTimeout } from "../lib/queryTimeout";
 
 export interface ReputationEvent {
   id: string;
@@ -18,42 +19,84 @@ export interface ReputationResponse {
   history: ReputationEvent[];
 }
 
+const HISTORY_TRADE_LIMIT = 5;
+const HISTORY_DISPUTE_LIMIT = 5;
+
+type ReputationDatabase = {
+  trade: Pick<PrismaClient["trade"], "aggregate" | "findMany">;
+  dispute: Pick<PrismaClient["dispute"], "aggregate" | "findMany">;
+  $transaction?: <TResult>(
+    operation: (transaction: ReputationDatabase) => Promise<TResult>,
+    options: { maxWait: number; timeout: number },
+  ) => Promise<TResult>;
+};
+
 export class ReputationService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: ReputationDatabase) {}
 
   async getUserReputation(walletAddress: string): Promise<ReputationResponse> {
     const normalized = walletAddress.toLowerCase();
 
-    const [buyerTrades, sellerTrades] = await Promise.all([
-      this.prisma.trade.findMany({
-        where: { buyerAddress: normalized },
-        orderBy: { createdAt: "desc" },
-      }),
-      this.prisma.trade.findMany({
-        where: { sellerAddress: normalized },
-        orderBy: { createdAt: "desc" },
-      }),
-    ]);
+    const tradeParticipantFilter = {
+      OR: [{ buyerAddress: normalized }, { sellerAddress: normalized }],
+    };
 
-    const allTrades = [...buyerTrades, ...sellerTrades];
-    const completedTrades = allTrades.filter((t) => t.status === TradeStatus.COMPLETED);
-    const disputedTrades = allTrades.filter((t) => t.status === TradeStatus.DISPUTED);
-    const totalTrades = allTrades.length;
-    const completedCount = completedTrades.length;
-    const disputedCount = disputedTrades.length;
+    const {
+      totalTrades,
+      completedCount,
+      disputedCount,
+      completedTrades,
+      disputesInitiatedCount,
+      recentDisputes,
+    } = await withDatabaseQueryTimeout(this.prisma, async (database) => {
+      const [
+        totalAggregate,
+        completedAggregate,
+        disputedAggregate,
+        recentCompletedTrades,
+        disputeAggregate,
+        latestDisputes,
+      ] = await Promise.all([
+        database.trade.aggregate({ where: tradeParticipantFilter, _count: { _all: true } }),
+        database.trade.aggregate({
+          where: { ...tradeParticipantFilter, status: TradeStatus.COMPLETED },
+          _count: { _all: true },
+        }),
+        database.trade.aggregate({
+          where: { ...tradeParticipantFilter, status: TradeStatus.DISPUTED },
+          _count: { _all: true },
+        }),
+        database.trade.findMany({
+          where: { ...tradeParticipantFilter, status: TradeStatus.COMPLETED },
+          orderBy: { createdAt: "desc" },
+          take: HISTORY_TRADE_LIMIT,
+        }),
+        database.dispute.aggregate({
+          where: { initiator: normalized },
+          _count: { _all: true },
+        }),
+        database.dispute.findMany({
+          where: { initiator: normalized },
+          orderBy: { createdAt: "desc" },
+          take: HISTORY_DISPUTE_LIMIT,
+        }),
+      ]);
 
-    const disputesInitiated = await this.prisma.dispute.findMany({
-      where: { initiator: normalized },
-      orderBy: { createdAt: "desc" },
+      return {
+        totalTrades: totalAggregate._count._all,
+        completedCount: completedAggregate._count._all,
+        disputedCount: disputedAggregate._count._all,
+        completedTrades: recentCompletedTrades,
+        disputesInitiatedCount: disputeAggregate._count._all,
+        recentDisputes: latestDisputes,
+      };
     });
-
-    const disputesLost =
-      disputesInitiated.filter((d) => d.status === "RESOLVED" || d.status === "CLOSED").length;
 
     let trustScore = 50;
     trustScore += completedCount * 5;
-    trustScore -= disputesLost * 8;
-    trustScore -= disputesInitiated.length * 2;
+    // Disputes carry no recorded outcome, so a RESOLVED/CLOSED status cannot be
+    // treated as "lost" — only the initiation penalty applies.
+    trustScore -= disputesInitiatedCount * 2;
     if (totalTrades >= 50) trustScore += 15;
     else if (totalTrades >= 25) trustScore += 8;
     else if (totalTrades >= 10) trustScore += 5;
@@ -78,15 +121,15 @@ export class ReputationService {
       });
     }
 
-    for (const dispute of disputesInitiated.slice(0, 5)) {
+    for (const dispute of recentDisputes) {
       const resolved = dispute.status === "RESOLVED" || dispute.status === "CLOSED";
       history.push({
         id: `dispute-${dispute.id}`,
         event: resolved
           ? `Dispute on trade ${dispute.tradeId.slice(0, 8)}... was resolved`
           : `Initiated dispute on trade ${dispute.tradeId.slice(0, 8)}...`,
-        impact: resolved ? -10 : -2,
-        impactLabel: resolved ? "-10" : "-2",
+        impact: -2,
+        impactLabel: "-2",
         timestamp: dispute.createdAt.toISOString(),
         type: resolved ? "dispute_resolved" : "dispute_initiated",
       });

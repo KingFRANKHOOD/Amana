@@ -37,4 +37,14 @@ export const RATE_LIMIT_CONFIG = {
     max: runtimeEnvValue('RATE_LIMIT_EVIDENCE_UPLOAD_MAX'),
     message: 'Too many evidence upload attempts, try again later.',
   },
+  eventQuery: {
+    windowMs: runtimeEnvValue('RATE_LIMIT_EVENT_QUERY_WINDOW_MS'),
+    max: runtimeEnvValue('RATE_LIMIT_EVENT_QUERY_MAX'),
+    message: 'Too many event indexer requests, try again later.',
+  },
+  eventBackfill: {
+    windowMs: runtimeEnvValue('RATE_LIMIT_EVENT_BACKFILL_WINDOW_MS'),
+    max: runtimeEnvValue('RATE_LIMIT_EVENT_BACKFILL_MAX'),
+    message: 'Too many backfill requests, try again later.',
+  },
 } as const satisfies Record<string, RateLimitPreset>;

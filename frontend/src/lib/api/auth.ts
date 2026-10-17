@@ -1,28 +1,31 @@
 import { request } from "./client";
-import type { ChallengeResponse, VerifyResponse } from "./types";
+import type { ChallengeResponse, SessionResponse, ValidateSessionResponse } from "./types";
 
 export const authApi = {
   challenge: (walletAddress: string) =>
     request<ChallengeResponse>("/auth/challenge", {
       method: "POST",
+      skipAuth: true,
       body: JSON.stringify({ walletAddress }),
     }),
 
   verify: (walletAddress: string, signedChallenge: string) =>
-    request<VerifyResponse>("/auth/verify", {
+    request<SessionResponse>("/auth/verify", {
       method: "POST",
+      skipAuth: true,
       body: JSON.stringify({ walletAddress, signedChallenge }),
     }),
 
-  logout: (token: string) =>
+  logout: () =>
     request<{ message: string }>("/auth/logout", {
       method: "POST",
-      token,
     }),
 
-  refresh: (token: string) =>
-    request<VerifyResponse>("/auth/refresh", {
+  refresh: () =>
+    request<SessionResponse>("/auth/refresh", {
       method: "POST",
-      token,
+      skipAuth: true,
     }),
+
+  validate: () => request<ValidateSessionResponse>("/auth/validate"),
 };

@@ -18,8 +18,11 @@ import {
 } from "@stellar/freighter-api";
 import { api, ApiError } from "@/lib/api";
 import { trackAuthEvent } from "@/lib/analytics";
+import { refreshIdentityStore } from "./useFreighterIdentity";
 
-const TOKEN_STORAGE_KEY = "amana_jwt";
+// Compatibility marker for consumers that still gate requests on `token`.
+// This is not a credential and is never sent to the API.
+const AUTHENTICATED_SESSION = "http-only-cookie";
 
 interface AuthState {
   address: string | null;
@@ -43,32 +46,6 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-6)}`;
-}
-
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
-}
-
-function setStoredToken(token: string): void {
-  if (typeof window === "undefined") return;
-  sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
-}
-
-function clearStoredToken(): void {
-  if (typeof window === "undefined") return;
-  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-}
-
-function isTokenExpired(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    const exp = payload.exp;
-    if (!exp) return true;
-    return Date.now() >= exp * 1000;
-  } catch {
-    return true;
-  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -115,20 +92,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const { hasWallet, hasPermission, address } = await checkWalletState();
-      const storedToken = getStoredToken();
-
-      let token: string | null = null;
+      // Remove credentials written by older releases. The active session can
+      // only be discovered through the server's HttpOnly cookie.
+      sessionStorage.removeItem("amana_jwt");
       let isAuthenticated = false;
-
-      if (storedToken && !isTokenExpired(storedToken)) {
-        token = storedToken;
+      try {
+        await api.auth.validate();
         isAuthenticated = true;
+      } catch {
+        isAuthenticated = false;
       }
 
       setState({
         address,
         shortAddress: address ? shortenAddress(address) : null,
-        token,
+        token: isAuthenticated ? AUTHENTICATED_SESSION : null,
         isAuthenticated,
         isWalletConnected: hasWallet && hasPermission,
         isWalletDetected: hasWallet,
@@ -163,6 +141,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isWalletDetected: true,
         isLoading: false,
       }));
+
+      // Sync the connection state with useFreighterIdentity's shared store
+      // so other components (like AppSidebar) see the updated wallet state immediately
+      await refreshIdentityStore();
+
       trackAuthEvent("connect_wallet", "success", { connected: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to connect wallet";
@@ -205,13 +188,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const signedChallenge = typeof signedMessage === "string" 
         ? signedMessage 
         : Buffer.from(signedMessage).toString("base64url");
-      const { token } = await api.auth.verify(state.address, signedChallenge);
-
-      setStoredToken(token);
+      await api.auth.verify(state.address, signedChallenge);
 
       setState((prev) => ({
         ...prev,
-        token,
+        token: AUTHENTICATED_SESSION,
         isAuthenticated: true,
         isLoading: false,
         error: null,
@@ -235,15 +216,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.address]);
 
   const logout = useCallback(async () => {
-    if (state.token) {
+    if (state.isAuthenticated) {
       try {
-        await api.auth.logout(state.token);
+        await api.auth.logout();
       } catch (error) {
         console.error('Logout request failed:', error);
       }
     }
-
-    clearStoredToken();
 
     setState((prev) => ({
       ...prev,
@@ -252,67 +231,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error: null,
     }));
     trackAuthEvent("logout", "success");
-  }, [state.token]);
+  }, [state.isAuthenticated]);
 
   useEffect(() => {
     void refreshAuth();
   }, [refreshAuth]);
-
-  useEffect(() => {
-    if (!state.token) return;
-
-    let payload: { exp?: number };
-    try {
-      payload = JSON.parse(atob(state.token.split(".")[1]));
-    } catch {
-      return;
-    }
-    const exp = payload.exp;
-    if (!exp) return;
-
-    const expiresIn = exp * 1000 - Date.now();
-    if (expiresIn <= 0) {
-      clearStoredToken();
-      setState((prev) => ({
-        ...prev,
-        token: null,
-        isAuthenticated: false,
-      }));
-      return;
-    }
-
-    const refreshBuffer = 60 * 1000;
-    const currentToken = state.token;
-    const timeout = setTimeout(() => {
-      void (async () => {
-        try {
-          const { token: newToken } = await api.auth.refresh(currentToken);
-          setStoredToken(newToken);
-          setState((prev) => ({
-            ...prev,
-            token: newToken,
-            isAuthenticated: true,
-          }));
-          trackAuthEvent("refresh_token", "success");
-        } catch (error) {
-          clearStoredToken();
-          const message =
-            error instanceof ApiError || error instanceof Error
-              ? error.message
-              : "Session expired. Please authenticate again.";
-          setState((prev) => ({
-            ...prev,
-            token: null,
-            isAuthenticated: false,
-            error: message,
-          }));
-          trackAuthEvent("refresh_token", "failed", { error: message });
-        }
-      })();
-    }, Math.max(expiresIn - refreshBuffer, 0));
-
-    return () => clearTimeout(timeout);
-  }, [state.token]);
 
   const value = useMemo<AuthContextType>(
     () => ({

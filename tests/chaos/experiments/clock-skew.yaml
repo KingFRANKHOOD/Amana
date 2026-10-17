@@ -1,0 +1,73 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: TimeChaos
+metadata:
+  name: backend-clock-skew-30s
+  namespace: default
+  labels:
+    experiment: clock-skew
+    severity: medium
+    environment: staging
+  annotations:
+    hypothesis: |
+      When backend pod clock drifts +30s into the future:
+      1. JWT tokens issued by non-skewed pod are rejected by skewed pod as "not yet valid" (nbf validation)
+      2. JWT tokens issued by skewed pod appear "almost expired" to non-skewed pod
+      3. Stellar transaction timestamps (TimeBounds) within +30s skew are still accepted
+      4. BullMQ scheduled jobs (delayed jobs) on skewed pod fire early
+      5. Idempotency keys with TTLs: 30s skew reduces effective window but keys still work
+      6. After clock restored: JWT validation returns to normal within skew window
+      7. EventListener ledger timestamps don't cause re-processing (ordering by ledger sequence)
+    steady-state-check: |
+      - All backend pods show synchronized clock (date within 1s across pods)
+      - JWT auth works via 2+ different pods
+      - BullMQ delayed jobs fire within ±2s of scheduled time
+    rollback: kubectl delete timechaos backend-clock-skew-30s -n default
+    post-experiment-verification: |
+      - All backend pod clocks synchronized within 1s
+      - JWT login flow works end-to-end
+      - No events processed twice (check processedEvent ledger dedup)
+      - No premature BullMQ job execution
+spec:
+  mode: all
+  duration: "120s"
+  selector:
+    labelSelectors:
+      app: backend
+    namespaces:
+      - default
+  timeOffset: "30s"
+  clockIds:
+    - CLOCK_REALTIME
+  scheduler:
+    cron: "@never"
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: TimeChaos
+metadata:
+  name: backend-clock-skew-negative-60s
+  namespace: default
+  labels:
+    experiment: clock-skew
+    severity: high
+    environment: staging
+  annotations:
+    hypothesis: |
+      When backend pod clock drifts -60s into the past:
+      1. JWT tokens from non-skewed pod are rejected as "expired" by skewed pod
+      2. Tokens issued by skewed pod appear valid for 60s longer
+      3. Stellar transaction TimeBounds.minTime may be in the future for network
+      4. Idempotency keys may be re-usable (window extended) - this is ACCEPTABLE (safety > reuse prevention)
+      5. Critical: Trade escrow release timestamps should not allow premature release
+spec:
+  mode: one
+  duration: "120s"
+  selector:
+    labelSelectors:
+      app: backend
+    namespaces:
+      - default
+  timeOffset: "-60s"
+  clockIds:
+    - CLOCK_REALTIME
+  scheduler:
+    cron: "@never"

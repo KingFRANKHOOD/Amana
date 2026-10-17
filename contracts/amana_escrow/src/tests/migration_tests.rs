@@ -35,7 +35,7 @@ mod migration_tests {
             .address();
         token::StellarAssetClient::new(env, &token_id).mint(&buyer, &amount);
         EscrowContractClient::new(env, &contract_id)
-            .initialize(&admin, &token_id, &treasury, &fee_bps, &token_id);
+            .initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token_id, &treasury, &fee_bps, &token_id);
         (contract_id, token_id, buyer, seller, treasury, admin)
     }
 
@@ -55,7 +55,7 @@ mod migration_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
         let new_treasury = Address::generate(&env);
-        client.initialize(&admin, &new_token, &new_treasury, &50_u32, &new_token);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &new_token, &new_treasury, &50_u32, &new_token);
     }
 
     // -----------------------------------------------------------------------
@@ -95,13 +95,7 @@ mod migration_tests {
             .address();
         let new_contract = env.register(EscrowContract, ());
         let treasury_b = Address::generate(&env);
-        EscrowContractClient::new(&env, &new_contract).initialize(
-            &admin_b,
-            &token_b,
-            &treasury_b,
-            &100_u32,
-            &token_b,
-        );
+        EscrowContractClient::new(&env, &new_contract).initialize(&soroban_sdk::Vec::from_array(&env, [admin_b.clone()]), &1_u32, &token_b, &treasury_b, &100_u32, &token_b);
 
         // ── Old trade is unaffected by the new deployment ───────────────────
         let trade_after = old_client.get_trade(&trade_id);
@@ -174,13 +168,7 @@ mod migration_tests {
             .register_stellar_asset_contract_v2(admin_b.clone())
             .address();
         let new_contract = env.register(EscrowContract, ());
-        EscrowContractClient::new(&env, &new_contract).initialize(
-            &admin_b,
-            &token_b,
-            &Address::generate(&env),
-            &100_u32,
-            &token_b,
-        );
+        EscrowContractClient::new(&env, &new_contract).initialize(&soroban_sdk::Vec::from_array(&env, [admin_b.clone()]), &1_u32, &token_b, &Address::generate(&env), &100_u32, &token_b);
 
         // Resolve old dispute — must use token-A
         old_client.resolve_dispute(&trade_id, &mediator, &5_000_u32);
@@ -229,13 +217,7 @@ mod migration_tests {
             .register_stellar_asset_contract_v2(admin_b.clone())
             .address();
         let new_contract = env.register(EscrowContract, ());
-        EscrowContractClient::new(&env, &new_contract).initialize(
-            &admin_b,
-            &token_b,
-            &Address::generate(&env),
-            &100_u32,
-            &token_b,
-        );
+        EscrowContractClient::new(&env, &new_contract).initialize(&soroban_sdk::Vec::from_array(&env, [admin_b.clone()]), &1_u32, &token_b, &Address::generate(&env), &100_u32, &token_b);
 
         // All three old trades still reference token-A
         for tid in [t1, t2, t3] {

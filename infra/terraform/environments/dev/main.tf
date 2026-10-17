@@ -25,14 +25,24 @@ module "vpc" {
   nat_gateway_count    = 1
 }
 
+module "kms" {
+  source = "../../modules/kms"
+
+  project_name               = "amana"
+  environment                = "dev"
+  enable_key_rotation        = true
+  deletion_window_in_days    = 30
+}
+
 module "rds" {
   source = "../../modules/rds"
 
-  project_name          = "amana"
+  project_name           = "amana"
   environment            = "dev"
   vpc_id                = module.vpc.vpc_id
   subnet_ids            = module.vpc.private_subnet_ids
   allowed_cidr_blocks   = [module.vpc.vpc_cidr]
+  vpc_cidr              = module.vpc.vpc_cidr
   engine                = "aurora-postgresql"
   engine_version        = "15.4"
   instance_class        = "db.t3.medium"
@@ -45,6 +55,10 @@ module "rds" {
   preferred_backup_window = "03:00-04:00"
   skip_final_snapshot   = true
   deletion_protection   = false
+  storage_encrypted     = true
+  kms_key_id           = module.kms.key_id
+  kms_key_dependency   = module.kms.key_id
+  backtrack_window     = 7
 }
 
 module "redis" {

@@ -28,11 +28,14 @@ resource "aws_security_group" "this" {
     cidr_blocks = var.allowed_cidr_blocks
   }
 
+  # Restrict egress to VPC CIDR only — RDS has no need for internet access.
+  # Limits blast radius if the instance is compromised.
   egress {
     from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "Allow TCP egress within VPC only"
   }
 
   tags = {
@@ -45,6 +48,22 @@ resource "aws_security_group" "this" {
   }
 }
 
+resource "aws_kms_key" "rds" {
+  description             = "KMS key for ${var.project_name} RDS encryption at rest"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = {
+    Name        = "${var.project_name}-rds-kms"
+    Environment = var.environment
+  }
+}
+
+resource "aws_kms_alias" "rds" {
+  name          = "alias/${var.project_name}-rds"
+  target_key_id = aws_kms_key.rds.key_id
+}
+
 resource "aws_rds_cluster" "this" {
   cluster_identifier      = "${var.project_name}-rds-cluster"
   engine                  = var.engine
@@ -55,14 +74,22 @@ resource "aws_rds_cluster" "this" {
   backup_retention_period = var.backup_retention_period
   preferred_backup_window = var.preferred_backup_window
   db_subnet_group_name    = aws_db_subnet_group.this.name
-  vpc_security_group_ids = [aws_security_group.this.id]
+  vpc_security_group_ids  = [aws_security_group.this.id]
+  port                    = var.port
   skip_final_snapshot     = var.skip_final_snapshot
   deletion_protection     = var.deletion_protection
+  storage_encrypted       = var.storage_encrypted
+  kms_key_id              = var.storage_encrypted ? var.kms_key_id : null
+  backtrack_window        = var.backtrack_window
+  copy_tags_to_snapshot   = true
+  enable_http_endpoint    = false
 
   tags = {
     Name        = "${var.project_name}-rds-cluster"
     Environment = var.environment
   }
+
+  depends_on = [var.kms_key_dependency]
 }
 
 resource "aws_rds_cluster_instance" "this" {
@@ -103,6 +130,11 @@ variable "allowed_cidr_blocks" {
   description = "CIDR blocks allowed to access RDS"
   type        = list(string)
   default     = []
+}
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block used to restrict RDS egress traffic to the VPC only"
+  type        = string
 }
 
 variable "engine" {
@@ -175,6 +207,30 @@ variable "deletion_protection" {
   default     = true
 }
 
+variable "storage_encrypted" {
+  description = "Enable RDS storage encryption at rest"
+  type        = bool
+  default     = true
+}
+
+variable "kms_key_id" {
+  description = "KMS key ID for RDS encryption"
+  type        = string
+  default     = null
+}
+
+variable "kms_key_dependency" {
+  description = "Dependency on KMS key to ensure proper ordering"
+  type        = any
+  default     = null
+}
+
+variable "backtrack_window" {
+  description = "Aurora backtrack window in days (0-35, Aurora PostgreSQL only)"
+  type        = number
+  default     = 7
+}
+
 output "cluster_endpoint" {
   description = "RDS cluster endpoint"
   value       = aws_rds_cluster.this.endpoint
@@ -193,4 +249,9 @@ output "cluster_id" {
 output "instance_ids" {
   description = "RDS instance IDs"
   value       = aws_rds_cluster_instance.this[*].id
+}
+
+output "kms_key_arn" {
+  description = "ARN of the KMS key used for RDS encryption"
+  value       = aws_kms_key.rds.arn
 }

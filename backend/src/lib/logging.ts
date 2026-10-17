@@ -6,6 +6,7 @@
  * - requestId: Unique ID for this specific HTTP request
  * - trace_id: OpenTelemetry trace ID (when available)
  * - span_id: OpenTelemetry span ID (when available)
+ * - service: Service name for centralized log aggregation (Loki/Promtail labels)
  *
  * Usage in controllers/handlers:
  *   getContextualLogger(req).info({ userId }, 'User action completed');
@@ -18,6 +19,11 @@ import { trace } from '@opentelemetry/api';
 import { Request } from 'express';
 import { appLogger } from '../middleware/logger';
 import { TracedRequest } from '../middleware/correlationId.middleware';
+
+/**
+ * Service name reported in logs. Override via SERVICE_NAME env var.
+ */
+const SERVICE_NAME = process.env.SERVICE_NAME || 'backend';
 
 /**
  * Extract trace context from the active OpenTelemetry span
@@ -65,6 +71,7 @@ export function getContextualLogger(req: Request) {
 
   // Create a child logger with correlation context
   return appLogger.child({
+    service: SERVICE_NAME,
     correlationId: traced.correlationId,
     requestId: traced.requestId,
     ...traceContext,
@@ -95,7 +102,7 @@ export function getContextualLogger(req: Request) {
  *         throw error;
  *       }
  *     },
- *     { connection: createQueueConnection() },
+ *     { connection: createQueueConnection() }
  *   );
  * }
  */
@@ -107,6 +114,7 @@ export function getJobContextualLogger(
   const traceContext = getTraceContext();
 
   return appLogger.child({
+    service: SERVICE_NAME,
     jobId,
     correlationId,
     ...traceContext,
@@ -125,7 +133,7 @@ export function getJobContextualLogger(
  * // When enqueuing a job from a request handler
  * const traceContext = extractTraceContext(req);
  * await notificationQueue.add(
- *   'send-email',
+ *   '/send-email',
  *   { email, message },
  *   { metadata: traceContext }
  * );
