@@ -47,6 +47,16 @@ describe("TradeSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects zero amountCngn", () => {
+    const result = TradeSchema.safeParse({ ...valid, amountCngn: "0" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects decimal zero amountCngn", () => {
+    const result = TradeSchema.safeParse({ ...valid, amountCngn: "0.00" });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects buyerLossBps above 10000", () => {
     const result = TradeSchema.safeParse({ ...valid, buyerLossBps: 10001 });
     expect(result.success).toBe(false);

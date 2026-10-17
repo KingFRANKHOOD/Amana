@@ -287,6 +287,12 @@ jobs:
             frontend/pnpm-lock.yaml
             backend/pnpm-lock.yaml
 
+      - name: Validate Playwright JUnit output configuration
+        run: node --test scripts/ci-workflow.test.cjs
+
+      - name: Validate database restore target precedence
+        run: node --test scripts/db-restore.test.cjs
+
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
@@ -344,7 +350,7 @@ jobs:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3000
           NEXT_PUBLIC_API_URL: http://localhost:4000
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e-junit.xml
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/e2e-junit.xml
         run: pnpm exec playwright test tests/e2e --project=chromium-desktop --reporter=line,html,junit
 
       - name: Upload Playwright reports

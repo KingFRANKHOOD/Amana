@@ -122,6 +122,26 @@ resource "aws_security_group_rule" "cluster_ingress_node" {
   type                     = "ingress"
 }
 
+resource "aws_security_group_rule" "node_ingress_cluster" {
+  description              = "Allow the cluster control plane to reach kubelets"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.node.id
+  source_security_group_id = aws_security_group.cluster.id
+  type                     = "ingress"
+}
+
+resource "aws_security_group_rule" "node_ingress_node" {
+  description              = "Allow communication between worker nodes"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
+  security_group_id        = aws_security_group.node.id
+  source_security_group_id = aws_security_group.node.id
+  type                     = "ingress"
+}
+
 resource "aws_eks_cluster" "this" {
   name     = "${var.project_name}-eks-cluster"
   role_arn = aws_iam_role.cluster.arn
@@ -143,11 +163,30 @@ resource "aws_eks_cluster" "this" {
   }
 }
 
+resource "aws_launch_template" "node" {
+  name_prefix = "${var.project_name}-eks-node-"
+
+  network_interfaces {
+    device_index         = 0
+    security_groups      = [aws_security_group.node.id]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-eks-node-launch-template"
+    Environment = var.environment
+  }
+}
+
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.project_name}-eks-node-group"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = var.subnet_ids
+
+  launch_template {
+    id      = aws_launch_template.node.id
+    version = aws_launch_template.node.latest_version
+  }
 
   scaling_config {
     desired_size = var.desired_size
