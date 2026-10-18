@@ -9,8 +9,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import { VideoUploadCard } from "@/components/ui/VideoUploadCard";
 import { api } from "@/lib/api";
 
@@ -44,6 +43,9 @@ jest.mock("@/lib/api", () => ({
       uploadEvidence: jest.fn(),
     },
   },
+  apiConfig: {
+    getBaseUrl: () => "http://api.test",
+  },
 }));
 
 // Mock Pinata API
@@ -62,173 +64,214 @@ describe("Evidence Upload and Playback Journey", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.NEXT_PUBLIC_PINATA_JWT = "test-jwt-token";
+    MockUploadXhr.instances = [];
+    global.XMLHttpRequest = MockUploadXhr as unknown as typeof XMLHttpRequest;
   });
 
-  describe("Evidence Upload Flow", () => {
-    it("should render upload card with proper UI elements", () => {
-      render(<VideoUploadCard tradeId="trade-1" />);
+/**
+ * Controllable XMLHttpRequest stand-in so upload tests can drive progress,
+ * success and failure explicitly instead of racing a timer.
+ */
+class MockUploadXhr {
+  static instances: MockUploadXhr[] = [];
 
-      expect(screen.getByText("Evidence Upload")).toBeInTheDocument();
-      expect(
-        screen.getByText(/Upload delivery proof video/i),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/Drag & drop or click to browse/i),
-      ).toBeInTheDocument();
-    });
+  upload: { onprogress: ((e: ProgressEvent) => void) | null } = { onprogress: null };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  status = 200;
+  statusText = "OK";
+  responseText = "";
+  withCredentials = false;
+  open = jest.fn();
+  setRequestHeader = jest.fn();
+  send = jest.fn();
 
-    it("should accept video file selection", async () => {
-      const user = userEvent.setup();
-      const onUpload = jest.fn();
+  constructor() {
+    MockUploadXhr.instances.push(this);
+  }
 
-      render(<VideoUploadCard tradeId="trade-1" onUpload={onUpload} />);
+  emitProgress(loaded: number, total: number) {
+    this.upload.onprogress?.({
+      loaded,
+      total,
+      lengthComputable: true,
+    } as ProgressEvent);
+  }
 
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+  succeed(cid: string) {
+    this.status = 200;
+    this.responseText = JSON.stringify({ cid });
+    this.onload?.();
+  }
 
-      if (input) {
-        const file = new File(["video content"], "evidence.mp4", {
-          type: "video/mp4",
-        });
-        await user.upload(input, file);
+  fail() {
+    this.status = 0;
+    this.onerror?.();
+  }
+}
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole("button", { name: /Submit Proof/i }),
-          ).toBeInTheDocument();
-        });
-      }
-    });
+/**
+ * Every test that talks to the upload UI must resolve the file input through
+ * this helper. If the markup ever stops rendering an `<input type="file">`,
+ * the test fails with an explicit message instead of skipping its body.
+ */
+function getFileInput(container: HTMLElement): HTMLInputElement {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+  if (!input) {
+    throw new Error(
+      "VideoUploadCard did not render an <input type=\"file\"> element; evidence upload UI is broken",
+    );
+  }
+  return input;
+}
 
-    it("should display upload progress during file upload", async () => {
-      const { container } = render(<VideoUploadCard tradeId="trade-1" />);
+function selectFile(input: HTMLInputElement, name = "evidence.mp4", type = "video/mp4") {
+  const file = new File(["video content"], name, { type });
+  fireEvent.change(input, { target: { files: [file] } });
+  return file;
+}
 
-      // Simulate file selection
-      const input = container.querySelector('input[type="file"]');
-      if (input) {
-        const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-        fireEvent.change(input, { target: { files: [file] } });
-
-        // Progress should be visible during upload
-        await waitFor(
-          () => {
-            const progressText = screen.queryByText(/Uploading to IPFS/i);
-            // Progress may or may not be visible depending on timing
-            if (progressText) {
-              expect(progressText).toBeInTheDocument();
-            }
-          },
-          { timeout: 1000 },
-        );
-      }
-    });
-
-    it("should handle upload errors gracefully", async () => {
-      const mockXhr = {
-        upload: { onprogress: jest.fn() },
-        onload: jest.fn(),
-        onerror: jest.fn(),
-        open: jest.fn(),
-        setRequestHeader: jest.fn(),
-        send: jest.fn(function () {
-          // Simulate error
-          setTimeout(() => this.onerror?.(), 0);
-        }),
-        status: 0,
-      };
-
-      global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
-
-      render(<VideoUploadCard tradeId="trade-1" />);
-
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-
-      if (input) {
-        const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-        fireEvent.change(input, { target: { files: [file] } });
-
-        await waitFor(
-          () => {
-            const errorMsg = screen.queryByText(/Network error/i);
-            if (errorMsg) {
-              expect(errorMsg).toBeInTheDocument();
-            }
-          },
-          { timeout: 1000 },
-        );
-      }
-    });
-
-    it("should disable submit button until file is uploaded", () => {
-      render(<VideoUploadCard tradeId="trade-1" />);
-
-      const submitButton = screen.getByRole("button", {
-        name: /Submit Proof/i,
-      });
-      expect(submitButton).toBeDisabled();
-    });
-
-    it("should display IPFS hash after successful upload", async () => {
-      const mockXhr = {
-        upload: { onprogress: jest.fn() },
-        onload: jest.fn(),
-        onerror: jest.fn(),
-        open: jest.fn(),
-        setRequestHeader: jest.fn(),
-        send: jest.fn(function () {
-          setTimeout(() => this.onload?.(), 100);
-        }),
-        status: 200,
-        responseText: JSON.stringify({ cid: "QmSuccessHash456" }),
-      };
-
-      global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
-
-      render(<VideoUploadCard tradeId="trade-1" />);
-
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-
-      if (input) {
-        const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-        fireEvent.change(input, { target: { files: [file] } });
-
-        await waitFor(() => {
-          expect(screen.getByText(/QmSuccessHash456/i)).toBeInTheDocument();
-        });
-      }
-    });
-
-    it("should call onUpload callback with IPFS hash", async () => {
-      const onUpload = jest.fn();
-
-      const mockXhr = {
-        upload: { onprogress: jest.fn() },
-        onload: jest.fn(),
-        onerror: jest.fn(),
-        open: jest.fn(),
-        setRequestHeader: jest.fn(),
-        send: jest.fn(function () {
-          setTimeout(() => this.onload?.(), 100);
-        }),
-        status: 200,
-        responseText: JSON.stringify({ cid: "QmCallbackHash" }),
-      };
-
-      global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
-
-      render(<VideoUploadCard tradeId="trade-1" onUpload={onUpload} />);
-
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-
-      if (input) {
-        const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-        fireEvent.change(input, { target: { files: [file] } });
-
-        await waitFor(() => {
-          expect(onUpload).toHaveBeenCalledWith("QmCallbackHash");
-        });
-      }
-    });
+async function getStartedUpload(): Promise<MockUploadXhr> {
+  await waitFor(() => {
+    expect(MockUploadXhr.instances).toHaveLength(1);
   });
+  return MockUploadXhr.instances[0];
+}
+
+describe("Evidence Upload Flow", () => {
+  it("should render upload card with proper UI elements", () => {
+    render(<VideoUploadCard tradeId="trade-1" />);
+
+    expect(screen.getByText("Evidence Upload")).toBeInTheDocument();
+    expect(screen.getByText(/Upload delivery proof video/i)).toBeInTheDocument();
+    expect(screen.getByText(/Drag & drop or click to browse/i)).toBeInTheDocument();
+  });
+
+  it("should accept video file selection and start an upload", async () => {
+    const { container } = render(<VideoUploadCard tradeId="trade-1" />);
+
+    selectFile(getFileInput(container));
+    const xhr = await getStartedUpload();
+
+    expect(xhr.open).toHaveBeenCalledWith(
+      "POST",
+      "http://api.test/evidence/video",
+    );
+    expect(xhr.send).toHaveBeenCalledTimes(1);
+
+    const body = xhr.send.mock.calls[0][0] as FormData;
+    expect(body).toBeInstanceOf(FormData);
+    expect(body.get("tradeId")).toBe("trade-1");
+    expect(body.get("file")).toBeInstanceOf(File);
+    // A local preview is shown as soon as a file is selected.
+    expect(container.querySelector("video")).not.toBeNull();
+  });
+
+  it("should display upload progress during file upload", async () => {
+    const { container } = render(<VideoUploadCard tradeId="trade-1" />);
+
+    selectFile(getFileInput(container));
+    const xhr = await getStartedUpload();
+
+    act(() => {
+      xhr.emitProgress(50, 100);
+    });
+
+    expect(screen.getByText("Uploading to IPFS…")).toBeInTheDocument();
+    expect(screen.getByText("50%")).toBeInTheDocument();
+  });
+
+  it("should handle upload errors gracefully", async () => {
+    const onUpload = jest.fn();
+    const { container } = render(
+      <VideoUploadCard tradeId="trade-1" onUpload={onUpload} />,
+    );
+
+    selectFile(getFileInput(container));
+    const xhr = await getStartedUpload();
+
+    await act(async () => {
+      xhr.fail();
+    });
+
+    expect(screen.getByText(/Network error during upload/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Submit Proof/i })).toBeDisabled();
+    expect(onUpload).not.toHaveBeenCalled();
+  });
+
+  it("should disable submit button until file is uploaded", () => {
+    const { container } = render(<VideoUploadCard tradeId="trade-1" />);
+
+    // Resolving the input first keeps this test from silently passing when the
+    // upload UI disappears.
+    expect(getFileInput(container)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Submit Proof/i }),
+    ).toBeDisabled();
+  });
+
+  it("should display IPFS hash after successful upload", async () => {
+    const onUpload = jest.fn();
+    const { container } = render(
+      <VideoUploadCard tradeId="trade-1" onUpload={onUpload} />,
+    );
+
+    selectFile(getFileInput(container));
+    const xhr = await getStartedUpload();
+
+    await act(async () => {
+      xhr.succeed("QmSuccessHash456");
+    });
+
+    expect(screen.getByText(/QmSuccessHash456/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /View on IPFS/i }),
+    ).toHaveAttribute(
+      "href",
+      "https://gateway.pinata.cloud/ipfs/QmSuccessHash456",
+    );
+    expect(
+      screen.getByRole("button", { name: /Submit Proof/i }),
+    ).toBeEnabled();
+  });
+
+  it("should call onUpload callback with IPFS hash", async () => {
+    const onUpload = jest.fn();
+    const { container } = render(
+      <VideoUploadCard tradeId="trade-1" onUpload={onUpload} />,
+    );
+
+    selectFile(getFileInput(container));
+    const xhr = await getStartedUpload();
+
+    await act(async () => {
+      xhr.succeed("QmCallbackHash");
+    });
+
+    expect(onUpload).toHaveBeenCalledTimes(1);
+    expect(onUpload).toHaveBeenCalledWith("QmCallbackHash");
+  });
+
+  it("should hand the uploaded hash to onSubmit when the proof is submitted", async () => {
+    const onSubmit = jest.fn();
+    const { container } = render(
+      <VideoUploadCard tradeId="trade-1" onSubmit={onSubmit} />,
+    );
+
+    selectFile(getFileInput(container));
+    const xhr = await getStartedUpload();
+    await act(async () => {
+      xhr.succeed("QmSubmittedHash");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Submit Proof/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith("QmSubmittedHash");
+    expect(
+      screen.getByRole("button", { name: /Proof Submitted/i }),
+    ).toBeInTheDocument();
+  });
+});
 
   describe("Evidence Retrieval and Playback", () => {
     it("should fetch evidence records for a trade", async () => {
@@ -337,51 +380,32 @@ describe("Evidence Upload and Playback Journey", () => {
     });
 
     it("should handle network timeout during upload", async () => {
-      const mockXhr = {
-        upload: { onprogress: jest.fn() },
-        onload: jest.fn(),
-        onerror: jest.fn(function () {
-          // Simulate timeout
-        }),
-        open: jest.fn(),
-        setRequestHeader: jest.fn(),
-        send: jest.fn(function () {
-          setTimeout(() => this.onerror?.(), 100);
-        }),
-        status: 0,
-      };
+      const onUpload = jest.fn();
+      const { container } = render(
+        <VideoUploadCard tradeId="trade-1" onUpload={onUpload} />,
+      );
 
-      global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
+      selectFile(getFileInput(container));
+      const xhr = await getStartedUpload();
 
-      render(<VideoUploadCard tradeId="trade-1" />);
+      await act(async () => {
+        xhr.fail();
+      });
 
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-
-      if (input) {
-        const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-        fireEvent.change(input, { target: { files: [file] } });
-
-        await waitFor(
-          () => {
-            const errorMsg = screen.queryByText(/Network error/i);
-            if (errorMsg) {
-              expect(errorMsg).toBeInTheDocument();
-            }
-          },
-          { timeout: 1000 },
-        );
-      }
+      // A timed-out upload must surface the failure and leave the form unusable.
+      expect(screen.getByText(/Network error during upload/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Qm/i)).not.toBeInTheDocument();
+      expect(onUpload).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: /Submit Proof/i })).toBeDisabled();
     });
 
     it("should handle invalid file types", async () => {
-      render(<VideoUploadCard tradeId="trade-1" />);
+      const { container } = render(<VideoUploadCard tradeId="trade-1" />);
 
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+      const input = getFileInput(container);
 
-      if (input) {
-        // The input only accepts video files, so invalid types should be rejected by browser
-        expect((input as HTMLInputElement).accept).toBe("video/mp4,video/webm");
-      }
+      // The input only accepts video files, so invalid types should be rejected by browser
+      expect(input.accept).toBe("video/mp4,video/webm");
     });
 
     it("should handle missing IPFS configuration", async () => {
@@ -405,87 +429,41 @@ describe("Evidence Upload and Playback Journey", () => {
       expect(screen.getByText("Evidence Upload")).toBeInTheDocument();
     });
 
-    it("should handle concurrent uploads gracefully", async () => {
-      const onUpload1 = jest.fn();
-      const onUpload2 = jest.fn();
+    it("should not upload anything when no file is selected", async () => {
+      const onUpload = jest.fn();
+      const { container } = render(
+        <VideoUploadCard tradeId="trade-1" onUpload={onUpload} />,
+      );
 
-      const mockXhr = {
-        upload: { onprogress: jest.fn() },
-        onload: jest.fn(),
-        onerror: jest.fn(),
-        open: jest.fn(),
-        setRequestHeader: jest.fn(),
-        send: jest.fn(function () {
-          setTimeout(() => this.onload?.(), 50);
-        }),
-        status: 200,
-        responseText: JSON.stringify({ cid: "QmConcurrentHash" }),
-      };
+      // Cancelling the browser file picker fires a change event with no files.
+      fireEvent.change(getFileInput(container), { target: { files: [] } });
 
-      global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
-
-      const { container, rerender } = render(<VideoUploadCard tradeId="trade-1" onUpload={onUpload1} />);
-
-      // Simulate first upload
-      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-      const file1 = new File(["video1"], "test1.mp4", { type: "video/mp4" });
-      fireEvent.change(fileInput, { target: { files: [file1] } });
-
-      // Rerender with different callback
-      rerender(<VideoUploadCard tradeId="trade-1" onUpload={onUpload2} />);
-
-      await waitFor(() => {
-        expect(onUpload1).toHaveBeenCalled();
+      await act(async () => {
+        await Promise.resolve();
       });
+
+      expect(MockUploadXhr.instances).toHaveLength(0);
+      expect(onUpload).not.toHaveBeenCalled();
     });
   });
 
   describe("Evidence Processing and Verification", () => {
     it("should track upload progress accurately", async () => {
-      let progressCallback: ((e: ProgressEvent) => void) | null = null;
+      const { container } = render(<VideoUploadCard tradeId="trade-1" />);
 
-      const mockXhr = {
-        upload: {
-          set onprogress(cb: any) {
-            progressCallback = cb;
-          },
-          get onprogress() {
-            return progressCallback;
-          }
-        },
-        onload: jest.fn(),
-        onerror: jest.fn(),
-        open: jest.fn(),
-        setRequestHeader: jest.fn(),
-        send: jest.fn(function () {
-          // Simulate progress events
-          if (progressCallback) {
-            progressCallback({
-              loaded: 50,
-              total: 100,
-              lengthComputable: true,
-            } as unknown as ProgressEvent);
-          }
-          setTimeout(() => this.onload?.(), 100);
-        }),
-        status: 200,
-        responseText: JSON.stringify({ cid: "QmProgressHash" }),
-      };
+      selectFile(getFileInput(container));
+      const xhr = await getStartedUpload();
 
-      global.XMLHttpRequest = jest.fn(() => mockXhr) as any;
+      act(() => {
+        xhr.emitProgress(25, 100);
+      });
+      expect(screen.getByText("25%")).toBeInTheDocument();
 
-      render(<VideoUploadCard tradeId="trade-1" />);
-
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-
-      if (input) {
-        const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-        fireEvent.change(input, { target: { files: [file] } });
-
-        await waitFor(() => {
-          expect(screen.getByText(/50%/i)).toBeInTheDocument();
-        });
-      }
+      act(() => {
+        xhr.emitProgress(75, 100);
+      });
+      expect(screen.getByText("75%")).toBeInTheDocument();
+      expect(screen.queryByText("25%")).not.toBeInTheDocument();
     });
 
     it("should support multiple evidence types", async () => {
