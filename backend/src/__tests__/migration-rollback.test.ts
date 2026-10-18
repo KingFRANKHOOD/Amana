@@ -256,9 +256,7 @@ describe("Migration Rollback Integrity", () => {
         );
       }
 
-      // This is informational — the test passes even if no rollback files exist,
-      // but it documents the coverage gap
-      expect(true).toBe(true);
+      expect(destructiveWithoutRollback).toHaveLength(0);
     });
   });
 
