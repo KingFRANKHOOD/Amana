@@ -1,4 +1,12 @@
-import { Account, Networks, rpc } from "@stellar/stellar-sdk";
+import {
+  Account,
+  Networks,
+  Operation,
+  rpc,
+  scValToNative,
+  StrKey,
+  TransactionBuilder,
+} from "@stellar/stellar-sdk";
 import { __resetRetrySleepForTests, __setRetrySleepForTests } from "../lib/retry";
 import {
   __resetRpcServerFactoryForTests,
@@ -586,16 +594,55 @@ describe("ContractService XDR builders", () => {
       expect(result.unsignedXdr).toEqual(expect.any(String));
     });
 
-    it("includes mediator in dispute transaction", async () => {
-      const { service } = buildService();
+    it("encodes the trade id, initiator and reason hash in the initiate_dispute invocation", async () => {
+      // The shared buyerAddress fixture is not a valid Ed25519 key, so this test
+      // supplies its own valid address and contract id.
+      const initiatorAddress =
+        "GASTAG3O4FSBBGHETW5UW5CCNOG5VIYU3UPXJURFUUYP27KMF2BSIO5Y";
+      const contractId = StrKey.encodeContract(Buffer.alloc(32, 7));
+      const server = {
+        getAccount: jest
+          .fn()
+          .mockImplementation(
+            async (accountId: string) => new Account(accountId, "1"),
+          ),
+        prepareTransaction: jest.fn().mockImplementation(async (tx) => tx),
+      } as unknown as rpc.Server;
+
+      __setRpcServerFactoryForTests(() => server);
+      const service = new ContractService(
+        "https://rpc.example.com",
+        contractId,
+        process.env.USDC_CONTRACT_ID!,
+        Networks.TESTNET,
+      );
 
       const result = await service.buildInitiateDisputeTx({
         tradeId: "7",
-        initiatorAddress: buyerAddress,
+        initiatorAddress,
         reasonHash: "abc123def456",
       });
 
-      expect(result.unsignedXdr).toEqual(expect.any(String));
+      const transaction = TransactionBuilder.fromXDR(
+        result.unsignedXdr,
+        Networks.TESTNET,
+      );
+      expect(transaction.source).toBe(initiatorAddress);
+      expect(transaction.operations).toHaveLength(1);
+
+      const operation = transaction.operations[0] as Operation.InvokeHostFunction;
+      const invocation = operation.func.invokeContract();
+
+      expect(invocation.functionName().toString()).toBe("initiate_dispute");
+
+      const args = invocation.args();
+      // initiate_dispute(trade_id, initiator, reason_hash) — the escrow contract
+      // has no mediator parameter, and a mediator address is not part of this
+      // transaction. The length check fails if the ABI silently drifts.
+      expect(args).toHaveLength(3);
+      expect(scValToNative(args[0])).toBe(7n);
+      expect(scValToNative(args[1])).toBe(initiatorAddress);
+      expect(scValToNative(args[2])).toBe("abc123def456");
     });
 
     it("handles long reason hash", async () => {
