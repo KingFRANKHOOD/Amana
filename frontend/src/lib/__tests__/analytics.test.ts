@@ -1,5 +1,7 @@
 import {
   isAnalyticsOptedOut,
+  trackFailure,
+  trackFunnelStep,
   scrubProperties,
   setAnalyticsOptOut,
   trackDisputeEvent,
@@ -154,6 +156,13 @@ describe("publishEvent respects opt-out", () => {
   it("suppresses all events when opted out", () => {
     setAnalyticsOptOut(true);
     trackEvent("test_event", { foo: "bar" });
+    expect(consoleSpy).not.toHaveBeenCalled();
+  });
+
+  it("suppresses funnel and failure events when opted out", () => {
+    setAnalyticsOptOut(true);
+    trackFunnelStep("create_trade", { from: "1", to: "2" });
+    trackFailure("ui_error", { message: "boom" });
     expect(consoleSpy).not.toHaveBeenCalled();
   });
 });
