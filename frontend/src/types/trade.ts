@@ -7,6 +7,27 @@ export type TradeStatus =
   | "DISPUTED"
   | "DRAFT";
 
+/**
+ * Maps a trade status from either vocabulary (the backend lifecycle used by
+ * the API and `TradeSchema`, or the UI view-model `TradeStatus`) to the UI
+ * `TradeStatus` consumed by trade-detail components.
+ */
+export function toTradeStatus(status: string): TradeStatus {
+  const statusMap: Record<string, TradeStatus> = {
+    "IN TRANSIT": "IN TRANSIT",
+    DRAFT: "DRAFT",
+    PENDING: "PENDING",
+    PENDING_SIGNATURE: "PENDING",
+    CREATED: "PENDING",
+    FUNDED: "IN TRANSIT",
+    DELIVERED: "IN TRANSIT",
+    SETTLED: "SETTLED",
+    DISPUTED: "DISPUTED",
+    CANCELLED: "DRAFT",
+  };
+  return statusMap[status] ?? "PENDING";
+}
+
 export interface TradeParty {
   name: string;
   walletAddress: string;
