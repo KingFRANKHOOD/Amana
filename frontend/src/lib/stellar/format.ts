@@ -2,23 +2,27 @@
 
 export function formatStroops(stroops: number, decimals: number): string {
   const divisor = Math.pow(10, decimals);
-  const whole = Math.floor(stroops / divisor);
-  const frac = stroops % divisor;
-  return `${whole.toLocaleString("en-US")}.${String(frac).padStart(decimals, "0")}`;
+  const abs = Math.abs(stroops);
+  const whole = Math.floor(abs / divisor);
+  const frac = abs % divisor;
+  const sign = stroops < 0 ? "-" : "";
+  return `${sign}${whole.toLocaleString("en-US")}.${String(frac).padStart(decimals, "0")}`;
 }
 
 export function formatUsdc(stroops: number): string {
-  const totalCents = Math.round(stroops / 100_000);
+  const totalCents = Math.round(Math.abs(stroops) / 100_000);
   const dollars = Math.floor(totalCents / 100);
   const cents = totalCents % 100;
-  return `$${dollars.toLocaleString("en-US")}.${String(cents).padStart(2, "0")}`;
+  const sign = stroops < 0 && totalCents > 0 ? "-" : "";
+  return `${sign}$${dollars.toLocaleString("en-US")}.${String(cents).padStart(2, "0")}`;
 }
 
 export function formatXlm(stroops: number): string {
-  const tenThousandths = Math.round(stroops / 1_000);
+  const tenThousandths = Math.round(Math.abs(stroops) / 1_000);
   const whole = Math.floor(tenThousandths / 10_000);
   const frac = tenThousandths % 10_000;
-  return `${whole.toLocaleString("en-US")}.${String(frac).padStart(4, "0")} XLM`;
+  const sign = stroops < 0 && tenThousandths > 0 ? "-" : "";
+  return `${sign}${whole.toLocaleString("en-US")}.${String(frac).padStart(4, "0")} XLM`;
 }
 
 export type CurrencyCode = "USD" | "NGN" | "EUR" | "GBP";

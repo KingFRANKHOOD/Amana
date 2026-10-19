@@ -44,6 +44,14 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function bytesToBase64Url(bytes: ArrayLike<number>): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-6)}`;
 }
@@ -187,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const signedChallenge = typeof signedMessage === "string" 
         ? signedMessage 
-        : Buffer.from(signedMessage).toString("base64url");
+        : bytesToBase64Url(signedMessage);
       await api.auth.verify(state.address, signedChallenge);
 
       setState((prev) => ({
