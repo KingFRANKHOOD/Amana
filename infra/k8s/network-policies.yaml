@@ -95,6 +95,53 @@ spec:
         - protocol: TCP
           port: 6379
 ---
+# Allow worker pods to communicate with PostgreSQL
+# Worker pods (app: worker) run the BullMQ job workers and need direct DB
+# access to process notification/export/retention jobs. Without this (and the
+# default-deny-all policy above) their SYN packets are dropped by the CNI.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-worker-to-postgres
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: worker
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Allow worker pods to communicate with Redis
+# Worker pods consume BullMQ jobs from Redis; without this ingress rule the
+# default-deny-all policy blocks them from reaching redis-service:6379.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-worker-to-redis
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: worker
+      ports:
+        - protocol: TCP
+          port: 6379
+---
 # Allow cronjob pods to communicate with PostgreSQL for backups
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -184,6 +231,62 @@ spec:
         - protocol: TCP
           port: 5432
     # External HTTPS (for IPFS, Stellar, Supabase, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32  # AWS metadata service (block internal)
+              - 10.0.0.0/8          # Internal cluster IPs
+              - 172.16.0.0/12       # Internal cluster IPs
+              - 192.168.0.0/16      # Internal cluster IPs
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# Allow worker egress to Redis, PostgreSQL and external webhook endpoints.
+# The allow-dns-egress policy selects all pods (podSelector: {}) and would
+# otherwise restrict worker egress to DNS only, so this policy is required in
+# addition to the matching ingress rules above for worker jobs to reach
+# redis-service:6379 / postgres-service:5432 and to dispatch webhooks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-worker-external-egress
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: worker
+  policyTypes:
+    - Egress
+  egress:
+    # Internal DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # To Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # To PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # External HTTPS/HTTP for webhook dispatch (and IPFS/Stellar if needed)
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

@@ -6,6 +6,7 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "start:worker": "node dist/worker.js",
     "test": "jest --config jest.config.js --forceExit --detectOpenHandles",
     "test:pact": "jest --config jest.config.js --runInBand src/__tests__/trades.pact.verify.test.ts",
     "lint": "eslint src/"
