@@ -57,6 +57,11 @@ function makeTestApp() {
     next(error);
   });
 
+  app.get('/test-response-error', (_req: Request, res: Response) => {
+    res.emit('error', new Error('Response error'));
+    res.status(500).json({ message: 'response error' });
+  });
+
   return app;
 }
 
@@ -125,8 +130,10 @@ describe('tracingMiddleware', () => {
       await request(app).get('/test');
       
       // The test endpoint adds a custom attribute
-      // Verify the attribute was added
-      expect(true).toBe(true); // Placeholder - actual verification would require mocking
+      const { getTracer } = require('@opentelemetry/api');
+      const mockSpan = getTracer().startSpan.mock.results[0].value;
+
+      expect(mockSpan.setAttribute).toHaveBeenCalledWith('test.attribute', 'test-value');
     });
   });
 
@@ -193,22 +200,19 @@ describe('tracingMiddleware', () => {
 
   describe('Error handling', () => {
     it('should handle response errors gracefully', async () => {
-      // Mock res.on to simulate an error
-      const mockRes = {
-        on: jest.fn((event, callback) => {
-          if (event === 'error') {
-            callback(new Error('Response error'));
-          }
-        }),
-        getHeaders: jest.fn(() => ({})),
-        statusCode: 200,
-        statusMessage: 'OK',
-        end: jest.fn(),
-        json: jest.fn(),
-      };
+      const res = await request(app).get('/test-response-error');
 
-      // This would test the error handling in the middleware
-      expect(true).toBe(true); // Placeholder
+      expect(res.status).toBe(500);
+      const { getTracer } = require('@opentelemetry/api');
+      const mockSpan = getTracer().startSpan.mock.results[0].value;
+
+      expect(mockSpan.recordException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Response error' })
+      );
+      expect(mockSpan.setStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'ERROR', message: 'Response error: Response error' })
+      );
+      expect(mockSpan.end).toHaveBeenCalledTimes(1);
     });
 
     it('should handle JSON serialization errors', async () => {
@@ -281,13 +285,9 @@ describe('Tracing utilities', () => {
       
       // Verify the attribute was added
       const { getTracer } = require('@opentelemetry/api');
-      const mockSpan = getTracer().startSpan();
+      const mockSpan = getTracer().startSpan.mock.results[0].value;
       
-      expect(mockSpan.setAttributes).toHaveBeenCalledWith(
-        expect.objectContaining({
-          'test.attribute': 'test-value',
-        })
-      );
+      expect(mockSpan.setAttribute).toHaveBeenCalledWith('test.attribute', 'test-value');
     });
   });
 });

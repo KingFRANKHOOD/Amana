@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../types/navigation';
-import type { Trade, TradeStatus } from '../types/trade';
+import { ACTIVE_TRADE_STATUSES, type Trade, type TradeStatus } from '../types/trade';
 import { useTradeStore } from '../stores/tradeStore';
 import { useAuthStore } from '../stores/authStore';
 import { offlineQueue, QueuedAction } from '../services/offline-queue';
@@ -19,10 +19,12 @@ import { OfflineBanner } from '../components/OfflineBanner';
 
 type Props = StackScreenProps<RootStackParamList, 'TradeList'>;
 
-const STATUS_FILTERS: Array<{ label: string; value: TradeStatus | 'ALL' }> = [
+type TradeListFilter = TradeStatus | 'ALL' | 'ACTIVE';
+
+const STATUS_FILTERS: Array<{ label: string; value: TradeListFilter }> = [
   { label: 'All', value: 'ALL' },
   { label: 'Pending', value: 'PENDING_SIGNATURE' },
-  { label: 'Active', value: 'FUNDED' },
+  { label: 'Active', value: 'ACTIVE' },
   { label: 'Disputed', value: 'DISPUTED' },
   { label: 'Done', value: 'COMPLETED' },
 ];
@@ -63,14 +65,14 @@ export default function TradeListScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { trades, isLoading, error, fetchTrades, clearError } = useTradeStore();
   const { clearAuth } = useAuthStore();
-  const [activeFilter, setActiveFilter] = useState<TradeStatus | 'ALL'>('ALL');
+  const [activeFilter, setActiveFilter] = useState<TradeListFilter>('ALL');
   const [refreshing, setRefreshing] = useState(false);
   const [queued, setQueued] = useState<QueuedAction[]>([]);
 
   const load = useCallback(
-    (status?: TradeStatus | 'ALL') => {
+    (status?: TradeListFilter) => {
       const s = status ?? activeFilter;
-      fetchTrades(s === 'ALL' ? undefined : { status: s });
+      fetchTrades(s === 'ALL' || s === 'ACTIVE' ? undefined : { status: s });
     },
     [activeFilter, fetchTrades]
   );
@@ -83,14 +85,18 @@ export default function TradeListScreen({ navigation }: Props) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchTrades(activeFilter === 'ALL' ? undefined : { status: activeFilter });
+    await fetchTrades(activeFilter === 'ALL' || activeFilter === 'ACTIVE' ? undefined : { status: activeFilter });
     setRefreshing(false);
   }, [activeFilter, fetchTrades]);
 
-  const handleFilterChange = (value: TradeStatus | 'ALL') => {
+  const handleFilterChange = (value: TradeListFilter) => {
     setActiveFilter(value);
-    fetchTrades(value === 'ALL' ? undefined : { status: value });
+    fetchTrades(value === 'ALL' || value === 'ACTIVE' ? undefined : { status: value });
   };
+
+  const visibleTrades = activeFilter === 'ACTIVE'
+    ? trades.filter((trade) => ACTIVE_TRADE_STATUSES.has(trade.status))
+    : trades;
 
   const handleLogout = async () => {
     await clearAuth();
@@ -152,9 +158,9 @@ export default function TradeListScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
-          data={trades}
+          data={visibleTrades}
           keyExtractor={(item) => item.tradeId}
-          contentContainerStyle={trades.length === 0 ? styles.emptyContainer : styles.listContent}
+          contentContainerStyle={visibleTrades.length === 0 ? styles.emptyContainer : styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2d6a2d" />}
           renderItem={({ item }) => (
             <TradeCard
@@ -169,6 +175,8 @@ export default function TradeListScreen({ navigation }: Props) {
               <Text style={styles.emptyBody}>
                 {activeFilter === 'ALL'
                   ? 'You have no trades yet.'
+                  : activeFilter === 'ACTIVE'
+                    ? 'You have no active trades.'
                   : `No trades with status "${activeFilter}".`}
               </Text>
             </View>
@@ -216,6 +224,31 @@ const styles = StyleSheet.create({
   filterTabActive: { backgroundColor: '#2d6a2d' },
   filterLabel: { fontSize: 13, color: '#4a6a4a', fontWeight: '500' },
   filterLabelActive: { color: '#fff' },
-  
+  card: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e8e0',
+  },
+  cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tradeId: { fontSize: 14, fontWeight: '700', color: '#1a3a1a' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  amount: { marginVertical: 12, fontSize: 20, fontWeight: '700', color: '#1a3a1a' },
+  addressLabel: { fontSize: 11, color: '#6b806b' },
+  address: { color: '#2d4a2d', fontWeight: '600' },
+  errorBanner: { margin: 12, padding: 12, backgroundColor: '#fee2e2', borderRadius: 8 },
+  errorText: { color: '#991b1b', fontSize: 13 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyContainer: { flexGrow: 1 },
+  listContent: { paddingBottom: 24 },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  emptyIcon: { fontSize: 36, marginBottom: 12 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#1a3a1a' },
+  emptyBody: { marginTop: 6, fontSize: 14, color: '#6b806b', textAlign: 'center' },
+});
 
 /* … truncated 1296 chars — edit only what you need near the top … */

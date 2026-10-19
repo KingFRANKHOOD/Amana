@@ -10,9 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTradeStore } from '../stores/tradeStore';
 import { useAuthStore } from '../stores/authStore';
-import type { Trade } from '../types/trade';
-
-const ACTIVE_STATUSES = new Set(['FUNDED', 'IN_TRANSIT'] as const);
+import { ACTIVE_TRADE_STATUSES, type Trade } from '../types/trade';
 
 function SkeletonBox({ width, height }: { width: number | string; height: number }) {
   return <View style={[styles.skeleton, { width: width as number, height }]} />;
@@ -35,7 +33,7 @@ function LoadingSkeleton() {
 
 function TradeRow({ trade }: { trade: Trade }) {
   const shortId = trade.tradeId.slice(0, 8);
-  const isActive = ACTIVE_STATUSES.has(trade.status as 'FUNDED' | 'IN_TRANSIT');
+  const isActive = ACTIVE_TRADE_STATUSES.has(trade.status);
   return (
     <View style={styles.tradeRow}>
       <Text style={styles.tradeId}>#{shortId}</Text>
@@ -63,7 +61,7 @@ export default function VaultDashboard() {
   }, [fetchTrades]);
 
   const activeTrades = useMemo(
-    () => trades.filter((t) => ACTIVE_STATUSES.has(t.status as 'FUNDED' | 'IN_TRANSIT')),
+    () => trades.filter((t) => ACTIVE_TRADE_STATUSES.has(t.status)),
     [trades]
   );
 
