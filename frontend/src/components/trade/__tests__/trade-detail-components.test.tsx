@@ -127,6 +127,54 @@ describe("trade detail component coverage", () => {
     expect(screen.getByText("SMART CONTRACT SECURED")).toBeInTheDocument();
   });
 
+  it("uses the supplied ngnExchangeRate instead of a hardcoded constant", () => {
+    render(
+      <FinancialSummary trade={{ ...baseTrade, ngnExchangeRate: 2000 }} />,
+    );
+
+    expect(screen.getByText(/₦50,000 NGN/)).toBeInTheDocument();
+    expect(screen.queryByText(/NGN value is an estimate/)).not.toBeInTheDocument();
+  });
+
+  it("labels the NGN value as an estimate when no rate is supplied", () => {
+    render(<FinancialSummary trade={baseTrade} />);
+
+    expect(screen.getByText(/NGN value is an estimate/)).toBeInTheDocument();
+  });
+
+  it("fires onRaiseDispute and onVerifyPoD when their buttons are clicked", async () => {
+    const user = userEvent.setup();
+    const onRaiseDispute = jest.fn();
+    const onVerifyPoD = jest.fn();
+    render(
+      <ActionBar
+        trade={{ ...baseTrade, status: "IN TRANSIT" }}
+        onConfirmDelivery={jest.fn()}
+        onRaiseDispute={onRaiseDispute}
+        onVerifyPoD={onVerifyPoD}
+        confirmingDelivery={false}
+      />,
+    );
+
+    await user.click(screen.getByText("Raise Dispute"));
+    await user.click(screen.getByText("PoD Verification"));
+    expect(onRaiseDispute).toHaveBeenCalledTimes(1);
+    expect(onVerifyPoD).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Raise Dispute and PoD Verification when no handlers are provided", () => {
+    render(
+      <ActionBar
+        trade={{ ...baseTrade, status: "IN TRANSIT" }}
+        onConfirmDelivery={jest.fn()}
+        confirmingDelivery={false}
+      />,
+    );
+
+    expect(screen.getByText("Raise Dispute").closest("button")).toBeDisabled();
+    expect(screen.getByText("PoD Verification").closest("button")).toBeDisabled();
+  });
+
   it("renders timeline events in declared order", () => {
     render(<TradeTimeline events={baseTrade.timeline} />);
 
