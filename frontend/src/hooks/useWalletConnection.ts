@@ -1,13 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import {
-  getAddress,
-  isAllowed,
-  isConnected,
-  requestAccess,
-} from "@stellar/freighter-api";
+import { requestAccess } from "@stellar/freighter-api";
 import { trackAuthEvent } from "@/lib/analytics";
+import { readFreighterWalletState, shortenAddress } from "@/lib/freighterWallet";
 
 export interface WalletConnectionState {
   address: string | null;
@@ -18,9 +14,7 @@ export interface WalletConnectionState {
   error: string | null;
 }
 
-export function shortenAddress(address: string): string {
-  return `${address.slice(0, 6)}...${address.slice(-6)}`;
-}
+export { shortenAddress };
 
 export function useWalletConnection() {
   const [state, setState] = useState<WalletConnectionState>({
@@ -32,32 +26,7 @@ export function useWalletConnection() {
     error: null,
   });
 
-  const checkWalletState = useCallback(async () => {
-    try {
-      const [connectedResult, allowedResult] = await Promise.all([
-        isConnected(),
-        isAllowed(),
-      ]);
-
-      const hasWallet =
-        connectedResult.error === undefined && connectedResult.isConnected;
-      const hasPermission =
-        allowedResult.error === undefined && allowedResult.isAllowed;
-
-      let address: string | null = null;
-      if (hasWallet && hasPermission) {
-        const addressResult = await getAddress();
-        if (addressResult.error === undefined) {
-          address = addressResult.address;
-        }
-      }
-
-      return { hasWallet, hasPermission, address };
-    } catch (error) {
-      console.error("Failed to read wallet state:", error);
-      return { hasWallet: false, hasPermission: false, address: null };
-    }
-  }, []);
+  const checkWalletState = readFreighterWalletState;
 
   const connectWallet = useCallback(async () => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
