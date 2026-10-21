@@ -110,7 +110,7 @@ export class ReputationService {
     const history: ReputationEvent[] = [];
 
     for (const trade of completedTrades.slice(0, 5)) {
-      const role = trade.buyerAddress === normalized ? "buyer" : "seller";
+      const role = trade.buyerAddress.toLowerCase() === normalized ? "buyer" : "seller";
       history.push({
         id: `trade-${trade.tradeId}`,
         event: `Completed trade as ${role} (${trade.tradeId.slice(0, 8)}...)`,

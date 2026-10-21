@@ -105,6 +105,18 @@ describe("ReputationService", () => {
       expect(result.completedTrades).toBe(3);
     });
 
+    it("labels history as buyer when stored buyerAddress is uppercase (issue #1630)", async () => {
+      setMockTrades([]);
+      setMockDisputes([]);
+      mockPrisma.trade.findMany.mockResolvedValue([
+        makeTrade({ tradeId: "trade-upper-1", buyerAddress: "GUSER" }),
+      ]);
+
+      const result = await service.getUserReputation("GUSER");
+
+      expect(result.history[0]?.event).toContain("as buyer");
+    });
+
     it("should apply dispute penalties to trust score", async () => {
       setMockTrades([]);
       setMockDisputes([
