@@ -343,7 +343,7 @@ export default function CreateTradeScreen({ navigation }: Props) {
 
     return {
       sellerAddress: data.sellerAddress,
-      amountUsdc: amountCngn,
+      amountCngn: amountCngn,
       buyerLossBps: data.buyerRatio * 100,
       sellerLossBps: data.sellerRatio * 100,
       commodity: data.commodity,

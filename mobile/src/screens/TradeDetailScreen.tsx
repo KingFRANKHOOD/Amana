@@ -271,7 +271,7 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
           <View style={[styles.statusBadge, { backgroundColor: `${statusColor}22` }]}>
             <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status]}</Text>
           </View>
-          <Text style={styles.amountText}>{currentTrade.amountUsdc} USDC</Text>
+          <Text style={styles.amountText}>{currentTrade.amountCngn} cNGN</Text>
           {currentTrade.commodity && (
             <Text style={styles.commodityText}>{currentTrade.commodity}{currentTrade.quantity ? ` — ${currentTrade.quantity} ${currentTrade.unit ?? ''}` : ''}</Text>
           )}
