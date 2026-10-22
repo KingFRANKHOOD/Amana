@@ -1,4 +1,5 @@
 import { render } from '@testing-library/react-native';
+import * as Notifications from 'expo-notifications';
 import HomeScreen from '../HomeScreen';
 
 jest.mock('expo-notifications', () => ({
@@ -17,5 +18,11 @@ describe('HomeScreen', () => {
     const { getByText } = render(<HomeScreen />);
     expect(getByText('Getting Started')).toBeTruthy();
     expect(getByText(/Connect your Stellar wallet/)).toBeTruthy();
+  });
+
+  it('does not register its own notification handler or tap listener', () => {
+    render(<HomeScreen />);
+    expect(Notifications.setNotificationHandler).not.toHaveBeenCalled();
+    expect(Notifications.addNotificationResponseReceivedListener).not.toHaveBeenCalled();
   });
 });

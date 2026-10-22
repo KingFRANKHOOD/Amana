@@ -16,28 +16,9 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../types/navigation';
 import type { Trade, TradeStatus } from '../types/trade';
 import { useTradeStore } from '../stores/tradeStore';
+import { DEFAULT_STATUS_COLOR, STATUS_COLORS, STATUS_LABELS } from '../constants/tradeStatus';
 
 type Props = StackScreenProps<RootStackParamList, 'TradeDetail'>;
-
-const STATUS_COLORS: Record<TradeStatus, string> = {
-  PENDING: '#F59E0B',
-  FUNDED: '#3B82F6',
-  IN_TRANSIT: '#14B8A6',
-  DELIVERED: '#34D399',
-  DISPUTED: '#EF4444',
-  COMPLETED: '#34D399',
-  REFUNDED: '#6B7280',
-};
-
-const STATUS_LABELS: Record<TradeStatus, string> = {
-  PENDING: 'Pending',
-  FUNDED: 'Funded',
-  IN_TRANSIT: 'In Transit',
-  DELIVERED: 'Delivered',
-  DISPUTED: 'Disputed',
-  COMPLETED: 'Completed',
-  REFUNDED: 'Refunded',
-};
 
 type TimelineStep = {
   label: string;
@@ -68,13 +49,13 @@ function ContractCard({ trade }: { trade: Trade }) {
 }
 
 function TradeTimeline({ trade }: { trade: Trade }) {
-  const statusOrder: TradeStatus[] = ['PENDING', 'FUNDED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED'];
+  const statusOrder: TradeStatus[] = ['PENDING_SIGNATURE', 'CREATED', 'FUNDED', 'DELIVERED', 'COMPLETED'];
   const currentIdx = statusOrder.indexOf(trade.status);
 
   const steps: TimelineStep[] = [
-    { label: 'Created', done: true, active: false },
-    { label: 'Funded', done: currentIdx >= 1, active: currentIdx === 1 },
-    { label: 'In Transit', done: currentIdx >= 2, active: currentIdx === 2 },
+    { label: 'Pending Signature', done: currentIdx >= 0, active: currentIdx === 0 },
+    { label: 'Created', done: currentIdx >= 1, active: currentIdx === 1 },
+    { label: 'Funded', done: currentIdx >= 2, active: currentIdx === 2 },
     { label: 'Delivered', done: currentIdx >= 3, active: currentIdx === 3 },
     { label: 'Completed', done: currentIdx >= 4, active: currentIdx === 4 },
   ];
@@ -82,8 +63,8 @@ function TradeTimeline({ trade }: { trade: Trade }) {
   if (trade.status === 'DISPUTED') {
     steps.push({ label: 'Disputed', done: true, active: true });
   }
-  if (trade.status === 'REFUNDED') {
-    steps.push({ label: 'Refunded', done: true, active: true });
+  if (trade.status === 'CANCELLED') {
+    steps.push({ label: 'Cancelled', done: true, active: true });
   }
 
   return (
@@ -205,14 +186,14 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
     setDisputeReason('');
   }, [tradeId, disputeReason, initiateDispute]);
 
-  const status = currentTrade?.status ?? 'PENDING';
-  const canDeposit = status === 'PENDING';
-  const canConfirm = status === 'IN_TRANSIT' || status === 'FUNDED';
+  const status: TradeStatus = currentTrade?.status ?? 'PENDING_SIGNATURE';
+  // Mirrors the backend's valid transitions: funding happens once the trade
+  // exists on-chain (CREATED), delivery is confirmed on a FUNDED trade, funds
+  // are released after DELIVERED, and disputes open from FUNDED or DELIVERED.
+  const canDeposit = status === 'CREATED';
+  const canConfirm = status === 'FUNDED';
   const canRelease = status === 'DELIVERED';
-  const canDispute =
-    status === 'IN_TRANSIT' ||
-    status === 'FUNDED' ||
-    status === 'DELIVERED';
+  const canDispute = status === 'FUNDED' || status === 'DELIVERED';
   const canUploadEvidence = status === 'DISPUTED';
 
   if (isLoading && !currentTrade) {
@@ -234,7 +215,7 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const statusColor = STATUS_COLORS[status] ?? '#6B7280';
+  const statusColor = STATUS_COLORS[status] ?? DEFAULT_STATUS_COLOR;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -269,7 +250,9 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
         <View style={styles.statusCard}>
           <Text style={styles.tradeIdText}>#{currentTrade.tradeId.slice(0, 12)}…</Text>
           <View style={[styles.statusBadge, { backgroundColor: `${statusColor}22` }]}>
-            <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status]}</Text>
+            <Text testID="trade-status-label" style={[styles.statusText, { color: statusColor }]}>
+              {STATUS_LABELS[status] ?? status}
+            </Text>
           </View>
           <Text style={styles.amountText}>{currentTrade.amountUsdc} USDC</Text>
           {currentTrade.commodity && (

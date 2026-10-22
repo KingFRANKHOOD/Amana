@@ -1,26 +1,8 @@
-import { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import * as Notifications from 'expo-notifications';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
-
+// Notification display and tap handling live in services/notification.service.ts
+// and are wired up once in App.tsx; screens should not register their own.
 export default function HomeScreen() {
-  useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
-        console.log('Notification received:', response);
-      }
-    );
-
-    return () => subscription.remove();
-  }, []);
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.header}>
