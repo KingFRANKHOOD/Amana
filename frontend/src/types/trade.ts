@@ -58,6 +58,8 @@ export interface TradeDetail {
 
   // Financials
   vaultAmountLocked: number;
+  /** cNGN -> NGN rate supplied by the API; when absent the NGN value is shown as an estimate */
+  ngnExchangeRate?: number;
   assetValue: number;
   platformFeePercent: number;
   platformFee: number;

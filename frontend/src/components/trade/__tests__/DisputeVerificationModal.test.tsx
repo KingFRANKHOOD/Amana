@@ -2,6 +2,12 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DisputeVerificationModal } from '../DisputeVerificationModal';
 import { signTransaction } from '@stellar/freighter-api';
+import { getStellarHorizonUrl } from '@/lib/api/env';
+
+jest.mock('@/lib/api/env', () => ({
+    ...jest.requireActual('@/lib/api/env'),
+    getStellarHorizonUrl: jest.fn(),
+}));
 
 // Mock the VideoUploadCard component
 jest.mock('@/components/ui/VideoUploadCard', () => ({
@@ -66,6 +72,7 @@ describe('DisputeVerificationModal Component', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        (getStellarHorizonUrl as jest.Mock).mockReturnValue('https://horizon-testnet.stellar.org');
     });
 
     it('renders without crashing when isOpen is true', () => {
@@ -494,5 +501,53 @@ describe('DisputeVerificationModal Component', () => {
         rerender(<DisputeVerificationModal {...defaultProps} isOpen={true} />);
 
         expect(screen.getByText('Upload video evidence before proceeding')).toBeInTheDocument();
+    });
+
+    it('submits to the Horizon URL resolved by getStellarHorizonUrl', async () => {
+        (getStellarHorizonUrl as jest.Mock).mockReturnValue('https://custom-horizon.example.org');
+        (signTransaction as jest.Mock).mockResolvedValue({ signedTxXdr: 'signed-xdr' });
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ hash: 'TX_HASH_123' }),
+        });
+
+        render(<DisputeVerificationModal {...defaultProps} />);
+        fireEvent.click(screen.getByText('Upload Video'));
+        await waitFor(() => fireEvent.click(screen.getByText('Accept Goods')));
+        await waitFor(() => fireEvent.click(screen.getByText('Sign & Release Funds')));
+
+        await waitFor(() => {
+            expect(screen.getByText('Funds Released')).toBeInTheDocument();
+        });
+        expect(getStellarHorizonUrl).toHaveBeenCalledWith('TESTNET');
+        expect(global.fetch).toHaveBeenCalledWith(
+            'https://custom-horizon.example.org/transactions',
+            expect.any(Object),
+        );
+    });
+
+    it('links to the public explorer for a mainnet passphrase', async () => {
+        (signTransaction as jest.Mock).mockResolvedValue({ signedTxXdr: 'signed-xdr' });
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ hash: 'TX_HASH_123' }),
+        });
+
+        render(
+            <DisputeVerificationModal
+                {...defaultProps}
+                networkPassphrase="Public Global Stellar Network ; September 2015"
+            />,
+        );
+        fireEvent.click(screen.getByText('Upload Video'));
+        await waitFor(() => fireEvent.click(screen.getByText('Accept Goods')));
+        await waitFor(() => fireEvent.click(screen.getByText('Sign & Release Funds')));
+
+        const link = await screen.findByText('View transaction');
+        expect(link.closest('a')).toHaveAttribute(
+            'href',
+            'https://stellar.expert/explorer/public/tx/TX_HASH_123',
+        );
+        expect(getStellarHorizonUrl).toHaveBeenCalledWith('PUBLIC');
     });
 });
