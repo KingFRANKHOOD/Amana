@@ -233,4 +233,46 @@ describe("useTrades", () => {
     })).rejects.toThrow("Not authenticated");
     expect(mockCreate).not.toHaveBeenCalled();
   });
+
+  it("discards a stale response that resolves after a newer request", async () => {
+    jest.useFakeTimers({ doNotFake: ["queueMicrotask"] });
+    authed();
+
+    let resolveStale!: (value: Awaited<ReturnType<typeof api.trades.list>>) => void;
+    const staleTrade = { ...MOCK_TRADE, tradeId: "stale-trade" };
+    const freshTrade = { ...MOCK_TRADE, tradeId: "fresh-trade" };
+
+    mockList
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve; }))
+      .mockResolvedValueOnce({
+        items: [freshTrade],
+        pagination: { page: 2, limit: 20, total: 1, totalPages: 1 },
+      });
+
+    const { result, rerender } = renderHook(({ page }) => useTrades({ page }), {
+      initialProps: { page: 1 },
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+
+    rerender({ page: 2 });
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(mockList).toHaveBeenCalledTimes(2);
+    expect(result.current.trades).toEqual([freshTrade]);
+
+    await act(async () => {
+      resolveStale({
+        items: [staleTrade],
+        pagination: { page: 1, limit: 20, total: 99, totalPages: 5 },
+      });
+    });
+
+    expect(result.current.trades).toEqual([freshTrade]);
+    expect(result.current.total).toBe(1);
+  });
 });

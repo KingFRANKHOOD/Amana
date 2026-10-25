@@ -42,8 +42,7 @@ export function createManifestRouter(
 ) {
     const router = Router({ mergeParams: true });
 
-    // GET /trades/:id/manifest
-    router.get("/", authMiddleware, validateRequest({ params: tradeIdParamSchema }), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const getManifestHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -72,8 +71,7 @@ export function createManifestRouter(
         }
     };
 
-    // POST /trades/:id/manifest
-    router.post("/", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: manifestBodySchema }), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const postManifestHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
         const callerAddress = req.user?.walletAddress;
         if (!callerAddress) {
             res.status(401).json({ error: "Unauthorized" });
@@ -119,16 +117,16 @@ export function createManifestRouter(
     };
 
     // GET /trades/:id/manifest
-    router.get("/", authMiddleware, getManifestHandler);
+    router.get("/", authMiddleware, validateRequest({ params: tradeIdParamSchema }), getManifestHandler);
 
     // POST /trades/:id/manifest
-    router.post("/", authMiddleware, postManifestHandler);
+    router.post("/", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: manifestBodySchema }), postManifestHandler);
 
     // GET /trades/:id/manifest-v2 — reachable alias for the driverIdNumber-aware flow
-    router.get("/manifest-v2", authMiddleware, getManifestHandler);
+    router.get("/manifest-v2", authMiddleware, validateRequest({ params: tradeIdParamSchema }), getManifestHandler);
 
     // POST /trades/:id/manifest-v2 — reachable alias for the driverIdNumber-aware flow
-    router.post("/manifest-v2", authMiddleware, postManifestHandler);
+    router.post("/manifest-v2", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: manifestBodySchema }), postManifestHandler);
 
     return router;
 }

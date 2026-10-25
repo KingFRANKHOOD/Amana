@@ -1,4 +1,5 @@
 import { AppError } from './appError';
+import { ErrorCode } from './errorCodes';
 
 export interface ClassifiedServiceErrorOptions {
   code: string;
@@ -16,7 +17,7 @@ export class ClassifiedServiceError extends AppError {
     options: ClassifiedServiceErrorOptions,
   ) {
     super(options.message, {
-      code: options.code,
+      code: options.code as ErrorCode,
       statusCode: options.httpStatus,
       details: {
         service,

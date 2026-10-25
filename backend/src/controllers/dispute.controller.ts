@@ -48,6 +48,12 @@ const exportDisputesQuerySchema = z.object({
   { message: "from must be before or equal to to", path: ["from"] },
 );
 
+// Neutralize spreadsheet formula injection (=, +, -, @, tab, CR) in free-text cells.
+export function sanitizeCsvCell(value: string | null | undefined): string | null | undefined {
+  if (typeof value !== "string") return value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 const disputeCsvFields = [
   "dispute_id",
   "trade_id",
@@ -175,7 +181,7 @@ export function createDisputeRouter(prisma = defaultPrisma) {
           trade_id: dispute.tradeId,
           initiator: dispute.initiator,
           status: dispute.status,
-          reason: dispute.reason,
+          reason: sanitizeCsvCell(dispute.reason),
           buyer: dispute.trade.buyerAddress,
           seller: dispute.trade.sellerAddress,
           amount: dispute.trade.amountUsdc,

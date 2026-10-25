@@ -285,7 +285,7 @@ async function bootstrap() {
       const runVerification = async () => {
         try {
           appLogger.info("Running scheduled evidence pin verification");
-          const job = await evidenceVerificationQueue.add("verify", {
+          const job = await evidenceVerificationQueue.add("verify" as any, {
             triggeredBy: "scheduled",
             repairMissing: false,
           });
@@ -321,7 +321,7 @@ async function bootstrap() {
       const runTrustScoreRecalculation = async () => {
         try {
           appLogger.info("Running scheduled trust score recalculation");
-          const job = await trustScoreRecalculationQueue.add("recalculate", {
+          const job = await trustScoreRecalculationQueue.add("recalculate" as any, {
             triggeredBy: "scheduled",
           });
           appLogger.info(

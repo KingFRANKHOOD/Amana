@@ -8,7 +8,10 @@ import {
   handleDisputeInitiated,
   handleDisputeResolved,
   dispatchEvent,
+  MissingTradeError,
 } from "../services/eventHandlers";
+import { feeAccountingService } from "../services/feeAccounting.service";
+import { logEscrowEvent } from "../lib/escrowAudit";
 import {
   EventType,
   TradeStatus,
@@ -26,7 +29,10 @@ jest.mock("../lib/escrowAudit", () => ({
   logEscrowEvent: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../services/feeAccounting.service", () => ({
-  feeAccountingService: { recordFee: jest.fn().mockResolvedValue(undefined) },
+  feeAccountingService: {
+    recordFee: jest.fn().mockResolvedValue(undefined),
+    setFeeBps: jest.fn(),
+  },
 }));
 
 /* ------------------------------------------------------------------ */
@@ -269,31 +275,185 @@ describe("eventHandlers", () => {
   /* ---------- dispatchEvent --------------------------------------- */
 
   describe("dispatchEvent", () => {
-    it("should route every EventType to its correct handler and status", async () => {
-      for (const [eventType, status] of Object.entries(EVENT_TO_STATUS)) {
+    const validCreatedData = {
+      buyer: "GA_BUYER",
+      seller: "GA_SELLER",
+      amount_usdc: 100,
+    };
+
+    /**
+     * Status each state-changing event is allowed to start from
+     * (mirrors VALID_PREDECESSORS in services/eventHandlers.ts).
+     */
+    const predecessorFor: Partial<Record<EventType, TradeStatus>> = {
+      [EventType.TradeCreated]: TradeStatus.PENDING_SIGNATURE,
+      [EventType.TradeFunded]: TradeStatus.CREATED,
+      [EventType.TradeCancelled]: TradeStatus.CREATED,
+      [EventType.TradeCancelledByBuyer]: TradeStatus.CREATED,
+      [EventType.TradeExpired]: TradeStatus.FUNDED,
+      [EventType.DeliveryConfirmed]: TradeStatus.FUNDED,
+      [EventType.FundsReleased]: TradeStatus.DELIVERED,
+      [EventType.DisputeInitiated]: TradeStatus.FUNDED,
+      [EventType.DisputeResolved]: TradeStatus.DISPUTED,
+    };
+
+    /**
+     * Audit event type each handler writes. This is handler-specific (unlike
+     * the status transition, which is derived from the event type), so a
+     * mis-routed event is caught here even when both handlers share the same
+     * target status.
+     */
+    const auditEventTypeFor: Partial<Record<EventType, string>> = {
+      [EventType.TradeCreated]: "TradeCreated",
+      [EventType.TradeFunded]: "TradeFunded",
+      [EventType.TradeCancelled]: "TradeCancelled",
+      [EventType.TradeCancelledByBuyer]: "TradeCancelledByBuyer",
+      [EventType.TradeExpired]: "TradeExpired",
+      [EventType.DeliveryConfirmed]: "DeliveryConfirmed",
+      [EventType.FundsReleased]: "FundsReleased",
+      [EventType.DisputeInitiated]: "DisputeInitiated",
+      [EventType.DisputeResolved]: "DisputeResolved",
+    };
+
+    const stateChangingEventTypes = Object.entries(EVENT_TO_STATUS)
+      .filter(([, status]) => status !== null)
+      .map(([eventType]) => eventType as EventType);
+
+    const informationalEventTypes = Object.entries(EVENT_TO_STATUS)
+      .filter(
+        ([eventType, status]) =>
+          status === null && eventType !== EventType.FeeRateUpdated,
+      )
+      .map(([eventType]) => eventType as EventType);
+
+    it.each(stateChangingEventTypes)(
+      "routes %s to the handler that writes its own target status",
+      async (eventType) => {
+        jest.clearAllMocks();
         const tx = createMockTx();
-        const event = makeParsedEvent(eventType as EventType, {
-          data:
-            eventType === EventType.TradeCreated
-              ? { buyer: "B", seller: "S", amount_usdc: 100 }
-              : {},
+        const expectedStatus = EVENT_TO_STATUS[eventType]!;
+        const expectedAuditEventType = auditEventTypeFor[eventType];
+        expect(expectedAuditEventType).toBeDefined();
+        const fromStatus = predecessorFor[eventType];
+
+        // Without a known predecessor the assertion below would be meaningless.
+        expect(fromStatus).toBeDefined();
+
+        (tx.trade.findUnique as jest.Mock).mockResolvedValue({
+          tradeId: "test-trade-001",
+          status: fromStatus,
+          version: 1,
+          buyerAddress: "",
+          sellerAddress: "",
         });
 
-        if (eventType === EventType.TradeCreated) {
-          await dispatchEvent(tx, event);
-          // Only TradeCreated may create a missing trade row.
-          expect(tx.trade.create).toHaveBeenCalled();
-        } else if (status !== null) {
-          // Non-creation status events with no existing row must fail loudly
-          // (MissingTradeError) rather than inserting stub rows (issue #1404).
-          await expect(dispatchEvent(tx, event)).rejects.toThrow();
-          expect(tx.trade.create).not.toHaveBeenCalled();
+        await dispatchEvent(
+          tx,
+          makeParsedEvent(eventType, {
+            data:
+              eventType === EventType.TradeCreated
+                ? validCreatedData
+                : { amount_usdc: 100 },
+          }),
+        );
+
+        expect(tx.trade.updateMany).toHaveBeenCalledTimes(1);
+        const [updateArgs] = (tx.trade.updateMany as jest.Mock).mock.calls[0];
+        expect(updateArgs).toEqual(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              tradeId: "test-trade-001",
+              status: fromStatus,
+              version: 1,
+            }),
+            data: expect.objectContaining({
+              status: expectedStatus,
+              version: { increment: 1 },
+            }),
+          }),
+        );
+        // The handler that actually ran must write *its own* target status.
+        // A mis-routed event writes a different status and fails here.
+        expect(updateArgs.data.status).toBe(expectedStatus);
+        expect(tx.trade.create).not.toHaveBeenCalled();
+
+        // Audit + fee side effects identify the handler that ran, catching
+        // swaps between handlers that share a target status (e.g. FundsReleased
+        // and DisputeResolved both end at COMPLETED).
+        expect(logEscrowEvent).toHaveBeenCalledTimes(1);
+        expect(logEscrowEvent).toHaveBeenCalledWith(
+          tx,
+          expect.objectContaining({
+            tradeId: "test-trade-001",
+            eventType: expectedAuditEventType,
+            toStatus: expectedStatus,
+          }),
+        );
+
+        const feeRecordingEventTypes: EventType[] = [
+          EventType.FundsReleased,
+          EventType.DisputeResolved,
+        ];
+        if (feeRecordingEventTypes.includes(eventType)) {
+          expect(feeAccountingService.recordFee).toHaveBeenCalledTimes(1);
         } else {
-          // No-op events should not touch trade table when no existing trade
-          // (they are informational and handled by handleNoop)
-          await dispatchEvent(tx, event);
-          expect(tx.trade.create).not.toHaveBeenCalled();
+          expect(feeAccountingService.recordFee).not.toHaveBeenCalled();
         }
+      },
+    );
+
+    it.each(informationalEventTypes)(
+      "leaves trade state untouched for informational event %s",
+      async (eventType) => {
+        const tx = createMockTx();
+
+        await dispatchEvent(tx, makeParsedEvent(eventType, { data: {} }));
+
+        expect(tx.trade.updateMany).not.toHaveBeenCalled();
+        expect(tx.trade.create).not.toHaveBeenCalled();
+        expect(tx.dispute.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it("routes FeeRateUpdated to the fee-accounting handler", async () => {
+      const tx = createMockTx();
+      const setFeeBps = feeAccountingService.setFeeBps as jest.Mock;
+      setFeeBps.mockClear();
+
+      await dispatchEvent(
+        tx,
+        makeParsedEvent(EventType.FeeRateUpdated, {
+          data: { new_fee_bps: "150" },
+        }),
+      );
+
+      expect(setFeeBps).toHaveBeenCalledTimes(1);
+      expect(setFeeBps).toHaveBeenCalledWith(150);
+      expect(tx.trade.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("creates a trade row when TradeCreated arrives first", async () => {
+      const tx = createMockTx();
+
+      await dispatchEvent(
+        tx,
+        makeParsedEvent(EventType.TradeCreated, { data: validCreatedData }),
+      );
+
+      expect(tx.trade.create).toHaveBeenCalledTimes(1);
+      expect(tx.trade.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("rejects non-creation events with MissingTradeError instead of inserting stub rows", async () => {
+      for (const [eventType, status] of Object.entries(EVENT_TO_STATUS)) {
+        if (status === null || eventType === EventType.TradeCreated) continue;
+
+        const tx = createMockTx();
+
+        await expect(
+          dispatchEvent(tx, makeParsedEvent(eventType as EventType)),
+        ).rejects.toBeInstanceOf(MissingTradeError);
+        expect(tx.trade.create).not.toHaveBeenCalled();
       }
     });
 

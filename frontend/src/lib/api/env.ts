@@ -1,7 +1,31 @@
 const DEFAULT_API_BASE_URL = "http://localhost:4000";
+const DEFAULT_WALLET_BALANCE_REFRESH_MS = 30_000;
 
 export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_BASE_URL;
+}
+
+/**
+ * Poll interval (in milliseconds) for refreshing the connected wallet's
+ * balances from Horizon.
+ *
+ * Overridable via `NEXT_PUBLIC_WALLET_BALANCE_REFRESH_MS` so operators can
+ * tune polling per environment (e.g. slow it down to reduce load on
+ * self-hosted Horizon nodes, or speed it up on testnet for demos) without a
+ * code change. Invalid or non-positive values fall back to the 30s default.
+ */
+export function getWalletBalanceRefreshIntervalMs(): number {
+  const raw = process.env.NEXT_PUBLIC_WALLET_BALANCE_REFRESH_MS;
+  if (!raw) {
+    return DEFAULT_WALLET_BALANCE_REFRESH_MS;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_WALLET_BALANCE_REFRESH_MS;
+  }
+
+  return parsed;
 }
 
 export function getStellarRpcUrl(): string {
@@ -27,4 +51,29 @@ export function getStellarHorizonUrl(network?: string | null): string {
   return network?.toUpperCase() === "PUBLIC"
     ? "https://horizon.stellar.org"
     : "https://horizon-testnet.stellar.org";
+}
+
+export function getStellarNetworkFromPassphrase(
+  networkPassphrase: string,
+): "PUBLIC" | "TESTNET" {
+  return networkPassphrase.includes("Test") ? "TESTNET" : "PUBLIC";
+}
+
+export function getStellarExplorerTxUrl(
+  networkPassphrase: string,
+  txHash: string,
+): string {
+  const segment =
+    getStellarNetworkFromPassphrase(networkPassphrase) === "PUBLIC"
+      ? "public"
+      : "testnet";
+  return `https://stellar.expert/explorer/${segment}/tx/${txHash}`;
+}
+
+export function getStellarExplorerNetwork(): "public" | "testnet" {
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toUpperCase();
+  return network === "PUBLIC" || network?.startsWith("PUBLIC GLOBAL STELLAR NETWORK")
+    ? "public"
+    : "testnet";
+}
 }

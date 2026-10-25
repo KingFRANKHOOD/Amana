@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   ApiError,
@@ -36,6 +36,7 @@ export function useTrades(params: UseTradesParams = {}): UseTradesResult {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const fetchTrades = useCallback(async () => {
     if (!isAuthenticated || !token) {
@@ -43,14 +44,17 @@ export function useTrades(params: UseTradesParams = {}): UseTradesResult {
       return;
     }
 
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
 
     try {
       const data = await api.trades.list(token, { status, page, limit, sort });
+      if (requestId !== requestIdRef.current) return;
       setTrades(data.items);
       setTotal(data.pagination.total);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       const message =
         err instanceof ApiError
           ? err.message
@@ -59,7 +63,9 @@ export function useTrades(params: UseTradesParams = {}): UseTradesResult {
             : "Failed to load trades";
       setError(message);
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [token, isAuthenticated, status, page, limit, sort]);
 
@@ -68,7 +74,10 @@ export function useTrades(params: UseTradesParams = {}): UseTradesResult {
       void fetchTrades();
     }, DEBOUNCE_MS);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      requestIdRef.current += 1;
+    };
   }, [fetchTrades]);
 
   const createTrade = useCallback(

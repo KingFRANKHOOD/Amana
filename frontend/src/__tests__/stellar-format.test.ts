@@ -69,3 +69,28 @@ describe("formatStroops", () => {
     expect(formatStroops(1_000_000_000_000, 7)).toBe("100,000.0000000");
   });
 });
+
+describe("negative stroop values", () => {
+  it("formatStroops prefixes a single minus sign", () => {
+    expect(formatStroops(-15_000_000, 7)).toBe("-1.5000000");
+    expect(formatStroops(-1, 7)).toBe("-0.0000001");
+  });
+
+  it("formatUsdc prefixes a single minus sign", () => {
+    expect(formatUsdc(-15_000_000)).toBe("-$1.50");
+    expect(formatUsdc(-12_345_600_000)).toBe("-$1,234.56");
+  });
+
+  it("formatUsdc does not render negative zero", () => {
+    expect(formatUsdc(-1)).toBe("$0.00");
+  });
+
+  it("formatXlm prefixes a single minus sign", () => {
+    expect(formatXlm(-15_000_000)).toBe("-1.5000 XLM");
+    expect(formatXlm(-10_000_000_000)).toBe("-1,000.0000 XLM");
+  });
+
+  it("formatXlm does not render negative zero", () => {
+    expect(formatXlm(-1)).toBe("0.0000 XLM");
+  });
+});

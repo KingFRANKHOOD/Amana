@@ -628,26 +628,6 @@ export class HealthService {
   }
 
   /**
-   * Dispatch pool saturation alert if utilization exceeds threshold.
-   */
-  private async dispatchPoolAlert(
-    poolStatus: {
-      activeConnections: number;
-      utilizationPercent: number;
-      status: string;
-    },
-    maxConnections: number,
-  ): Promise<void> {
-    if (poolStatus.status === "critical" && poolStatus.activeConnections > 0) {
-      await this.alerts.dispatchPoolSaturation(
-        poolStatus.activeConnections,
-        maxConnections,
-        { utilizationPercent: poolStatus.utilizationPercent },
-      );
-    }
-  }
-
-  /**
    * Check PostgreSQL connection pool utilization.
    * Queries pg_stat_activity to determine active/idle connection counts
    * and calculates utilization against the configured pool limit.
@@ -661,16 +641,17 @@ export class HealthService {
     message: string;
   }> {
     const startTime = Date.now();
-    const maxConnections = parseInt(env.DATABASE_POOL_SIZE ?? "15", 10);
-    const saturationThreshold = parseInt(
-      env.POOL_SATURATION_WARN_THRESHOLD ?? "80",
-      10,
+    const maxConnections = Number(env.DATABASE_POOL_SIZE ?? 15);
+    const saturationThreshold = Number(
+      env.POOL_SATURATION_WARN_THRESHOLD ?? 80,
     );
 
     try {
-      const rows = await this.prisma.$queryRaw<
-        { state: string; count: bigint }[]
-      >`SELECT state, COUNT(*)::int as count FROM pg_stat_activity WHERE datname = current_database() GROUP BY state`;
+      const rows = (await this.prisma
+        .$queryRaw`SELECT state, COUNT(*)::int as count FROM pg_stat_activity WHERE datname = current_database() GROUP BY state`) as Array<{
+        state: string | null;
+        count: number | bigint;
+      }>;
 
       const stateMap = new Map<string, number>();
       for (const row of rows) {

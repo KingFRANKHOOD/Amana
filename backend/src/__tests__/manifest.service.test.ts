@@ -9,6 +9,15 @@ import {
     ManifestNotFoundError,
 } from "../services/manifest.service";
 
+// Mock EncryptionService so encrypt/decrypt are synchronous identity-like functions.
+// This avoids needing real AES ciphertext in test fixtures.
+jest.mock("../services/encryption.service", () => ({
+    EncryptionService: jest.fn().mockImplementation(() => ({
+        encrypt: jest.fn().mockImplementation((value: string) => Promise.resolve(`enc:${value}`)),
+        decrypt: jest.fn().mockImplementation((value: string) => Promise.resolve(value.startsWith("enc:") ? value.slice(4) : value)),
+    })),
+}));
+
 function createMockPrisma() {
     return {
         trade: { findUnique: jest.fn() },
@@ -60,8 +69,8 @@ describe("ManifestService", () => {
         expect(prisma.deliveryManifest.create).toHaveBeenCalledWith(
             expect.objectContaining({
                 data: expect.objectContaining({
-                    driverName: "John Doe",
-                    driverIdNumber: "ID-12345",
+                    driverName: "enc:John Doe",
+                    driverIdNumber: "enc:ID-12345",
                     driverNameHash: expect.stringMatching(/^[a-f0-9]{64}$/),
                     driverIdHash: expect.stringMatching(/^[a-f0-9]{64}$/),
                 }),
