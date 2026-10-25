@@ -5,20 +5,7 @@ import { useParams } from "next/navigation";
 import { TradeDetailPanel } from "@/components/trade/TradeDetailPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { api, ApiError, type TradeResponse, type TradeHistoryEvent } from "@/lib/api";
-import type { TradeDetail, TimelineEvent, TransactionEvent } from "@/types/trade";
-
-function mapStatusToDisplay(status: string): TradeDetail["status"] {
-  const statusMap: Record<string, TradeDetail["status"]> = {
-    PENDING_SIGNATURE: "PENDING",
-    CREATED: "PENDING",
-    FUNDED: "IN TRANSIT",
-    DELIVERED: "IN TRANSIT",
-    SETTLED: "SETTLED",
-    DISPUTED: "DISPUTED",
-    CANCELLED: "DRAFT",
-  };
-  return statusMap[status] || "PENDING";
-}
+import { toTradeStatus, type TradeDetail, type TimelineEvent, type TransactionEvent } from "@/types/trade";
 
 export function mapHistoryToTimeline(events: TradeHistoryEvent[]): TimelineEvent[] {
   return events.map((event, index) => ({
@@ -54,7 +41,7 @@ function buildTradeDetail(
     commodity: "Trade",
     quantity: `${trade.amountCngn} cNGN`,
     category: "Escrow Trade",
-    status: mapStatusToDisplay(trade.status),
+    status: toTradeStatus(trade.status),
     initiatedAt: new Date(trade.createdAt).toLocaleDateString("en-US"),
     buyer: {
       name: "Buyer",
