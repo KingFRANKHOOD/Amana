@@ -307,7 +307,7 @@ describe('Comprehensive Mobile Offline Strategy & Conflict Resolution', () => {
   describe('Offline Cache & Optimistic Concurrency', () => {
     it('caches and retrieves local trades seamlessly during network disruption', async () => {
       const sampleTrade = {
-        id: 'trade-loc-1',
+        id: 1,
         tradeId: 'trade-loc-1',
         buyerAddress: 'G_BUYER',
         sellerAddress: 'G_SELLER',

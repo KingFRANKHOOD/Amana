@@ -48,7 +48,7 @@ export const offlineService = {
       for (const trade of trades) {
         await database.runAsync(
           'INSERT OR REPLACE INTO trades (id, data, updated_at) VALUES (?, ?, ?)',
-          [trade.id, JSON.stringify(trade), now]
+          [trade.tradeId, JSON.stringify(trade), now]
         );
       }
     });
@@ -65,7 +65,7 @@ export const offlineService = {
     const now = Date.now();
     await database.runAsync(
       'INSERT OR REPLACE INTO trades (id, data, updated_at) VALUES (?, ?, ?)',
-      [trade.id, JSON.stringify(trade), now]
+        [trade.tradeId, JSON.stringify(trade), now]
     );
   },
 
@@ -97,15 +97,33 @@ export const offlineService = {
     }
   },
 
-  // Set up listeners for app foregrounding to trigger auto-sync
+  // Set up listeners for app foregrounding to trigger auto-sync.
+  // Overlapping 'active' events are ignored while a sync is in flight, and
+  // onSyncComplete is never invoked after the returned cleanup has run.
   setupForegroundSync(onSyncComplete: (trades: Trade[]) => void, checkOnlineStatus: () => Promise<boolean>) {
+    let syncInFlight = false;
+    let cancelled = false;
+
     const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
+      if (nextAppState !== 'active' || syncInFlight || cancelled) return;
+
+      syncInFlight = true;
+      try {
         const online = await checkOnlineStatus();
+        if (cancelled) return;
         const trades = await this.syncTrades(online);
+        if (cancelled) return;
         onSyncComplete(trades);
+      } catch (error) {
+        console.error('Foreground sync failed:', error);
+      } finally {
+        syncInFlight = false;
       }
     });
-    return () => subscription.remove();
+
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
   }
 };

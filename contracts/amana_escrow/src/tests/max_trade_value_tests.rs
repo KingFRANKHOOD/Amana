@@ -22,7 +22,7 @@ mod max_trade_value_tests {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
-        client.initialize(&admin, &token_id, &treasury, &0_u32, &token_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &token_id, &treasury, &crate::MIN_FEE_BPS, &token_id);
 
         let token_client = token::StellarAssetClient::new(env, &token_id);
         // Mint enough for the maximum-value test

@@ -10,7 +10,8 @@
     "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node", "jest"]
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

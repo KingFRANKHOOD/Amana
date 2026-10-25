@@ -134,6 +134,37 @@ describe("DisputeService – purgeCompletedDisputeData", () => {
       })
     );
   });
+
+  it("processes large datasets in bounded batches (500 at a time)", async () => {
+    const batch1 = Array.from({ length: 500 }, (_, i) => ({ id: i + 1, tradeId: `T-${i + 1}` }));
+    const batch2 = Array.from({ length: 100 }, (_, i) => ({ id: 501 + i, tradeId: `T-${501 + i}` }));
+    (prisma.dispute.findMany as jest.Mock)
+      .mockResolvedValueOnce(batch1)
+      .mockResolvedValueOnce(batch2);
+    (prisma.dispute.updateMany as jest.Mock).mockResolvedValue({ count: 500 } as any);
+
+    const result = await service.purgeCompletedDisputeData(MEDIATOR);
+
+    expect(result.purgedCount).toBe(600);
+    expect(result.tradeIds).toHaveLength(600);
+    expect(result.tradeIds[0]).toBe("T-1");
+    expect(result.tradeIds[599]).toBe("T-600");
+    expect(prisma.dispute.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.dispute.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 500, select: { id: true, tradeId: true } }),
+    );
+    expect(prisma.dispute.updateMany).toHaveBeenCalledTimes(2);
+    expect((prisma.dispute.updateMany as jest.Mock).mock.calls[0][0].where.id.in).toHaveLength(500);
+    expect((prisma.dispute.updateMany as jest.Mock).mock.calls[1][0].where.id.in).toHaveLength(100);
+  });
+
+  it("bounds memory regardless of record count — findMany always uses take", async () => {
+    (prisma.dispute.findMany as jest.Mock).mockResolvedValue([]);
+    await service.purgeCompletedDisputeData(MEDIATOR);
+    expect(prisma.dispute.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 500 }),
+    );
+  });
 });
 
 describe("COMPLETED_DISPUTE_STATUSES constant", () => {

@@ -1,5 +1,7 @@
 import {
   isAnalyticsOptedOut,
+  trackFailure,
+  trackFunnelStep,
   scrubProperties,
   setAnalyticsOptOut,
   trackDisputeEvent,
@@ -62,6 +64,22 @@ describe("scrubProperties", () => {
     expect(output.message).toBe("[REDACTED]");
     expect(output.ip).toBe("[REDACTED]");
     expect((output.nested as { wallet: string }).wallet).toBe("[REDACTED]");
+  });
+
+  it("redacts Stellar public keys and muxed accounts under non-sensitive keys", () => {
+    const input = {
+      counterparty: "GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ",
+      destination: `MA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJUAAAAAAAAAAAAGZFQ`,
+      memo: "Paying GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ now",
+      label: "GENERAL-STATUS",
+    };
+
+    const output = scrubProperties(input);
+
+    expect(output.counterparty).toBe("[REDACTED]");
+    expect(output.destination).toBe("[REDACTED]");
+    expect(output.memo).toBe("[REDACTED]");
+    expect(output.label).toBe("GENERAL-STATUS");
   });
 
   it("passes through safe scalar values unchanged", () => {
@@ -138,6 +156,13 @@ describe("publishEvent respects opt-out", () => {
   it("suppresses all events when opted out", () => {
     setAnalyticsOptOut(true);
     trackEvent("test_event", { foo: "bar" });
+    expect(consoleSpy).not.toHaveBeenCalled();
+  });
+
+  it("suppresses funnel and failure events when opted out", () => {
+    setAnalyticsOptOut(true);
+    trackFunnelStep("create_trade", { from: "1", to: "2" });
+    trackFailure("ui_error", { message: "boom" });
     expect(consoleSpy).not.toHaveBeenCalled();
   });
 });

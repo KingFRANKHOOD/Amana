@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { errorHandler, ERROR_CORRELATION_ID_HEADER } from "../middleware/errorHandler";
 import { ServiceErrorConverter, ServiceType } from "../errors/serviceErrorConverter";
 import { appLogger } from "../middleware/logger";

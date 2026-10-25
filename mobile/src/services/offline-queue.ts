@@ -31,6 +31,7 @@ const createTradePayloadSchema = z.object({
   commodity: z.string().optional(),
   quantity: z.string().optional(),
   unit: z.string().optional(),
+  deliveryDays: z.number().int().positive().optional(),
 }).refine((value) => (value.buyerLossBps ?? 5000) + (value.sellerLossBps ?? 5000) === 10000, {
   message: 'Loss ratios must total 100%',
 });
@@ -131,6 +132,10 @@ export const offlineQueue = {
   },
 
   async enqueue(type: QueuedActionType, payload: Record<string, unknown>): Promise<QueuedAction> {
+    if (type === 'SUBMIT_EVIDENCE' || type === 'INITIATE_DISPUTE') {
+      throw new Error(`${type} sync is not implemented yet`);
+    }
+
     if (type === 'CREATE_TRADE') {
       createTradePayloadSchema.parse(payload);
     }

@@ -195,6 +195,20 @@ describe("SavingsService", () => {
             });
         });
 
+        it("should throw a 403 AppError if caller does not own the vault", async () => {
+            mockPrisma.user.findUnique.mockResolvedValue({ id: 1, walletAddress: "gattacker" });
+            mockPrisma.vault.findUnique.mockResolvedValue({
+                id: 2,
+                vaultId: "vault-victim",
+                ownerAddress: "gvictim",
+            });
+
+            await expect(
+                savingsService.createGoal("GATTACKER", "goal-x", "vault-victim", "100", new Date())
+            ).rejects.toMatchObject({ statusCode: 403, code: "FORBIDDEN" });
+            expect(mockPrisma.goal.create).not.toHaveBeenCalled();
+        });
+
         it("should throw a 404 AppError if vault not found", async () => {
             mockPrisma.user.findUnique.mockResolvedValue({
                 id: 1,

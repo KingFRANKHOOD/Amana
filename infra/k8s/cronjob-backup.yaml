@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: db-backup-config
-  namespace: amana
+  namespace: default
 data:
   S3_PREFIX: "backups"
 ---
@@ -10,7 +10,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: db-backup-daily
-  namespace: amana
+  namespace: default
 spec:
   schedule: "0 2 * * *"
   concurrencyPolicy: Forbid
@@ -43,7 +43,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: db-backup-weekly
-  namespace: amana
+  namespace: default
 spec:
   schedule: "0 3 * * 0"
   concurrencyPolicy: Forbid
@@ -76,7 +76,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: db-backup-monthly
-  namespace: amana
+  namespace: default
 spec:
   schedule: "0 4 1 * *"
   concurrencyPolicy: Forbid

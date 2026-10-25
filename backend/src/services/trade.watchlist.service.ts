@@ -27,7 +27,10 @@ export class TradeWatchlistService {
     const trade = await this.prisma.trade.findUnique({ where: { tradeId } });
     if (!trade) throw new WatchTradeNotFoundError();
     const caller = userAddress.toLowerCase();
-    if (trade.buyerAddress.toLowerCase() !== caller && trade.sellerAddress.toLowerCase() !== caller) {
+    if (
+      trade.buyerAddress.toLowerCase() !== caller &&
+      trade.sellerAddress.toLowerCase() !== caller
+    ) {
       throw new WatchTradeAccessDeniedError();
     }
     return trade;
@@ -37,7 +40,12 @@ export class TradeWatchlistService {
     const trade = await this.assertTradeAccess(tradeId, userAddress);
     const userAddressNormalized = userAddress.toLowerCase();
     const item = await this.prisma.userWatchlist.upsert({
-      where: { userAddress_tradeId: { userAddress: userAddressNormalized, tradeId: trade.tradeId } },
+      where: {
+        userAddress_tradeId: {
+          userAddress: userAddressNormalized,
+          tradeId: trade.tradeId,
+        },
+      },
       create: { userAddress: userAddressNormalized, tradeId: trade.tradeId },
       update: {},
     });
@@ -54,12 +62,25 @@ export class TradeWatchlistService {
     return { removed: result.count > 0 };
   }
 
-  async list(userAddress: string) {
-    const entries = await this.prisma.userWatchlist.findMany({
-      where: { userAddress: userAddress.toLowerCase() },
-      include: { trade: true },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    });
-    return entries.map(({ trade, createdAt }) => ({ ...trade, watchedAt: createdAt }));
+  async list(userAddress: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    const normalizedAddress = userAddress.toLowerCase();
+    const [entries, total] = await Promise.all([
+      this.prisma.userWatchlist.findMany({
+        where: { userAddress: normalizedAddress },
+        include: { trade: true },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip,
+        take: limit,
+      }),
+      this.prisma.userWatchlist.count({
+        where: { userAddress: normalizedAddress },
+      }),
+    ]);
+    const items = entries.map(({ trade, createdAt }) => ({
+      ...trade,
+      watchedAt: createdAt,
+    }));
+    return { items, total, page, limit };
   }
 }

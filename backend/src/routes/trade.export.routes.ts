@@ -7,13 +7,19 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { validateRequest } from "../middleware/validateRequest";
 import { AuthRequest } from "../services/auth.service";
 
+const dateQueryParam = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "must be a valid date",
+  });
+
 const exportQuerySchema = z.object({
   format: z.enum(["csv", "json"]).default("json"),
   status: z.nativeEnum(TradeStatus).optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
+  from: dateQueryParam.optional(),
+  to: dateQueryParam.optional(),
+  dateFrom: dateQueryParam.optional(),
+  dateTo: dateQueryParam.optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(50),
 }).refine(

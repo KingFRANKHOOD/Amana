@@ -20,7 +20,7 @@ export function buildCsp(nonce: string): string {
     `script-src 'self' 'strict-dynamic' 'nonce-${nonce}'`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: https://ipfs.io https://*.pinata.cloud`,
-    `connect-src 'self' https://api.stellar.org https://horizon.stellar.org https://horizon-testnet.stellar.org`,
+    `connect-src 'self' ${apiUrl} https://api.stellar.org https://horizon.stellar.org https://horizon-testnet.stellar.org`,
     `font-src 'self'`,
     `frame-src 'none'`,
     `object-src 'none'`,
