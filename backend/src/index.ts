@@ -12,8 +12,12 @@ import { env } from "./config/env";
 import { appLogger } from "./middleware/logger";
 import { initializeTracing } from "./config/tracing";
 import { HealthService } from "./services/health.service";
+import { metricsService } from "./services/metrics.service";
 import { createEvidenceVerificationWorker } from "./jobs/workers/evidence-verification.worker";
 import { createTrustScoreRecalculationWorker } from "./jobs/workers/trust-score-recalculation.worker";
+import { createWebhookWorker } from "./jobs/workers/webhook.worker";
+import { createNotificationWorker } from "./jobs/workers/notification.worker";
+import { createExportWorker } from "./jobs/workers/export.worker";
 import {
   createIdempotencyCleanupWorker,
   idempotencyCleanupQueue,
@@ -50,9 +54,12 @@ import {
 import { createGracefulShutdown } from "./lib/gracefulShutdown";
 import type { Server } from "http";
 
-
 // Initialize distributed tracing before any other imports
 initializeTracing();
+
+// Wire the live Prisma client into MetricsService so observable gauge
+// callbacks (trades_active_count, disputes_open_count) emit real values.
+metricsService.initialize(prisma);
 
 const eventIndexerService = new EventIndexerService(prisma);
 const app = createApp({ prisma, eventIndexer: eventIndexerService });
@@ -84,14 +91,19 @@ if (env.NODE_ENV !== "production" && openapiSpec) {
       for (const [method, operation] of Object.entries(
         methods as Record<string, unknown>,
       )) {
-        if (typeof operation === "object" && operation !== null && !(operation as Record<string, unknown>).operationId) {
+        if (
+          typeof operation === "object" &&
+          operation !== null &&
+          !(operation as Record<string, unknown>).operationId
+        ) {
           const safePath = path
             .replace(/[{}]/g, "")
             .replace(/[^a-zA-Z0-9_/]/g, "_")
             .replace(/\/+/g, ".")
             .replace(/^\.|\.$/g, "")
             .replace(/\.+/g, ".");
-          (operation as Record<string, unknown>).operationId = `${method}${safePath ? `.${safePath}` : ""}`;
+          (operation as Record<string, unknown>).operationId =
+            `${method}${safePath ? `.${safePath}` : ""}`;
         }
       }
     }
@@ -128,7 +140,10 @@ async function bootstrap() {
     try {
       const startupCheck = await healthService.performStartupCheck();
       if (startupCheck.status !== "ready") {
-        appLogger.fatal({ checks: startupCheck.checks }, "Critical startup dependencies are not ready. Exiting.");
+        appLogger.fatal(
+          { checks: startupCheck.checks },
+          "Critical startup dependencies are not ready. Exiting.",
+        );
         process.exit(1);
       }
       appLogger.info("Startup readiness check passed.");
@@ -168,8 +183,14 @@ async function bootstrap() {
     registerQueueForMetrics("notifications", notificationQueue);
     registerQueueForMetrics("exports", exportQueue);
     registerQueueForMetrics("evidence-verification", evidenceVerificationQueue);
-    registerQueueForMetrics("trust-score-recalculation", trustScoreRecalculationQueue);
-    registerQueueForMetrics("data-retention-cleanup", dataRetentionCleanupQueue);
+    registerQueueForMetrics(
+      "trust-score-recalculation",
+      trustScoreRecalculationQueue,
+    );
+    registerQueueForMetrics(
+      "data-retention-cleanup",
+      dataRetentionCleanupQueue,
+    );
     registerQueueForMetrics("data-archival", dataArchivalQueue);
     startQueueMetricsCollection();
 
@@ -186,7 +207,10 @@ async function bootstrap() {
       workers.push(createTrustScoreRecalculationWorker());
       appLogger.info("TrustScoreRecalculationWorker started");
     } catch (error) {
-      appLogger.error({ error }, "Failed to start TrustScoreRecalculationWorker");
+      appLogger.error(
+        { error },
+        "Failed to start TrustScoreRecalculationWorker",
+      );
     }
 
     // Start idempotency key GC worker and schedule daily cron
@@ -225,22 +249,55 @@ async function bootstrap() {
       appLogger.error({ error }, "Failed to start DataArchivalWorker");
     }
 
+    // Start webhook dispatch worker (consumes the "webhooks" queue)
+    try {
+      workers.push(createWebhookWorker());
+      appLogger.info("WebhookWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start WebhookWorker");
+    }
+
+    // Start notification delivery worker (consumes the "notifications" queue)
+    try {
+      workers.push(createNotificationWorker());
+      appLogger.info("NotificationWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start NotificationWorker");
+    }
+
+    // Start export generation worker (consumes the "exports" queue)
+    try {
+      workers.push(createExportWorker());
+      appLogger.info("ExportWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start ExportWorker");
+    }
+
     // Schedule periodic evidence pin verification & storage monitoring
     const isTest = (process.env.NODE_ENV ?? env.NODE_ENV) === "test";
     if (!isTest) {
       const intervalMs = env.EVIDENCE_PIN_VERIFICATION_INTERVAL_MS;
-      appLogger.info({ intervalMs }, "Scheduling periodic evidence pin verification");
+      appLogger.info(
+        { intervalMs },
+        "Scheduling periodic evidence pin verification",
+      );
 
       const runVerification = async () => {
         try {
           appLogger.info("Running scheduled evidence pin verification");
-          const job = await evidenceVerificationQueue.add("verify", {
+          const job = await evidenceVerificationQueue.add("verify" as any, {
             triggeredBy: "scheduled",
             repairMissing: false,
           });
-          appLogger.info({ jobId: job.id }, "Scheduled verification job queued");
+          appLogger.info(
+            { jobId: job.id },
+            "Scheduled verification job queued",
+          );
         } catch (error) {
-          appLogger.error({ error }, "Failed to schedule evidence verification");
+          appLogger.error(
+            { error },
+            "Failed to schedule evidence verification",
+          );
         }
       };
 
@@ -256,17 +313,26 @@ async function bootstrap() {
 
       // Schedule periodic trust score recalculation
       const trustScoreIntervalMs = env.TRUST_SCORE_RECALCULATION_INTERVAL_MS;
-      appLogger.info({ intervalMs: trustScoreIntervalMs }, "Scheduling periodic trust score recalculation");
+      appLogger.info(
+        { intervalMs: trustScoreIntervalMs },
+        "Scheduling periodic trust score recalculation",
+      );
 
       const runTrustScoreRecalculation = async () => {
         try {
           appLogger.info("Running scheduled trust score recalculation");
-          const job = await trustScoreRecalculationQueue.add("recalculate", {
+          const job = await trustScoreRecalculationQueue.add("recalculate" as any, {
             triggeredBy: "scheduled",
           });
-          appLogger.info({ jobId: job.id }, "Scheduled trust score recalculation job queued");
+          appLogger.info(
+            { jobId: job.id },
+            "Scheduled trust score recalculation job queued",
+          );
         } catch (error) {
-          appLogger.error({ error }, "Failed to schedule trust score recalculation");
+          appLogger.error(
+            { error },
+            "Failed to schedule trust score recalculation",
+          );
         }
       };
 
@@ -280,14 +346,20 @@ async function bootstrap() {
 
       // Schedule periodic storage growth monitoring
       const storageIntervalMs = env.STORAGE_MONITORING_INTERVAL_MS;
-      appLogger.info({ intervalMs: storageIntervalMs }, "Scheduling periodic storage monitoring");
+      appLogger.info(
+        { intervalMs: storageIntervalMs },
+        "Scheduling periodic storage monitoring",
+      );
 
       const runStorageCollection = async () => {
         try {
           appLogger.info("Running scheduled storage growth metrics collection");
           await storageMonitoringService.collectStorageMetrics();
         } catch (error) {
-          appLogger.warn({ error }, "Failed to collect scheduled storage metrics");
+          appLogger.warn(
+            { error },
+            "Failed to collect scheduled storage metrics",
+          );
         }
       };
 

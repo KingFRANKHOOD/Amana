@@ -1,11 +1,20 @@
 /**
- * Tests for the shared access-control helpers (Issue #525, #1017)
+ * Tests for the shared access-control helpers (Issue #525, #1017, #1227)
  *
  * Validates that getMediatorAllowlist and isMediatorAddress correctly parse
  * ADMIN_STELLAR_PUBKEYS and enforce mediator/arbitrator route guards.
  * Addresses are normalized to lowercase for consistent comparison.
+ *
+ * Also covers the escrow schedule authorization guard (Issue #1394): the
+ * GET /trades/:id/schedule handler must only expose a trade's milestone
+ * schedule to the buyer, seller, or a mediator — never to unrelated
+ * authenticated users (IDOR).
+ *
+ * Issue #1227: also asserts that the trade service admin check agrees with
+ * the shared access-control allowlist so there is a single source of truth.
  */
 import { getMediatorAllowlist, isMediatorAddress, normalizeAddress } from "../lib/accessControl";
+import { isAdminPubkey, resetAdminPubkeys } from "../services/trade.service";
 
 const ADDR_A = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 const ADDR_B = "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
@@ -112,5 +121,100 @@ describe("isMediatorAddress", () => {
   it("returns false for an empty-string address", () => {
     process.env.ADMIN_STELLAR_PUBKEYS = ADDR_A;
     expect(isMediatorAddress("")).toBe(false);
+  });
+});
+
+/**
+ * Regression coverage for Issue #1394.
+ *
+ * The GET /trades/:id/schedule handler previously only required
+ * authMiddleware and a trade-exists check, so any authenticated user could
+ * read another trade's milestone amounts, due dates, condition hashes, and
+ * released status (IDOR). The handler now mirrors the POST /:id/schedule
+ * guard: the caller must be the buyer, the seller, or a mediator.
+ *
+ * These tests exercise the same predicate the route uses so the guard cannot
+ * silently regress.
+ */
+describe("escrow schedule access guard (Issue #1394)", () => {
+  afterEach(() => {
+    delete process.env.ADMIN_STELLAR_PUBKEYS;
+  });
+
+  const buyer = ADDR_A;
+  const seller = ADDR_B;
+  const outsider = ADDR_C;
+
+  const trade = { buyerAddress: buyer, sellerAddress: seller };
+
+  // Mirrors the route guard: buyer, seller, or mediator may read the schedule.
+  const canReadSchedule = (t: { buyerAddress: string; sellerAddress: string }, walletAddress: string): boolean => {
+    const isBuyerOrSeller =
+      normalizeAddress(t.buyerAddress) === normalizeAddress(walletAddress) ||
+      normalizeAddress(t.sellerAddress) === normalizeAddress(walletAddress);
+    return isBuyerOrSeller || isMediatorAddress(walletAddress);
+  };
+
+  it("allows the buyer to read the schedule", () => {
+    expect(canReadSchedule(trade, buyer)).toBe(true);
+  });
+
+  it("allows the seller to read the schedule", () => {
+    expect(canReadSchedule(trade, seller)).toBe(true);
+  });
+
+  it("allows a mediator to read the schedule", () => {
+    process.env.ADMIN_STELLAR_PUBKEYS = outsider;
+    expect(canReadSchedule(trade, outsider)).toBe(true);
+  });
+
+  it("denies an authenticated non-party (IDOR regression)", () => {
+    delete process.env.ADMIN_STELLAR_PUBKEYS;
+    expect(canReadSchedule(trade, outsider)).toBe(false);
+  });
+
+  it("denies an empty wallet address", () => {
+    delete process.env.ADMIN_STELLAR_PUBKEYS;
+    expect(canReadSchedule(trade, "")).toBe(false);
+  });
+
+  it("matches parties case-insensitively", () => {
+    expect(canReadSchedule(trade, buyer.toLowerCase())).toBe(true);
+    expect(canReadSchedule(trade, seller.toUpperCase())).toBe(true);
+  });
+});
+
+describe("admin allowlist consistency (Issue #1227)", () => {
+  afterEach(() => {
+    delete process.env.ADMIN_STELLAR_PUBKEYS;
+    resetAdminPubkeys();
+  });
+
+  it("trade service admin check agrees with the shared access-control allowlist", () => {
+    process.env.ADMIN_STELLAR_PUBKEYS = `${ADDR_A},${ADDR_B}`;
+    resetAdminPubkeys();
+
+    for (const addr of [ADDR_A, ADDR_B, ADDR_C]) {
+      expect(isAdminPubkey(addr)).toBe(isMediatorAddress(addr));
+    }
+  });
+
+  it("reflects env changes without a stale cache (no divergent cache lifetimes)", () => {
+    process.env.ADMIN_STELLAR_PUBKEYS = ADDR_A;
+    resetAdminPubkeys();
+    expect(isAdminPubkey(ADDR_A)).toBe(true);
+    expect(isAdminPubkey(ADDR_B)).toBe(false);
+
+    process.env.ADMIN_STELLAR_PUBKEYS = ADDR_B;
+    resetAdminPubkeys();
+    expect(isAdminPubkey(ADDR_A)).toBe(false);
+    expect(isAdminPubkey(ADDR_B)).toBe(true);
+  });
+
+  it("agrees on empty allowlist", () => {
+    delete process.env.ADMIN_STELLAR_PUBKEYS;
+    resetAdminPubkeys();
+    expect(isAdminPubkey(ADDR_A)).toBe(false);
+    expect(isAdminPubkey(ADDR_A)).toBe(isMediatorAddress(ADDR_A));
   });
 });

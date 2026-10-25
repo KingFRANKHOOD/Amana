@@ -38,7 +38,7 @@ export function LandingPageContent() {
       icon: Truck,
     },
     {
-      step: "04",
+      step: "03",
       title: t("landing.steps.verifyComplete.title"),
       description: t("landing.steps.verifyComplete.description"),
       icon: CheckCircle2,

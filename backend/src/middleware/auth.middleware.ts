@@ -1,6 +1,6 @@
 import { Response, NextFunction } from "express";
 import { AuthService, AuthRequest } from "../services/auth.service";
-import { isAppError } from "../errors/errorCodes";
+import { isAppError } from "../errors/appError";
 import { AuthHelper } from "../lib/authHelper";
 
 export { AuthRequest };

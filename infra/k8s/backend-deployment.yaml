@@ -1,4 +1,4 @@
-apiVersion: apps/v1
+﻿apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
@@ -45,7 +45,7 @@ spec:
                   name: amana-secrets
                   key: REDIS_PASSWORD
             - name: REDIS_URL
-		      value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/0"
+              value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/0"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -115,3 +115,7 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+<<<<<<< HEAD
+
+=======
+>>>>>>> origin/main

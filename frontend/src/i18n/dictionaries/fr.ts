@@ -198,7 +198,7 @@ const fr: Record<TranslationKeys, string> = {
   "trust.tier.developing": "En d\u00e9veloppement",
   "trust.tier.established": "\u00c9tabli",
   "trust.tier.trusted": "Fiable",
-  "trust.tier.elite": "D\u00e9lit\u00e9",
+  "trust.tier.elite": "\u00c9lite",
 
   // Trust Breakdown
   "trust.breakdown.title": "D\u00e9composition du score",

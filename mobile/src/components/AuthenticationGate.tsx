@@ -28,14 +28,21 @@ export function AuthenticationGate({ authenticated, children }: AuthenticationGa
   }, [unlock]);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
+    const subscription = AppState.addEventListener('change', async (state) => {
       if (state === 'active') {
         void unlock();
+      } else {
+        // Immediately lock when backgrounded if biometric lock is enabled
+        // This prevents sensitive data from being visible in the task switcher
+        const biometricEnabled = await isBiometricEnabled();
+        if (biometricEnabled && authenticated) {
+          setLocked(true);
+        }
       }
     });
 
     return () => subscription.remove();
-  }, [unlock]);
+  }, [unlock, authenticated]);
 
   if (!authenticated || (!locked && !checking)) {
     return <>{children}</>;

@@ -61,7 +61,12 @@ export const tradesApi = {
     request<CreateTradeResponse>("/trades", {
       method: "POST",
       token,
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        sellerAddress: data.sellerAddress,
+        amountUsdc: data.amountUsdc,
+        buyerLossBps: data.buyerLossBps,
+        sellerLossBps: data.sellerLossBps,
+      }),
     }),
 
   deposit: (token: string, tradeId: string) =>

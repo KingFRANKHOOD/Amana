@@ -5,7 +5,7 @@ import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 import { validateRequest } from "../middleware/validateRequest";
 import { Router } from "express";
 import { z } from "zod";
-import { AppError } from "../errors/errorCodes";
+import { AppError } from '../errors/appError';
 import { isMediatorAddress } from "../lib/accessControl";
 import { Parser } from "json2csv";
 
@@ -30,17 +30,29 @@ const disputeIdParamSchema = z.object({
     ),
 });
 
-export { disputeIdParamSchema };
+export { disputeIdParamSchema, exportDisputesQuerySchema };
+
+const dateQueryParam = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "must be a valid date",
+  });
 
 const exportDisputesQuerySchema = z.object({
   format: z.enum(["csv"]).default("csv"),
   status: z.enum(["OPEN", "UNDER_REVIEW", "RESOLVED", "CLOSED"]).optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: dateQueryParam.optional(),
+  to: dateQueryParam.optional(),
 }).refine(
   (value) => !value.from || !value.to || new Date(value.from) <= new Date(value.to),
   { message: "from must be before or equal to to", path: ["from"] },
 );
+
+// Neutralize spreadsheet formula injection (=, +, -, @, tab, CR) in free-text cells.
+export function sanitizeCsvCell(value: string | null | undefined): string | null | undefined {
+  if (typeof value !== "string") return value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
 
 const disputeCsvFields = [
   "dispute_id",
@@ -169,7 +181,7 @@ export function createDisputeRouter(prisma = defaultPrisma) {
           trade_id: dispute.tradeId,
           initiator: dispute.initiator,
           status: dispute.status,
-          reason: dispute.reason,
+          reason: sanitizeCsvCell(dispute.reason),
           buyer: dispute.trade.buyerAddress,
           seller: dispute.trade.sellerAddress,
           amount: dispute.trade.amountUsdc,

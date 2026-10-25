@@ -41,7 +41,7 @@ export function createStellarAccountCreateRouter(): Router {
 
     const keypair = Keypair.random();
     const publicKey = keypair.publicKey();
-    const encryptedSecretKey = encrypt(keypair.secret(), STELLAR_ACCOUNT_SECRET_DOMAIN);
+    const encryptedSecretKey = await encrypt(keypair.secret(), STELLAR_ACCOUNT_SECRET_DOMAIN);
 
     let funded = false;
 

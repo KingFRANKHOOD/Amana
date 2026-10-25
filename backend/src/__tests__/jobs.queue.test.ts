@@ -23,9 +23,26 @@ jest.mock('bullmq', () => ({
 
 jest.mock('ioredis', () => jest.fn().mockImplementation(() => ({ quit: jest.fn() })));
 
-jest.mock('../middleware/logger', () => ({
-  appLogger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-}));
+jest.mock('../middleware/logger', () => {
+  const childLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  return {
+    appLogger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+      child: jest.fn().mockReturnValue(childLogger),
+    },
+  };
+});
+
+jest.mock('../lib/logging', () => {
+  const childLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  return {
+    getJobContextualLogger: jest.fn().mockReturnValue(childLogger),
+    getContextualLogger: jest.fn().mockReturnValue(childLogger),
+  };
+});
 
 jest.mock('../services/webhook.service', () => ({
   webhookService: { dispatch: jest.fn().mockResolvedValue(undefined) },

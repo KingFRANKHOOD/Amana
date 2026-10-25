@@ -18,6 +18,27 @@ import type { NotificationData } from './services/notification.service';
 import { AuthenticationGate } from './components/AuthenticationGate';
 import { offlineQueue } from './services/offline-queue';
 
+/** Valid screen names from RootStackParamList for runtime validation */
+const KNOWN_SCREENS: readonly string[] = [
+  'WalletConnect',
+  'TradeList',
+  'TradeDetail',
+  'DisputeDetail',
+  'CreateTrade',
+  'SyncQueue',
+  'EvidenceCapture',
+  'VaultDashboard',
+  'SecuritySettings',
+] as const;
+
+/**
+ * Type guard to validate a screen name is a known navigation target.
+ * Returns true if the screen is a valid key of RootStackParamList.
+ */
+function isKnownScreen(screen: string): screen is keyof RootStackParamList {
+  return KNOWN_SCREENS.includes(screen);
+}
+
 export default function App() {
   const { getToken, token } = useAuthStore();
   const [bootstrapped, setBootstrapped] = useState(false);
@@ -62,7 +83,15 @@ export default function App() {
       if (data.tradeId && navigationRef.current) {
         navigationRef.current.navigate('TradeDetail', { tradeId: data.tradeId });
       } else if (data.screen && navigationRef.current) {
-        navigationRef.current.navigate(data.screen as any);
+        // Validate screen name to prevent crashes from malformed push payloads
+        const targetScreen = data.screen;
+        if (isKnownScreen(targetScreen)) {
+          navigationRef.current.navigate(targetScreen);
+        } else {
+          // Fallback to TradeList for unknown screens
+          console.warn(`Unknown screen in push payload: ${targetScreen}, falling back to TradeList`);
+          navigationRef.current.navigate('TradeList');
+        }
       }
     });
 

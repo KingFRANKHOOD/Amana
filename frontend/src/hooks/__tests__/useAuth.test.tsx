@@ -22,6 +22,7 @@ import {
 } from "@stellar/freighter-api";
 import { AuthProvider, useAuth } from "../useAuth";
 import { api, ApiError } from "@/lib/api";
+import * as freighterIdentity from "../useFreighterIdentity";
 
 // ── Mock @stellar/freighter-api ───────────────────────────────────────────────
 jest.mock("@stellar/freighter-api", () => ({
@@ -32,11 +33,21 @@ jest.mock("@stellar/freighter-api", () => ({
   signMessage: jest.fn(),
 }));
 
+// ── Mock useFreighterIdentity ────────────────────────────────────────────────
+jest.mock("../useFreighterIdentity", () => ({
+  refreshIdentityStore: jest.fn(),
+}));
+
 const mockedIsConnected = isConnected as jest.MockedFunction<typeof isConnected>;
 const mockedIsAllowed = isAllowed as jest.MockedFunction<typeof isAllowed>;
 const mockedGetAddress = getAddress as jest.MockedFunction<typeof getAddress>;
 const mockedRequestAccess = requestAccess as jest.MockedFunction<typeof requestAccess>;
 const mockedSignMessage = signMessage as jest.MockedFunction<typeof signMessage>;
+
+// ── Mock useFreighterIdentity ────────────────────────────────────────────────
+const mockedRefreshIdentityStore = freighterIdentity.refreshIdentityStore as jest.MockedFunction<
+  typeof freighterIdentity.refreshIdentityStore
+>;
 
 // ── Mock API client ───────────────────────────────────────────────────────────
 jest.mock("@/lib/api", () => ({
@@ -121,6 +132,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   sessionStorage.clear();
   mockedValidate.mockRejectedValue(new ApiError(401, "No active session"));
+  mockedRefreshIdentityStore.mockResolvedValue(undefined);
 });
 
 // Default: wallet not installed / not connected
@@ -209,6 +221,22 @@ describe("connectWallet", () => {
     expect(result.current.address).toBeNull();
     expect(result.current.error).toMatch(/denied|failed/i);
   });
+
+  it("syncs wallet state with useFreighterIdentity store after successful connection", async () => {
+    mockWalletAbsent();
+    mockedRequestAccess.mockResolvedValue(requestAccessRes(WALLET_ADDRESS));
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.connectWallet();
+    });
+
+    // Verify that refreshIdentityStore was called to sync the shared store
+    expect(mockedRefreshIdentityStore).toHaveBeenCalledTimes(1);
+    expect(result.current.address).toBe(WALLET_ADDRESS);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -232,6 +260,32 @@ describe("authenticate — challenge-verify flow", () => {
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.token).toBe("http-only-cookie");
     expect(result.current.token).not.toBe(JWT_TOKEN);
+  });
+
+  it("base64url-encodes a non-string signedMessage without relying on Buffer", async () => {
+    mockWalletConnected();
+    mockedChallenge.mockResolvedValue({ challenge: CHALLENGE_STRING });
+    mockedSignMessage.mockResolvedValue({
+      signedMessage: new Uint8Array([251, 255, 254, 1]),
+    } as unknown as SignMessageResponse);
+    mockedVerify.mockResolvedValue({ authenticated: true });
+
+    const originalBuffer = globalThis.Buffer;
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // @ts-expect-error simulate a browser bundle without a Buffer polyfill
+    delete globalThis.Buffer;
+    try {
+      await act(async () => {
+        await result.current.authenticate();
+      });
+    } finally {
+      globalThis.Buffer = originalBuffer;
+    }
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(mockedVerify).toHaveBeenCalledWith(WALLET_ADDRESS, "-__-AQ");
   });
 
   it("calls POST /auth/challenge with the wallet address", async () => {

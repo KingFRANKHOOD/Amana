@@ -1,5 +1,6 @@
 import { Request } from 'express';
-import { AppError, ErrorCode } from '../errors/errorCodes';
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { ServiceErrorConverter, ServiceType } from '../errors/serviceErrorConverter';
 import { ACCESS_TOKEN_COOKIE, getCookie } from './authCookies';
 

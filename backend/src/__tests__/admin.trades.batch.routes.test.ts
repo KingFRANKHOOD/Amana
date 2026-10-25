@@ -6,6 +6,15 @@ import { PrismaClient, TradeStatus } from "@prisma/client";
 import { createAdminTradeBatchRouter } from "../routes/admin.trades.batch.routes";
 import { AuthService } from "../services/auth.service";
 import { errorHandler } from "../middleware/errorHandler";
+import { auditLogService } from "../services/auditLog.service";
+import { feeAccountingService } from "../services/feeAccounting.service";
+
+jest.mock("../services/auditLog.service", () => ({
+  auditLogService: { record: jest.fn().mockResolvedValue(undefined) },
+}));
+jest.mock("../services/feeAccounting.service", () => ({
+  feeAccountingService: { recordFee: jest.fn().mockResolvedValue({}) },
+}));
 
 jest.mock("../services/auth.service", () => ({
   AuthService: {
@@ -22,6 +31,7 @@ const mockPrisma = {
     findFirst: jest.fn(),
     updateMany: jest.fn(),
   },
+  $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(mockPrisma)),
 } as unknown as PrismaClient & {
   trade: { findFirst: jest.Mock; updateMany: jest.Mock };
 };
@@ -194,5 +204,51 @@ describe("Admin Trade Batch Route", () => {
       .send({ updates: [{ status: TradeStatus.CANCELLED }] });
 
     expect(res.status).toBe(400);
+  });
+
+  it("records an audit log and platform fee when batch-completing a trade", async () => {
+    mockPrisma.trade.findFirst.mockResolvedValueOnce({
+      tradeId: "trade-9",
+      status: TradeStatus.DELIVERED,
+      version: 2,
+      amountUsdc: "250.00",
+    });
+    mockPrisma.trade.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const res = await request(app)
+      .post("/admin/trades/batch/status")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ updates: [{ tradeId: "trade-9", status: TradeStatus.COMPLETED }] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.succeeded).toEqual(["trade-9"]);
+    expect(auditLogService.record).toHaveBeenCalledWith(
+      mockPrisma,
+      expect.objectContaining({
+        tradeId: "trade-9",
+        toStatus: TradeStatus.COMPLETED,
+        actor: adminAddress,
+        metadata: { fromStatus: TradeStatus.DELIVERED },
+      }),
+    );
+    expect(feeAccountingService.recordFee).toHaveBeenCalledWith(mockPrisma, "trade-9", "250.00");
+  });
+
+  it("does not record a fee for non-COMPLETED transitions", async () => {
+    mockPrisma.trade.findFirst.mockResolvedValueOnce({
+      tradeId: "trade-10",
+      status: TradeStatus.CREATED,
+      version: 1,
+      amountUsdc: "10.00",
+    });
+    mockPrisma.trade.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    await request(app)
+      .post("/admin/trades/batch/status")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ updates: [{ tradeId: "trade-10", status: TradeStatus.CANCELLED }] });
+
+    expect(auditLogService.record).toHaveBeenCalledTimes(1);
+    expect(feeAccountingService.recordFee).not.toHaveBeenCalled();
   });
 });

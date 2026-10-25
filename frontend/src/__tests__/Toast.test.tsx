@@ -92,14 +92,27 @@ describe("Toast component", () => {
   });
 
   it.each([
-    ["success"],
-    ["error"],
-    ["warning"],
-    ["info"],
-  ] as const)("renders %s variant", (type) => {
-    const { container } = render(
-      <Toast id="1" type={type} message="msg" onClose={onClose} />
-    );
-    expect(container.firstChild).toBeInTheDocument();
+    ["success", "text-status-success", "border-status-success/30", "polite"],
+    ["error", "text-status-danger", "border-status-danger/40", "assertive"],
+    ["warning", "text-status-warning", "border-status-warning/40", "polite"],
+    ["info", "text-status-info", "border-status-info/40", "polite"],
+  ] as const)("renders %s variant with its own styling", (type, iconClass, borderClass, ariaLive) => {
+    render(<Toast id="1" type={type} message="msg" onClose={onClose} />);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveAttribute("aria-live", ariaLive);
+    expect(alert.className).toContain(borderClass);
+    expect(alert.querySelector("svg")).toHaveClass(iconClass);
+  });
+
+  it("renders a different icon for each variant", () => {
+    const icons = (["success", "error", "warning", "info"] as const).map((type) => {
+      const { container, unmount } = render(
+        <Toast id="1" type={type} message="msg" onClose={onClose} />
+      );
+      const markup = container.querySelector("svg")?.innerHTML;
+      unmount();
+      return markup;
+    });
+    expect(new Set(icons).size).toBe(4);
   });
 });

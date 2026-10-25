@@ -178,6 +178,28 @@ describe("PathPaymentService network resilience", () => {
     expect(sourceAsset.getIssuer()).toBe(issuer);
   });
 
+  it("rejects non-native source assets without an issuer instead of substituting one", async () => {
+    const { ErrorCode } = require("../errors/errorCodes");
+    const service = new PathPaymentService();
+
+    await expect(service.getPathPaymentQuote("100", "NGN")).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      statusCode: 400,
+      message: "sourceAssetIssuer is required for non-native source assets",
+    });
+    expect(strictSendPathsMock).not.toHaveBeenCalled();
+  });
+
+  it("does not require an issuer for native XLM", async () => {
+    strictSendPathsCall.mockResolvedValue({ records: [] });
+
+    const service = new PathPaymentService();
+    await service.getPathPaymentQuote("100", "XLM");
+
+    const sourceAsset = strictSendPathsMock.mock.calls[0][0] as StellarSdk.Asset;
+    expect(sourceAsset.isNative()).toBe(true);
+  });
+
   it("fails after exhausting retries on repeated 5xx errors", async () => {
     strictSendPathsCall.mockRejectedValue({ response: { status: 502 } });
 
@@ -215,5 +237,84 @@ describe("PathPaymentService network resilience", () => {
       "Payment service temporarily unavailable"
     );
     expect(strictSendPathsCall).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes circuit-open (503 SERVICE_UNAVAILABLE) from generic bugs (500 INTERNAL_ERROR)", async () => {
+    const { CircuitBreaker } = require("../lib/circuitBreaker");
+    const { ErrorCode } = require("../errors/errorCodes");
+    const customBreaker = new CircuitBreaker("horizon-path-payment-distinguish", {
+      failureThreshold: 2,
+      successThreshold: 1,
+      cooldownMs: 10000,
+    });
+    const service = new PathPaymentService(customBreaker);
+    strictSendPathsCall.mockRejectedValue({ response: { status: 500 } });
+
+    // First two calls exhaust retries and are classified as INFRA_ERROR 503
+    try {
+      await service.getPathPaymentQuote("1000", "XLM");
+    } catch (e: any) {
+      expect(e.code).toBe(ErrorCode.INFRA_ERROR);
+      expect(e.statusCode).toBe(503);
+    }
+    try {
+      await service.getPathPaymentQuote("1000", "XLM");
+    } catch (e: any) {
+      expect(e.code).toBe(ErrorCode.INFRA_ERROR);
+      expect(e.statusCode).toBe(503);
+    }
+
+    strictSendPathsCall.mockClear();
+    // Third call now hits open circuit — SERVICE_UNAVAILABLE 503 with distinct message
+    try {
+      await service.getPathPaymentQuote("1000", "XLM");
+      fail("expected circuit open error");
+    } catch (e: any) {
+      expect(e.code).toBe(ErrorCode.SERVICE_UNAVAILABLE);
+      expect(e.statusCode).toBe(503);
+      expect(e.message).toBe("Payment service temporarily unavailable");
+    }
+
+    // Generic bug (malformed upstream) should be INTERNAL_ERROR 500, not 503
+    const freshBreaker = new CircuitBreaker("horizon-path-payment-generic-bug", {
+      failureThreshold: 5,
+      successThreshold: 2,
+      cooldownMs: 30000,
+    });
+    const freshService = new PathPaymentService(freshBreaker);
+    strictSendPathsCall.mockResolvedValue({} as any);
+    try {
+      await freshService.getPathPaymentQuote("1000", "XLM");
+      fail("expected malformed error");
+    } catch (e: any) {
+      expect(e.code).toBe(ErrorCode.INTERNAL_ERROR);
+      expect(e.statusCode).toBe(500);
+      expect(e.message).toBe("Failed to fetch path payment quotes");
+    }
+  });
+
+  it("returns correct structured codes for Horizon failures vs internal errors", async () => {
+    const { ErrorCode } = require("../errors/errorCodes");
+    const service = new PathPaymentService();
+
+    // Horizon 503 infra
+    strictSendPathsCall.mockRejectedValue({ response: { status: 503 } });
+    try {
+      await service.getPathPaymentQuote("1000", "XLM");
+      fail("expected infra error");
+    } catch (e: any) {
+      expect(e.code).toBe(ErrorCode.INFRA_ERROR);
+      expect(e.statusCode).toBe(503);
+    }
+
+    // Network timeout infra
+    strictSendPathsCall.mockRejectedValue(new Error("connect ETIMEDOUT"));
+    try {
+      await service.getPathPaymentQuote("1000", "XLM");
+      fail("expected infra error");
+    } catch (e: any) {
+      expect(e.code).toBe(ErrorCode.INFRA_ERROR);
+      expect(e.statusCode).toBe(503);
+    }
   });
 });

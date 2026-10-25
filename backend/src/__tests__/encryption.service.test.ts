@@ -1,5 +1,5 @@
 import { EncryptionService } from "../services/encryption.service";
-import { AppError } from "../errors/errorCodes";
+import { AppError } from '../errors/appError';
 
 describe("EncryptionService", () => {
   const service = new EncryptionService("test-master-secret-value-with-minimum-length-32");
