@@ -238,4 +238,53 @@ describe("useDispute", () => {
     });
     expect(mockGetDispute).toHaveBeenCalledWith("token-123", otherTradeId);
   });
+
+  it("discards a stale fetch when tradeId changes mid-flight", async () => {
+    authed();
+
+    let resolveStaleDispute!: (value: typeof MOCK_DISPUTE) => void;
+    const otherTradeId = "trade-456";
+    const otherDispute = { ...MOCK_DISPUTE, tradeId: otherTradeId };
+
+    mockGetDispute.mockImplementation((_token, id) =>
+      id === TRADE_ID
+        ? new Promise((resolve) => { resolveStaleDispute = resolve; })
+        : Promise.resolve(otherDispute),
+    );
+    mockGetEvidence.mockResolvedValue({ evidence: [] });
+
+    const { result, rerender } = renderHook(({ id }) => useDispute(id), {
+      initialProps: { id: TRADE_ID },
+    });
+
+    rerender({ id: otherTradeId });
+    await waitFor(() => expect(result.current.dispute?.tradeId).toBe(otherTradeId));
+
+    await act(async () => {
+      resolveStaleDispute(MOCK_DISPUTE);
+    });
+
+    expect(result.current.dispute?.tradeId).toBe(otherTradeId);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("does not update state after unmount", async () => {
+    authed();
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    let resolveDispute!: (value: typeof MOCK_DISPUTE) => void;
+    mockGetDispute.mockImplementation(() => new Promise((resolve) => { resolveDispute = resolve; }));
+    mockGetEvidence.mockResolvedValue({ evidence: [] });
+
+    const { result, unmount } = renderHook(() => useDispute(TRADE_ID));
+    unmount();
+
+    await act(async () => {
+      resolveDispute(MOCK_DISPUTE);
+    });
+
+    expect(result.current.dispute).toBeNull();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
 });

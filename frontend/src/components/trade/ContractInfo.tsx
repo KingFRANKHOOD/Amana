@@ -3,6 +3,7 @@
 import React from "react";
 import type { TradeDetail } from "@/types/trade";
 import { WalletAddressBadge } from "@/components/ui/WalletAddressBadge";
+import { getStellarExplorerNetwork } from "@/lib/api/env";
 
 interface ContractInfoProps {
   trade: TradeDetail;
@@ -38,6 +39,8 @@ function LossRatioBar({
 }
 
 export function ContractInfo({ trade }: ContractInfoProps) {
+  const explorerNetwork = getStellarExplorerNetwork();
+
   return (
     <div className="bg-card rounded-xl border border-border-default p-6 shadow-card">
       <h2 className="text-sm font-semibold text-text-secondary tracking-wide uppercase mb-4">
@@ -71,6 +74,7 @@ export function ContractInfo({ trade }: ContractInfoProps) {
             truncate="middle"
             showCopy
             showExplorer
+            explorerNetwork={explorerNetwork}
             className="w-full justify-between"
           />
         </div>
@@ -81,6 +85,7 @@ export function ContractInfo({ trade }: ContractInfoProps) {
             truncate="middle"
             showCopy
             showExplorer
+            explorerNetwork={explorerNetwork}
             className="w-full justify-between"
           />
         </div>

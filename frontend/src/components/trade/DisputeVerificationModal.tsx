@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import { signTransaction } from "@stellar/freighter-api";
 import { VideoUploadCard } from "@/components/ui/VideoUploadCard";
+import {
+  getStellarExplorerTxUrl,
+  getStellarHorizonUrl,
+  getStellarNetworkFromPassphrase,
+} from "@/lib/api/env";
 
 export interface DisputeVerificationModalProps {
   isOpen: boolean;
@@ -94,9 +99,9 @@ export function DisputeVerificationModal({
       }
 
       // Submit signed XDR to Horizon
-      const horizonUrl = networkPassphrase.includes("Test")
-        ? "https://horizon-testnet.stellar.org"
-        : "https://horizon.stellar.org";
+      const horizonUrl = getStellarHorizonUrl(
+        getStellarNetworkFromPassphrase(networkPassphrase),
+      );
 
       const submitRes = await fetch(`${horizonUrl}/transactions`, {
         method: "POST",
@@ -344,7 +349,7 @@ export function DisputeVerificationModal({
                   </p>
                   {txHash && (
                     <a
-                      href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
+                      href={getStellarExplorerTxUrl(networkPassphrase, txHash)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-xs text-gold hover:text-gold-hover transition-colors"
@@ -374,7 +379,7 @@ export function DisputeVerificationModal({
                   </p>
                   {txHash && (
                     <a
-                      href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
+                      href={getStellarExplorerTxUrl(networkPassphrase, txHash)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-xs text-gold hover:text-gold-hover transition-colors"

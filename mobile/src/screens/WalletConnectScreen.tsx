@@ -38,7 +38,7 @@ export default function WalletConnectScreen({ navigation }: Props) {
             // On mobile we cannot sign with Freighter; we use the challenge as a demo token
             const { token } = await authApi.verifyChallenge(address, challenge);
             await setToken(token);
-            setWalletAddress(address);
+            await setWalletAddress(address);
             navigation.replace('TradeList');
           } catch (err: unknown) {
             Alert.alert('Connection failed', (err as Error)?.message ?? 'Unknown error');

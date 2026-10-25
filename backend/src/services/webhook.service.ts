@@ -68,11 +68,13 @@ export class WebhookService {
       },
     });
 
-    const deliveryTargets: DeliveryTarget[] = activeSubscriptions.map((subscription) => ({
-      url: subscription.url,
-      secret: this.decryptSubscriptionSecret(subscription.secretHash),
-      subscriptionId: subscription.id,
-    }));
+    const deliveryTargets: DeliveryTarget[] = await Promise.all(
+      activeSubscriptions.map(async (subscription) => ({
+        url: subscription.url,
+        secret: await this.decryptSubscriptionSecret(subscription.secretHash),
+        subscriptionId: subscription.id,
+      })),
+    );
 
     if (this.webhookUrl) {
       deliveryTargets.push({
@@ -101,10 +103,10 @@ export class WebhookService {
     );
   }
 
-  private decryptSubscriptionSecret(secretHash: string | null | undefined): string | undefined {
+  private async decryptSubscriptionSecret(secretHash: string | null | undefined): Promise<string | undefined> {
     if (!secretHash) return undefined;
     try {
-      return this.encryptionService.decrypt(secretHash, WEBHOOK_SECRET_CONTEXT);
+      return await this.encryptionService.decrypt(secretHash, WEBHOOK_SECRET_CONTEXT);
     } catch (error) {
       appLogger.warn({ error }, "Failed to decrypt webhook subscription secret");
       return undefined;
@@ -114,12 +116,12 @@ export class WebhookService {
   private async persistDeliveryAttempt(
     target: DeliveryTarget,
     tradeId: string,
-    status: TradeStatus,
-    attempt: number,
+    _status: TradeStatus,
+    _attempt: number,
     success: boolean,
     statusCode: number | null,
     errorMessage: string | null,
-    durationMs: number,
+    _durationMs: number,
   ): Promise<void> {
     if (target.subscriptionId == null) {
       return;
@@ -129,13 +131,9 @@ export class WebhookService {
       await prisma.webhookDeliveryAttempt.create({
         data: {
           webhookId: target.subscriptionId,
-          event: `trade.${status.toLowerCase()}`,
-          payload: { tradeId, status },
-          statusCode,
-          success,
-          attempt,
-          errorMessage,
-          durationMs,
+          status: success ? "SUCCESS" : "FAILED",
+          statusCode: statusCode ?? 0,
+          responseBody: errorMessage ?? null,
         },
       });
     } catch (error) {
@@ -306,9 +304,9 @@ export class WebhookService {
     const consecutiveFailures = (existing?.consecutiveFailures ?? 0) + 1;
     consecutiveFailureState.set(stateKey, { target, consecutiveFailures });
 
-    recordWebhookConsecutiveFailures(consecutiveFailures, {
+    recordWebhookConsecutiveFailures({
       webhook_url: target.url,
-      subscription_id: target.subscriptionId ?? "system",
+      subscription_id: String(target.subscriptionId ?? "system"),
     });
 
     if (consecutiveFailures >= this.consecutiveFailureThreshold) {
@@ -316,12 +314,12 @@ export class WebhookService {
         { webhookUrl: target.url, subscriptionId: target.subscriptionId, consecutiveFailures, tradeId, status },
         "Webhook consecutive failure threshold reached",
       );
-      void alertService.sendAlert({
-        severity: "critical",
-        title: "Webhook consecutive failure threshold reached",
-        message: `Webhook ${target.url} has failed ${consecutiveFailures} consecutive times.`,
-        metadata: { webhookUrl: target.url, subscriptionId: target.subscriptionId, tradeId, status },
-      });
+      void alertService.dispatch(
+        "webhook_delivery_failure",
+        `Webhook ${target.url} has failed ${consecutiveFailures} consecutive times.`,
+        { webhookUrl: target.url, subscriptionId: target.subscriptionId, tradeId, status },
+        "critical",
+      );
     }
   }
 }

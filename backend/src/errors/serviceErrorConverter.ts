@@ -1,4 +1,4 @@
-import { AppError, ErrorCode, isAppError, StructuredErrorPayload } from './errorCodes';
+import { AppError, ErrorCode, isAppError } from './errorCodes';
 
 /**
  * Context describing where a service error originated, used to enrich the
@@ -27,10 +27,27 @@ export function convertServiceError(
   const message =
     error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown service error';
 
-  const details: StructuredErrorPayload = {
+  const details: Record<string, unknown> = {
     ...context,
     cause: error instanceof Error ? error.name : undefined,
   };
 
   return new AppError(ErrorCode.INFRA_ERROR, message, 500, details);
+}
+
+export enum ServiceType {
+  REDIS = 'redis',
+  DATABASE = 'database',
+  IPFS = 'ipfs',
+  STELLAR = 'stellar',
+}
+
+export class ServiceErrorConverter {
+  static convertToAppError(
+    error: unknown,
+    service: ServiceType | string,
+    operation?: string,
+  ): AppError {
+    return convertServiceError(error, { service, operation });
+  }
 }

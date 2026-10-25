@@ -24,8 +24,9 @@ module.exports = {
   testMatch: [
     '**/__tests__/**/*.test.{ts,tsx}',
     '<rootDir>/src/**/*.test.{ts,tsx}',
+    '**/e2e/**/*.e2e.test.ts',
   ],
-  testPathIgnorePatterns: ['/node_modules/', '/e2e/'],
+  testPathIgnorePatterns: ['/node_modules/'],
   collectCoverage: true,
   coverageDirectory: './coverage',
   coverageReporters: ['text', 'lcov', 'clover'],

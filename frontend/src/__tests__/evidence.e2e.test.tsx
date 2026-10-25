@@ -133,7 +133,7 @@ function selectFile(input: HTMLInputElement, name = "evidence.mp4", type = "vide
 
 async function getStartedUpload(): Promise<MockUploadXhr> {
   await waitFor(() => {
-    expect(MockUploadXhr.instances).toHaveLength(1);
+    expect(MockUploadXhr.instances).toHaveLength(1);>>>>>>> origin/main
   });
   return MockUploadXhr.instances[0];
 }
@@ -396,7 +396,7 @@ describe("Evidence Upload Flow", () => {
       expect(screen.getByText(/Network error during upload/i)).toBeInTheDocument();
       expect(screen.queryByText(/Qm/i)).not.toBeInTheDocument();
       expect(onUpload).not.toHaveBeenCalled();
-      expect(screen.getByRole("button", { name: /Submit Proof/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /Submit Proof/i })).toBeDisabled();>>>>>>> origin/main
     });
 
     it("should handle invalid file types", async () => {

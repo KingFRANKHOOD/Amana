@@ -4,11 +4,20 @@ import { AppNavigator } from './AppNavigator';
 import * as useDeepLinkHook from '../hooks/useDeepLink';
 
 // Mock React Navigation
-jest.mock('@react-navigation/native', () => ({
-  NavigationContainer: ({ children }: any) => children,
+const mockNavigationRef = { isReady: jest.fn(() => true), navigate: jest.fn() };
+
+jest.mock('@react-navigation/native', () => {
+  const { useEffect } = jest.requireActual<typeof import('react')>('react');
+  return {
+    NavigationContainer: ({ children, onReady }: any) => {
+      useEffect(() => onReady?.(), []);
+      return children;
+    },
+    useNavigationContainerRef: () => mockNavigationRef,
   useFocusEffect: jest.fn(),
   useNavigation: jest.fn(),
-}));
+  };
+});
 
 jest.mock('@react-navigation/stack', () => ({
   createStackNavigator: () => ({
@@ -64,40 +73,48 @@ describe('AppNavigator', () => {
     expect(toJSON()).toBeTruthy();
   });
 
-  it('should handle trade deep link', () => {
-    const handleDeepLinkMock = jest.fn();
-    const pendingDeepLink = {
-      screen: 'TradeDetail',
-      params: { id: 'trade-123' },
-    };
-
+  it.each([
+    ['trade', { screen: 'TradeDetail', params: { id: 'trade-123' } }],
+    ['dispute', { screen: 'DisputeDetail', params: { id: 'dispute-456' } }],
+  ])('navigates to a pending %s deep link via the container ref (#1637)', (_, pendingDeepLink) => {
+    const navigateToDeepLink = jest.fn();
     (useDeepLinkHook.useDeepLink as jest.Mock).mockReturnValue({
       pendingDeepLink,
-      handleDeepLink: handleDeepLinkMock,
-      navigateToDeepLink: jest.fn(),
+      handleDeepLink: jest.fn(),
+      navigateToDeepLink,
     });
 
     render(<AppNavigator isAuthenticated={true} />);
 
-    expect(handleDeepLinkMock).toHaveBeenCalled();
+    expect(navigateToDeepLink).toHaveBeenCalledWith(mockNavigationRef);
   });
 
-  it('should handle dispute deep link', () => {
-    const handleDeepLinkMock = jest.fn();
-    const pendingDeepLink = {
-      screen: 'DisputeDetail',
-      params: { id: 'dispute-456' },
-    };
-
+  it('waits for the container to be ready before navigating', () => {
+    mockNavigationRef.isReady.mockReturnValueOnce(false);
+    const navigateToDeepLink = jest.fn();
     (useDeepLinkHook.useDeepLink as jest.Mock).mockReturnValue({
-      pendingDeepLink,
-      handleDeepLink: handleDeepLinkMock,
-      navigateToDeepLink: jest.fn(),
+      pendingDeepLink: { screen: 'TradeDetail', params: { id: 't' } },
+      handleDeepLink: jest.fn(),
+      navigateToDeepLink,
     });
 
     render(<AppNavigator isAuthenticated={true} />);
 
-    expect(handleDeepLinkMock).toHaveBeenCalled();
+    // first readiness check is skipped; the next one flushes exactly once
+    expect(navigateToDeepLink).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not navigate when there is no pending deep link', () => {
+    const navigateToDeepLink = jest.fn();
+    (useDeepLinkHook.useDeepLink as jest.Mock).mockReturnValue({
+      pendingDeepLink: null,
+      handleDeepLink: jest.fn(),
+      navigateToDeepLink,
+    });
+
+    render(<AppNavigator isAuthenticated={true} />);
+
+    expect(navigateToDeepLink).not.toHaveBeenCalled();
   });
 
   it('should render all screens in stack', () => {

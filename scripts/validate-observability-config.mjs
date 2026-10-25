@@ -25,6 +25,16 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const LOKI_CONFIG = 'loki/config.yml';
 const PROMTAIL_CONFIG = 'promtail/config.yml';
 const LOGGING_STANDARDS = 'docs/LOGGING_STANDARDS.md';
+const GRAFANA_DATASOURCES = 'grafana/provisioning/datasources/loki.yml';
+const GRAFANA_ALERTS = 'grafana/provisioning/alerting/loki-alerts.yml';
+const DOCKER_COMPOSE = 'docker-compose.yml';
+const DASHBOARD_DIR = 'grafana/provisioning/dashboards';
+const DASHBOARDS = [
+  'system-health-dashboard.json',
+  'error-monitoring-dashboard.json',
+  'api-performance-dashboard.json',
+  'data-retention-storage-dashboard.json',
+];
 
 // The label every documented LogQL query and dashboard panel selects on.
 const BACKEND_APP_LABEL = 'amana-backend';
@@ -382,9 +392,188 @@ function validatePromtail(config) {
   }
 }
 
+// Grafana provisioning datasources (#1458/#1459): the file must be a real
+// apiVersion 1 document defining the uids the dashboards and alert rules use.
+function validateGrafanaDatasources(config) {
+  if (!isPlainObject(config)) return;
+
+  check(config.apiVersion === 1, `${GRAFANA_DATASOURCES}: apiVersion must be 1, got ${JSON.stringify(config.apiVersion)}`);
+
+  const datasources = config.datasources;
+  check(
+    Array.isArray(datasources) && datasources.length > 0,
+    `${GRAFANA_DATASOURCES}: datasources must be a non-empty list`
+  );
+  if (!Array.isArray(datasources)) return;
+
+  const byUid = new Map();
+  datasources.forEach((datasource, index) => {
+    const at = `${GRAFANA_DATASOURCES}: datasources[${index}]`;
+    if (!isPlainObject(datasource)) {
+      check(false, `${at} must be a mapping`);
+      return;
+    }
+    check(typeof datasource.name === 'string' && datasource.name.length > 0, `${at}.name must be set`);
+    check(typeof datasource.type === 'string' && datasource.type.length > 0, `${at}.type must be set`);
+    check(typeof datasource.uid === 'string' && datasource.uid.length > 0, `${at}.uid must be set`);
+    check(typeof datasource.url === 'string' && datasource.url.length > 0, `${at}.url must be set`);
+    if (typeof datasource.uid === 'string') {
+      check(!byUid.has(datasource.uid), `${at}.uid "${datasource.uid}" is duplicated`);
+      byUid.set(datasource.uid, datasource);
+    }
+  });
+
+  const loki = byUid.get('loki');
+  check(loki !== undefined, `${GRAFANA_DATASOURCES}: missing a datasource with uid "loki"`);
+  if (loki !== undefined) {
+    check(loki.type === 'loki', `${GRAFANA_DATASOURCES}: datasource uid "loki" must have type "loki", got ${JSON.stringify(loki.type)}`);
+  }
+
+  const prometheus = byUid.get('prometheus');
+  check(prometheus !== undefined, `${GRAFANA_DATASOURCES}: missing a datasource with uid "prometheus"`);
+  if (prometheus !== undefined) {
+    check(
+      prometheus.type === 'prometheus',
+      `${GRAFANA_DATASOURCES}: datasource uid "prometheus" must have type "prometheus", got ${JSON.stringify(prometheus.type)}`
+    );
+  }
+
+  return byUid;
+}
+
+// Grafana alerting provisioning (#1458): the file must hold real Loki-backed
+// rules, not a placeholder.
+function validateGrafanaAlerts(config) {
+  if (!isPlainObject(config)) return;
+
+  check(config.apiVersion === 1, `${GRAFANA_ALERTS}: apiVersion must be 1, got ${JSON.stringify(config.apiVersion)}`);
+
+  const groups = config.groups;
+  check(
+    Array.isArray(groups) && groups.length > 0,
+    `${GRAFANA_ALERTS}: groups must be a non-empty list, otherwise no alert rules are provisioned`
+  );
+  if (!Array.isArray(groups)) return;
+
+  let ruleCount = 0;
+  groups.forEach((group, index) => {
+    const at = `${GRAFANA_ALERTS}: groups[${index}]`;
+    if (!isPlainObject(group)) {
+      check(false, `${at} must be a mapping`);
+      return;
+    }
+    check(typeof group.name === 'string' && group.name.length > 0, `${at}.name must be set`);
+    check(Array.isArray(group.rules) && group.rules.length > 0, `${at}.rules must be a non-empty list`);
+    if (!Array.isArray(group.rules)) return;
+
+    group.rules.forEach((rule, ruleIndex) => {
+      const ruleAt = `${at}.rules[${ruleIndex}]`;
+      if (!isPlainObject(rule)) {
+        check(false, `${ruleAt} must be a mapping`);
+        return;
+      }
+      ruleCount += 1;
+      check(typeof rule.uid === 'string' && rule.uid.length > 0, `${ruleAt}.uid must be set`);
+      check(typeof rule.title === 'string' && rule.title.length > 0, `${ruleAt}.title must be set`);
+      check(
+        rule.datasourceUid === 'loki',
+        `${ruleAt}.datasourceUid must be "loki", got ${JSON.stringify(rule.datasourceUid)}`
+      );
+    });
+  });
+
+  check(ruleCount > 0, `${GRAFANA_ALERTS}: no alert rules found`);
+}
+
+// Every panel datasource uid in the dashboards must be provisioned, otherwise
+// Grafana renders "Datasource <uid> was not found" (#1459).
+function validateDashboards(provisionedUids) {
+  if (!(provisionedUids instanceof Map)) return;
+
+  for (const dashboardFile of DASHBOARDS) {
+    const relativePath = `${DASHBOARD_DIR}/${dashboardFile}`;
+    let dashboard;
+    try {
+      dashboard = JSON.parse(readRepoFile(relativePath));
+    } catch (error) {
+      check(false, `${relativePath}: could not be read/parsed as JSON (${error.message})`);
+      continue;
+    }
+
+    const referencedUids = new Set();
+    const visit = (node) => {
+      if (Array.isArray(node)) {
+        node.forEach(visit);
+        return;
+      }
+      if (!isPlainObject(node)) return;
+      const datasource = node.datasource;
+      if (isPlainObject(datasource) && typeof datasource.uid === 'string') {
+        referencedUids.add(datasource.uid);
+      }
+      for (const value of Object.values(node)) visit(value);
+    };
+    visit(dashboard);
+
+    check(referencedUids.size > 0, `${relativePath}: no panel datasource uids found`);
+    for (const uid of referencedUids) {
+      check(
+        provisionedUids.has(uid),
+        `${relativePath}: references datasource uid "${uid}" which is not defined in ${GRAFANA_DATASOURCES}`
+      );
+    }
+  }
+}
+
+// The staging loki/promtail services must actually load the repo configs
+// (#1460): a volume mount plus a -config.file argument.
+function validateComposeWiring(compose) {
+  if (!isPlainObject(compose)) return;
+
+  const services = compose.services;
+  check(isPlainObject(services), `${DOCKER_COMPOSE}: missing "services" mapping`);
+  if (!isPlainObject(services)) return;
+
+  const expectations = [
+    { service: 'loki', configPath: 'loki/config.yml' },
+    { service: 'promtail', configPath: 'promtail/config.yml' },
+  ];
+
+  for (const { service, configPath } of expectations) {
+    const definition = services[service];
+    check(isPlainObject(definition), `${DOCKER_COMPOSE}: missing "${service}" service`);
+    if (!isPlainObject(definition)) continue;
+
+    const volumes = Array.isArray(definition.volumes) ? definition.volumes : [];
+    const mountsConfig = volumes.some((volume) => {
+      const source = typeof volume === 'string' ? volume.split(':')[0] : isPlainObject(volume) ? volume.source : null;
+      return typeof source === 'string' && source.replace(/^\.\//, '').endsWith(configPath);
+    });
+    check(
+      mountsConfig,
+      `${DOCKER_COMPOSE}: "${service}" must mount ${configPath} via volumes, otherwise it runs on image defaults`
+    );
+
+    const commandParts = [];
+    if (typeof definition.command === 'string') commandParts.push(definition.command);
+    else if (Array.isArray(definition.command)) commandParts.push(...definition.command.map(String));
+    if (Array.isArray(definition.entrypoint)) commandParts.push(...definition.entrypoint.map(String));
+    const command = commandParts.join(' ');
+    check(
+      command.includes('-config.file'),
+      `${DOCKER_COMPOSE}: "${service}" command must pass -config.file=<mounted config>, got ${JSON.stringify(definition.command)}`
+    );
+  }
+}
+
 function main() {
   validateLoki(loadConfig(LOKI_CONFIG));
   validatePromtail(loadConfig(PROMTAIL_CONFIG));
+
+  const provisionedUids = validateGrafanaDatasources(loadConfig(GRAFANA_DATASOURCES));
+  validateGrafanaAlerts(loadConfig(GRAFANA_ALERTS));
+  validateDashboards(provisionedUids);
+  validateComposeWiring(loadConfig(DOCKER_COMPOSE));
 
   console.log(`Observability config validation: ${passed} passed, ${failures.length} failed`);
 
@@ -396,7 +585,9 @@ function main() {
     return;
   }
 
-  console.log(`${LOKI_CONFIG} and ${PROMTAIL_CONFIG} are valid Loki/Promtail configurations.`);
+  console.log(
+    `${LOKI_CONFIG}, ${PROMTAIL_CONFIG}, Grafana provisioning and docker-compose wiring are valid.`
+  );
 }
 
 main();

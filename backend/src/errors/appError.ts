@@ -1,8 +1,6 @@
 import { randomUUID } from 'crypto';
 import { ErrorCode, ERROR_STATUS_MAP } from './errorCodes';
 
-const KNOWN_CODES = new Set<string>(Object.values(ErrorCode) as string[]);
-
 /**
  * Standardised application error.
  *
@@ -22,7 +20,7 @@ export class AppError extends Error {
   readonly statusCode: number;
 
   /** Optional structured details (e.g. validation field errors). */
-  readonly details?: Array<{ field: string; issue: string }>;
+  details?: Array<{ field: string; issue: string }>;
 
   constructor(
     messageOrCode: string,

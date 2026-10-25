@@ -3186,6 +3186,84 @@
         }
       }
     },
+    "/trades/{id}/submit": {
+      "post": {
+        "tags": [
+          "Trades"
+        ],
+        "summary": "Submit a signed deposit or release transaction",
+        "description": "Submits a wallet-signed Soroban invocation for the authenticated trade.\nThe transaction source, contract, trade id, and action are checked before RPC submission.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TradeIdPath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "signedXdr": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100000
+                  }
+                },
+                "required": [
+                  "signedXdr"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Signed transaction accepted by the Soroban RPC for processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hash": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "hash",
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/LegacyValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/trades/{id}/dispute": {
       "post": {
         "tags": [
