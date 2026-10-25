@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react-native';
+import { render, waitFor, fireEvent } from '@testing-library/react-native';
 import SyncQueueScreen from '../SyncQueueScreen';
 import * as offlineQueue from '../../services/offline-queue';
 
@@ -76,7 +76,7 @@ describe('SyncQueueScreen', () => {
       return jest.fn();
     });
     const { getByText } = render(<SyncQueueScreen navigation={mockNavigation as any} route={{ params: {} } as any} />);
-    getByText('Sync');
-    expect(offlineQueue.offlineQueue.process).toBeDefined();
+    fireEvent.press(getByText('Sync'));
+    expect(offlineQueue.offlineQueue.process).toHaveBeenCalled();
   });
 });
