@@ -47,9 +47,8 @@ export function useTradeStream({
     const connect = () => {
       const url = new URL(`${apiConfig.getBaseUrl()}/events/stream`);
       url.searchParams.set("trade_ids", tradeIdsKey);
-      url.searchParams.set("token", token);
 
-      source = new EventSource(url.toString());
+      source = new EventSource(url.toString(), { withCredentials: true });
       source.addEventListener("open", () => {
         setConnected(true);
         reconnectAttempt.current = 0;
