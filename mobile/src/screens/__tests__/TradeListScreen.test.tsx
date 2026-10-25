@@ -99,7 +99,23 @@ describe('TradeListScreen', () => {
     useTradeStore.setState({ trades: [], isLoading: false, fetchTrades: fetchTrades as any });
     const { getByText } = render(<TradeListScreen navigation={mockNavigation as any} route={{ params: {} } as any} />);
     fireEvent.press(getByText('Pending'));
-    await waitFor(() => expect(fetchTrades).toHaveBeenCalledWith({ status: 'PENDING' }));
+    await waitFor(() => expect(fetchTrades).toHaveBeenCalledWith({ status: 'PENDING_SIGNATURE' }));
+  });
+
+  it('shows funded and in-transit trades in the Active filter', () => {
+    const fetchTrades = jest.fn().mockResolvedValue(undefined);
+    useTradeStore.setState({ trades: [
+      ...mockTrades,
+      { ...mockTrades[0], id: 3, tradeId: 'trade-789', status: 'IN_TRANSIT' },
+    ] as any, isLoading: false, fetchTrades: fetchTrades as any });
+    const { getByText, queryByText } = render(<TradeListScreen navigation={mockNavigation as any} route={{ params: {} } as any} />);
+
+    fireEvent.press(getByText('Active'));
+
+    expect(getByText('#trade-45')).toBeTruthy();
+    expect(getByText('#trade-78')).toBeTruthy();
+    expect(queryByText('#trade-12')).toBeNull();
+    expect(fetchTrades).toHaveBeenLastCalledWith();
   });
 
   it('calls login flow via logout', async () => {

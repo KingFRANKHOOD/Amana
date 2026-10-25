@@ -95,7 +95,7 @@ const USDC_SCALE = 10n ** BigInt(USDC_DECIMALS);
 function toScaledAmount(amount: string): bigint {
   const [whole, fraction = ""] = amount.split(".");
   const paddedFraction = (fraction + "0".repeat(USDC_DECIMALS)).slice(0, USDC_DECIMALS);
-  return BigInt(whole) * USDC_SCALE + BigInt(paddedFraction || "0");
+  return BigInt(whole ?? "0") * USDC_SCALE + BigInt(paddedFraction || "0");
 }
 
 export function createEscrowScheduleRouter(

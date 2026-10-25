@@ -1,7 +1,7 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { getEventListenerConfig, EventListenerConfig } from "../config/eventListener.config";
-import { ParsedEvent, EVENT_TOPIC_MAP } from "../types/events";
+import { ParsedEvent, EVENT_TOPIC_MAP, EventType } from "../types/events";
 import { appLogger } from "../middleware/logger";
 import { EventEmitter } from "events";
 import { recordDuplicateEventAttempt } from "../lib/metrics";
@@ -47,6 +47,11 @@ export class EventIndexerService {
   private activePoll: Promise<void> | null = null;
   private lastIngestedLedger: number = 0;
   private backoffMs: number;
+
+  /** Expose the in-memory cursor for monitoring/health endpoints. */
+  getLastIngestedLedger(): number {
+    return this.lastIngestedLedger;
+  }
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
@@ -293,10 +298,10 @@ export class EventIndexerService {
       return {
         eventId,
         tradeId: "unknown",
-        eventType,
+        eventType: eventType as EventType,
         ledgerSequence: rawEvent.ledger,
         contractId: rawEvent.contractId?.toString?.() ?? this.config.contractId,
-        data: (rawEvent.value ?? {}) as Prisma.JsonObject,
+        data: (rawEvent.value ?? {}) as unknown as Prisma.JsonObject,
       };
     } catch (error) {
       appLogger.warn({ error }, "[EventIndexer] Failed to parse event");

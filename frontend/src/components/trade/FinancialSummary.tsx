@@ -4,6 +4,8 @@ import React from "react";
 import type { TradeDetail } from "@/types/trade";
 import { TradeAmountRow } from "./TradeAmountRow";
 
+const ESTIMATED_NGN_RATE = 1600;
+
 interface FinancialSummaryProps {
   trade: TradeDetail;
 }
@@ -38,7 +40,9 @@ function FinancialRow({
 }
 
 export function FinancialSummary({ trade }: FinancialSummaryProps) {
-  const ngnEquivalent = Math.round(trade.vaultAmountLocked * 1600);
+  const isEstimate = trade.ngnExchangeRate === undefined;
+  const ngnRate = trade.ngnExchangeRate ?? ESTIMATED_NGN_RATE;
+  const ngnEquivalent = Math.round(trade.vaultAmountLocked * ngnRate);
 
   return (
     <div className="bg-card rounded-xl border border-border-default p-6 shadow-card">
@@ -56,6 +60,13 @@ export function FinancialSummary({ trade }: FinancialSummaryProps) {
         label="Vault Amount Locked"
         highlighted
       />
+
+      {isEstimate && (
+        <p className="mt-2 text-xs text-text-muted">
+          NGN value is an estimate based on an indicative rate and may differ
+          from the live market rate.
+        </p>
+      )}
 
       {/* Line items */}
       <div>

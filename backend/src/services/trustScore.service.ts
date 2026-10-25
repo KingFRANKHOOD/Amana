@@ -394,7 +394,7 @@ export class TrustScoreService {
     const halfLifeMs = this.config.decayHalfLifeDays * 24 * 60 * 60 * 1000;
 
     for (const trade of completedTrades.slice(0, 10)) {
-      const role = trade.buyerAddress === normalizedAddress ? "buyer" : "seller";
+      const role = trade.buyerAddress.toLowerCase() === normalizedAddress ? "buyer" : "seller";
       const timestamp = trade.completedAt?.toISOString() ?? trade.createdAt.toISOString();
       const ageMs = now - (trade.completedAt ?? trade.createdAt).getTime();
       const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);

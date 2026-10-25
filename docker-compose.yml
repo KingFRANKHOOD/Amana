@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Amana Docker Compose – environment-specific profiles
@@ -193,7 +193,7 @@ services:
         log_pooler_errors = 1
         stats_period = 60
         EOF
-        echo "${STAGING_PGBOUNCER_USER:-postgres}:${STAGING_PGBOUNCER_PASSWORD:-staging-password}" > /etc/pgbouncer/userlist.txt
+        echo "\"${STAGING_PGBOUNCER_USER:-postgres}\" \"${STAGING_PGBOUNCER_PASSWORD:-staging-password}\"" > /etc/pgbouncer/userlist.txt
         exec pgbouncer -u pgbouncer -d /etc/pgbouncer/pgbouncer.ini
     environment:
       STAGING_PGBOUNCER_USER: ${STAGING_PGBOUNCER_USER:-postgres}
@@ -229,11 +229,3 @@ services:
 
   loki:
     image: grafana/loki:3.0
-    ports: ["3100:3100"]
-    profiles: [staging]
-
-  promtail:
-    image: grafana/promtail:3.0
-    volumes: ["/var/log:/var/log", "/var/lib/docker/
-
-/* … truncated 1100 chars — edit only what you need near the top … */

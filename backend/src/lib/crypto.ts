@@ -2,10 +2,10 @@ import { EncryptionService } from "../services/encryption.service";
 
 const encryptionService = new EncryptionService();
 
-export function encrypt(plaintext: string, tradeId = "default"): string {
+export async function encrypt(plaintext: string, tradeId = "default"): Promise<string> {
   return encryptionService.encrypt(plaintext, tradeId);
 }
 
-export function decrypt(ciphertext: string, tradeId = "default"): string {
+export async function decrypt(ciphertext: string, tradeId = "default"): Promise<string> {
   return encryptionService.decrypt(ciphertext, tradeId);
 }

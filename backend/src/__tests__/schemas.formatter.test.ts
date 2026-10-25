@@ -15,7 +15,6 @@ import {
   listTradesQuerySchema,
   initiateDisputeSchema,
 } from "../schemas/trade.schemas";
-import { z } from "zod";
 
 describe("Trade Schemas - Formatters & Validators", () => {
   describe("createTradeSchema", () => {
@@ -101,6 +100,27 @@ describe("Trade Schemas - Formatters & Validators", () => {
           sellerLossBps: 5000,
         });
         expect(result.success).toBe(false);
+      });
+    });
+
+    describe("Delivery Window (#1639)", () => {
+      const base = {
+        sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        amountUsdc: "100",
+      };
+
+      it("keeps deliveryDays instead of stripping it", () => {
+        const result = createTradeSchema.safeParse({ ...base, deliveryDays: 7 });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.deliveryDays).toBe(7);
+      });
+
+      it("treats deliveryDays as optional", () => {
+        expect(createTradeSchema.safeParse(base).success).toBe(true);
+      });
+
+      it.each([0, -1, 366, 2.5])("rejects deliveryDays=%p", (deliveryDays) => {
+        expect(createTradeSchema.safeParse({ ...base, deliveryDays }).success).toBe(false);
       });
     });
 

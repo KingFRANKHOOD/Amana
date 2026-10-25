@@ -52,3 +52,28 @@ export function getStellarHorizonUrl(network?: string | null): string {
     ? "https://horizon.stellar.org"
     : "https://horizon-testnet.stellar.org";
 }
+
+export function getStellarNetworkFromPassphrase(
+  networkPassphrase: string,
+): "PUBLIC" | "TESTNET" {
+  return networkPassphrase.includes("Test") ? "TESTNET" : "PUBLIC";
+}
+
+export function getStellarExplorerTxUrl(
+  networkPassphrase: string,
+  txHash: string,
+): string {
+  const segment =
+    getStellarNetworkFromPassphrase(networkPassphrase) === "PUBLIC"
+      ? "public"
+      : "testnet";
+  return `https://stellar.expert/explorer/${segment}/tx/${txHash}`;
+}
+
+export function getStellarExplorerNetwork(): "public" | "testnet" {
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toUpperCase();
+  return network === "PUBLIC" || network?.startsWith("PUBLIC GLOBAL STELLAR NETWORK")
+    ? "public"
+    : "testnet";
+}
+}

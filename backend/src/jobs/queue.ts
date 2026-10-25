@@ -3,7 +3,9 @@ import IORedis from 'ioredis';
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 
-export function createQueueConnection(): IORedis {
+// Cast to `any` to work around ioredis version mismatch between the
+// top-level package and bullmq's bundled ioredis copy.
+export function createQueueConnection(): any {
   return new IORedis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
 }
 

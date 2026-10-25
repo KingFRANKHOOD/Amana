@@ -29,9 +29,17 @@ for arg in "$@"; do
   esac
 done
 
+DATABASE_URL_WAS_SET="${DATABASE_URL+x}"
+CALLER_DATABASE_URL="${DATABASE_URL-}"
+
 if [[ -f "$ROOT_DIR/.env" ]]; then
   # shellcheck disable=SC1091
   set -o allexport; source "$ROOT_DIR/.env"; set +o allexport
+fi
+
+if [[ "$DATABASE_URL_WAS_SET" == "x" ]]; then
+  DATABASE_URL="$CALLER_DATABASE_URL"
+  export DATABASE_URL
 fi
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
