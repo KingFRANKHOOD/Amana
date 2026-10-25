@@ -1,5 +1,5 @@
 import { appLogger } from "../middleware/logger";
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/db";
 
 export type AnalyticsEventName =
   | "trade.created"
@@ -33,7 +33,7 @@ export interface AnalyticsEventStore {
  */
 export class PrismaAnalyticsEventStore implements AnalyticsEventStore {
   async save(event: AnalyticsEvent): Promise<void> {
-    await prisma.analyticsEvent.create({
+    await (prisma as any).analyticsEvent?.create({
       data: {
         event: event.event,
         timestamp: new Date(event.timestamp),

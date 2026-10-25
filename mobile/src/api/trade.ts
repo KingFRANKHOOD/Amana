@@ -43,6 +43,7 @@ export const tradeApi = {
     commodity?: string;
     quantity?: string;
     unit?: string;
+    deliveryDays?: number;
   }): Promise<{ tradeId: string; unsignedXdr: string }> {
     const response = await apiClient.post('/trades', data);
     return response.data;
@@ -60,6 +61,14 @@ export const tradeApi = {
 
   async deposit(tradeId: string): Promise<{ unsignedXdr: string }> {
     const response = await apiClient.post(`/trades/${tradeId}/deposit`);
+    return response.data;
+  },
+
+  async submitSignedTransaction(
+    tradeId: string,
+    signedXdr: string,
+  ): Promise<{ hash: string; status: string }> {
+    const response = await apiClient.post(`/trades/${tradeId}/submit`, { signedXdr });
     return response.data;
   },
 

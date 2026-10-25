@@ -471,7 +471,6 @@ pub enum DataKey {
     /// Ordered list of TradeEvent records for a given trade, appended on each state transition.
     TradeHistory(u64),
     Initialized,
-    Admin,
     CngnContract,
     FeeBps,
     Treasury,
@@ -1175,8 +1174,8 @@ impl EscrowContract {
         approvals.len() as u32
     }
 
-    /// Upgrade the contract WASM (direct call, requires M-of-N via proposals).
-    /// This is the multisig-guarded upgrade entry point.
+    /// Upgrade the contract WASM. Requires all admins to auth as a final safety check.
+    /// Emits `ContractUpgradedEvent` and bumps instance TTL.
     pub fn upgrade(env: Env, wasm_hash: BytesN<32>) {
         let config: MultisigConfig = env
             .storage()
@@ -1187,7 +1186,15 @@ impl EscrowContract {
         for a in config.admins.iter() {
             a.require_auth();
         }
-        env.deployer().update_current_contract_wasm(wasm_hash);
+        env.deployer().update_current_contract_wasm(wasm_hash.clone());
+
+        ContractUpgradedEvent {
+            admin: config.admins.first().unwrap().clone(),
+            new_wasm_hash: wasm_hash,
+        }
+        .publish(&env);
+
+        Self::bump_instance_ttl(&env);
     }
 
     // -----------------------------------------------------------------------
@@ -2084,25 +2091,28 @@ impl EscrowContract {
         Self::update_release_sequence(&env, &trade, |sequence, at| {
             sequence.released_at = Some(at);
         });
-        if fee_amount > 0 {
-            let accrued_fees: i128 = env
-                .storage()
-                .instance()
-                .get(&DataKey::AccruedFees)
-                .unwrap_or(0);
-            env.storage()
-                .instance()
-                .set(&DataKey::AccruedFees, &(accrued_fees + fee_amount));
-        }
         Self::adjust_committed_balance(&env, -seller_amount);
+        Self::adjust_committed_balance(&env, -fee_amount);
 
-        // Interaction
+        // Interaction: transfer to seller and fee to treasury
         let token_client = token::Client::new(&env, &trade.token);
         token_client.transfer(
             &env.current_contract_address(),
             &trade.seller,
             &seller_amount,
         );
+        if fee_amount > 0 {
+            let treasury: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Treasury)
+                .expect("Not initialized");
+            token_client.transfer(
+                &env.current_contract_address(),
+                &treasury,
+                &fee_amount,
+            );
+        }
         Self::record_trade_event(
             &env,
             trade_id,
@@ -2335,17 +2345,8 @@ impl EscrowContract {
             .instance()
             .set(&DataKey::TotalResolved, &(total_resolved + 1));
 
-        if fee > 0 {
-            let accrued_fees: i128 = env
-                .storage()
-                .instance()
-                .get(&DataKey::AccruedFees)
-                .unwrap_or(0);
-            env.storage()
-                .instance()
-                .set(&DataKey::AccruedFees, &(accrued_fees + fee));
-        }
         Self::adjust_committed_balance(&env, -(seller_net + buyer_refund));
+        Self::adjust_committed_balance(&env, -fee);
 
         // 6. Execute transfers
         let token_client = token::Client::new(&env, &trade.token);
@@ -2355,6 +2356,15 @@ impl EscrowContract {
         }
         if buyer_refund > 0 {
             token_client.transfer(&env.current_contract_address(), &trade.buyer, &buyer_refund);
+        }
+        // Transfer fee directly to treasury
+        if fee > 0 {
+            let treasury: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Treasury)
+                .expect("Not initialized");
+            token_client.transfer(&env.current_contract_address(), &treasury, &fee);
         }
 
         // 7. Emit event
@@ -2686,27 +2696,6 @@ impl EscrowContract {
             data: soroban_sdk::String::from_str(env, data),
         });
         env.storage().persistent().set(&key, &history);
-    }
-
-    /// Upgrade the contract WASM. Admin only.
-    /// Emits `ContractUpgradedEvent`.
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .expect("Not initialized");
-        admin.require_auth();
-
-        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
-
-        ContractUpgradedEvent {
-            admin,
-            new_wasm_hash,
-        }
-        .publish(&env);
-
-        Self::bump_instance_ttl(&env);
     }
 
     pub fn get_contract_metrics(env: Env) -> (u64, u64, u64) {

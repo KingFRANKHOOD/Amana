@@ -15,16 +15,17 @@ export function createEvidenceVerificationWorker(): Worker<EvidenceVerificationJ
       logger.info("Processing evidence verification job");
 
       const verificationService = new EvidenceVerificationService();
-      const report = await verificationService.verifyAll({
-        onProgress: (progress) => {
-          logger.info(progress, "Evidence verification progress");
-          if (progress.totalRecords && progress.totalRecords > 0) {
-            const pct = Math.round(
-              (progress.processedRecords / progress.totalRecords) * 100,
-            );
-            void job.updateProgress(pct).catch(() => {});
-          }
-        },
+      const report = await verificationService.verifyAll(async (progress) => {
+        await job.updateProgress({
+          ...progress,
+          percentage:
+            progress.total === 0
+              ? 100
+              : Math.min(
+                  100,
+                  Math.round((progress.processed / progress.total) * 100),
+                ),
+        });
       });
 
       let repairResults: Awaited<

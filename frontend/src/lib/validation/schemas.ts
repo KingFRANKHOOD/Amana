@@ -1,9 +1,20 @@
 import { z } from "zod";
+import { StrKey } from "@stellar/stellar-sdk";
+
+export function isValidStellarPublicKey(value: string): boolean {
+  return value.trim() !== "" && StrKey.isValidEd25519PublicKey(value.trim());
+}
 
 export const TradeSchema = z.object({
   tradeId: z.string().min(1, "Trade ID is required"),
-  buyerAddress: z.string().min(1, "Buyer address is required"),
-  sellerAddress: z.string().min(1, "Seller address is required"),
+  buyerAddress: z
+    .string()
+    .min(1, "Buyer address is required")
+    .refine(isValidStellarPublicKey, "Invalid Stellar public key"),
+  sellerAddress: z
+    .string()
+    .min(1, "Seller address is required")
+    .refine(isValidStellarPublicKey, "Invalid Stellar public key"),
   amountCngn: z
     .string()
     .regex(/^\d+(\.\d+)?$/, "Amount must be a valid positive number")

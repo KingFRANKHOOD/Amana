@@ -240,6 +240,31 @@ describe("StellarService.buildTransaction — Horizon timeout (#581)", () => {
       /failed to build transaction/i,
     );
   });
+
+  it.each(["operation timed out", "the operation was aborted"])(
+    "does not classify infra error %p as invalid operations (#1633)",
+    async (message) => {
+      horizonMock().mockRejectedValue(new Error(message));
+
+      const service = new StellarService();
+      const err = await service.buildTransaction("VALID_KEY", []).catch((e: Error) => e);
+      expect((err as Error).message).toMatch(/^Failed to build transaction/);
+      expect((err as Error).message).not.toMatch(/Invalid transaction operations/);
+    },
+  );
+
+  it("classifies a Horizon result_codes.operations error as invalid operations (#1633)", async () => {
+    horizonMock().mockRejectedValue(
+      Object.assign(new Error("Request failed"), {
+        response: { status: 400, data: { extras: { result_codes: { operations: ["op_malformed"] } } } },
+      }),
+    );
+
+    const service = new StellarService();
+    await expect(service.buildTransaction("VALID_KEY", [])).rejects.toThrow(
+      /Invalid transaction operations/,
+    );
+  });
 });
 
 // ── getAccountBalance — error surfacing ───────────────────────────────────────

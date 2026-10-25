@@ -27,7 +27,7 @@ jest.mock("axios", () => ({
 
 // Mock encrypt so tests don't depend on JWT_SECRET value
 jest.mock("../lib/crypto", () => ({
-  encrypt: jest.fn().mockReturnValue("encrypted-secret-key"),
+  encrypt: jest.fn().mockResolvedValue("encrypted-secret-key"),
   decrypt: jest.fn(),
 }));
 

@@ -4,7 +4,14 @@
  * These tests verify the Prisma $use middleware that enforces lowercase
  * wallet addresses, and the model-level constraints (unique addresses, etc.).
  * They use a mocked PrismaClient so no live database connection is required.
+ *
+ * The in-memory store below routes every write through the real middleware
+ * from `src/lib/walletAddressMiddleware.ts` (the one `db.ts` registers), so a
+ * regression in production lowercasing fails these tests.
  */
+
+import type { Prisma } from '@prisma/client';
+import { lowercaseWalletAddressesMiddleware } from '../lib/walletAddressMiddleware';
 
 // ---------------------------------------------------------------------------
 // In-memory store + middleware simulation
@@ -19,22 +26,26 @@ type VaultRecord = { id: number; vaultId: string; ownerAddress: string; [key: st
 type GoalRecord = { id: number; goalId: string; vaultId: string; [key: string]: unknown };
 
 /**
- * Simulates the $use middleware from db.ts that lowercases wallet addresses.
- * This is the core logic under test.
+ * Runs the real `$use` middleware that `db.ts` registers on the Prisma client
+ * and returns the data it forwards to the next handler. The middleware
+ * rewrites `params.args.data` before calling `next`, synchronously, so the
+ * forwarded data is available as soon as the call returns.
  */
 function applyLowercaseMiddleware(model: string, data: Record<string, unknown>): Record<string, unknown> {
-  const result = { ...data };
-  if (model === 'User' && typeof result.walletAddress === 'string') {
-    result.walletAddress = result.walletAddress.toLowerCase();
-  }
-  if (model === 'Trade') {
-    if (typeof result.buyerAddress === 'string') result.buyerAddress = result.buyerAddress.toLowerCase();
-    if (typeof result.sellerAddress === 'string') result.sellerAddress = result.sellerAddress.toLowerCase();
-  }
-  if (model === 'Dispute' && typeof result.initiator === 'string') {
-    result.initiator = result.initiator.toLowerCase();
-  }
-  return result;
+  const params = {
+    model,
+    action: 'create',
+    args: { data: { ...data } },
+    dataPath: [],
+    runInTransaction: false,
+  } as unknown as Prisma.MiddlewareParams;
+  let forwarded: Record<string, unknown> | undefined;
+  void lowercaseWalletAddressesMiddleware(params, async (p) => {
+    forwarded = p.args.data as Record<string, unknown>;
+    return null;
+  });
+  if (!forwarded) throw new Error('wallet address middleware did not call next()');
+  return forwarded;
 }
 
 /** Minimal in-memory database that mimics Prisma operations used in these tests. */

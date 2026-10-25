@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextFunction, Request, Response } from 'express';
-import { ZodError, ZodTypeAny } from 'zod';
+import { z, ZodTypeAny } from 'zod';
 import { ErrorCode } from '../errors/errorCodes';
 import { StructuredErrorPayload } from '../errors/appError';
 import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, TracedRequest } from './correlationId.middleware';
@@ -27,18 +27,41 @@ export function normalizeValue(value: unknown): unknown {
   return value;
 }
 
-export function validateRequest(schema: ZodTypeAny) {
+export type RequestValidationSchema =
+  | ZodTypeAny
+  | {
+      body?: ZodTypeAny;
+      query?: ZodTypeAny;
+      params?: ZodTypeAny;
+    };
+
+export function validateRequest(schema: RequestValidationSchema) {
+  const zodSchema =
+    schema && "safeParse" in schema
+      ? schema
+      : z.object({
+          body: schema.body ?? z.any(),
+          query: schema.query ?? z.any(),
+          params: schema.params ?? z.any(),
+        });
+
   return (req: Request, res: Response, next: NextFunction) => {
-    const result = schema.safeParse({
+    const result = zodSchema.safeParse({
       body: req.body,
       query: req.query,
       params: req.params,
     });
 
     if (result.success) {
-      req.body = result.data.body;
-      req.query = result.data.query;
-      req.params = result.data.params;
+      if (schema && !("safeParse" in schema)) {
+        if (schema.body) req.body = result.data.body;
+        if (schema.query) req.query = result.data.query;
+        if (schema.params) req.params = result.data.params;
+      } else {
+        req.body = result.data.body;
+        req.query = result.data.query;
+        req.params = result.data.params;
+      }
       return next();
     }
 
