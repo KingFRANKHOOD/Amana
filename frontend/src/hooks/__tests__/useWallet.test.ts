@@ -58,12 +58,19 @@ function testnetAccount() {
 }
 
 describe("useWallet", () => {
+  const originalRefreshMs = process.env.NEXT_PUBLIC_WALLET_BALANCE_REFRESH_MS;
+
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    if (originalRefreshMs === undefined) {
+      delete process.env.NEXT_PUBLIC_WALLET_BALANCE_REFRESH_MS;
+    } else {
+      process.env.NEXT_PUBLIC_WALLET_BALANCE_REFRESH_MS = originalRefreshMs;
+    }
   });
 
   it("starts in a connecting state", () => {
@@ -167,7 +174,7 @@ describe("useWallet", () => {
     expect(result.current.balances).toEqual({});
   });
 
-  it("refreshes balances automatically every 30 seconds", async () => {
+  it("refreshes balances automatically every 30 seconds by default", async () => {
     jest.useFakeTimers({ doNotFake: ["queueMicrotask"] });
     connectedWallet();
     testnetAccount();
@@ -180,6 +187,24 @@ describe("useWallet", () => {
       await jest.advanceTimersByTimeAsync(30_000);
     });
 
+    expect(mockLoadAccount).toHaveBeenCalledTimes(2);
+  });
+
+  it("respects an overridden NEXT_PUBLIC_WALLET_BALANCE_REFRESH_MS interval", async () => {
+    process.env.NEXT_PUBLIC_WALLET_BALANCE_REFRESH_MS = "5000";
+    jest.useFakeTimers({ doNotFake: ["queueMicrotask"] });
+    connectedWallet();
+    testnetAccount();
+
+    renderHook(() => useWallet());
+
+    await waitFor(() => expect(mockLoadAccount).toHaveBeenCalledTimes(1));
+
+    // With the interval overridden to 5s, a second poll happens within 5s.
+    // If the hardcoded 30s default were still in effect, this would remain 1.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5_000);
+    });
     expect(mockLoadAccount).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,69 +1,36 @@
-name: CI
+            routes_d:
+              - 'routes-d/**'
 
-permissions:
-  contents: read
-  pull-requests: read
+      - name: Check for unpinned GitHub Actions
+        run: bash ./scripts/check-unpinned-actions.sh
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - '.github/workflows/ci.yml'
-      - 'backend/**'
-      - 'frontend/**'
-      - 'mobile/**'
-      - 'contracts/**'
-      - 'routes-d/**'
-      - 'scripts/**'
-      - 'infra/**'
-      - 'grafana/**'
-      - 'loki/**'
-      - 'promtail/**'
-      - 'pnpm-lock.yaml'
-  pull_request:
-    branches:
-      - main
-      - develop
+      - name: Check docs for known drift
+        run: bash ./scripts/check-doc-drift.sh
 
-jobs:
-  changes:
-    name: Detect Changed Stacks
-    runs-on: ubuntu-latest
-    outputs:
-      frontend: ${{ steps.filter.outputs.frontend }}
-      backend: ${{ steps.filter.outputs.backend }}
-      mobile: ${{ steps.filter.outputs.mobile }}
-      contracts: ${{ steps.filter.outputs.contracts }}
-      routes_d: ${{ steps.filter.outputs.routes_d }}
-      stack_matrix: ${{ steps.matrices.outputs.stack }}
-      trivy_matrix: ${{ steps.matrices.outputs.trivy }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check Playwright project references
+        run: bash ./scripts/test-playwright-projects.sh
 
-      - name: Detect changed paths
-        id: filter
-        # Pinned from dorny/paths-filter@v3
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        with:
-          filters: |
-            frontend:
-              - 'frontend/**'
-              - 'frontend/pnpm-lock.yaml'
-            backend:
-              - 'backend/**'
-              - 'backend/pnpm-lock.yaml'
-            mobile:
-              - 'mobile/**'
-              - 'mobile/pnpm-lock.yaml'
-            contracts:
-              - 'contracts/**'
-              - 'scripts/check-contract-deployment-safety.sh'
-              - 'scripts/deploy-contract-local.sh'
-              - 'scripts/test-deploy-contract-local.sh'
+      # Job-level `if:` conditions cannot reference the `matrix` context (it
+      # is only resolved once a matrix job actually starts), so the set of
+      # stacks to run is computed here instead and consumed as a plain
+      # `needs.changes.outputs.*` value by the matrix jobs below.
+      - name: Build CI matrices
+        id: matrices
+        run: |
+          stack_json=$(jq -nc \
+            --arg frontend "${{ steps.filter.outputs.frontend }}" \
+            --arg backend "${{ steps.filter.outputs.backend }}" \
+            --arg mobile "${{ steps.filter.outputs.mobile }}" \
+            --arg contracts "${{ steps.filter.outputs.contracts }}" \
+            '[{k:"frontend",v:$frontend},{k:"backend",v:$backend},{k:"mobile",v:$mobile},{k:"contracts",v:$contracts}] | map(select(.v=="true") | .k)')
+          trivy_json=$(jq -nc \
+            --arg frontend "${{ steps.filter.outputs.frontend }}" \
+            --arg backend "${{ steps.filter.outputs.backend }}" \
+            --arg routes_d "${{ steps.filter.outputs.routes_d }}" \
+            --arg contracts "${{ steps.filter.outputs.contracts }}" \
+            '[{k:"frontend",v:$frontend},{k:"backend",v:$backend},{k:"routes-d",v:$routes_d},{k:"contracts",v:$contracts}] | map(select(.v=="true") | .k)')
+          echo "stack=$stack_json" >> "$GITHUB_OUTPUT"
+          echo "trivy=$trivy_json" >> "$GITHUB_OUTPUT">>>>>>> origin/main
 
   stack:
     name: ${{ matrix.stack }} CI
