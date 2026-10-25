@@ -77,7 +77,7 @@ export default function Step3Review() {
     try {
       const createResponse = await api.trades.create(token, {
         sellerAddress: data.sellerAddress,
-        amountCngn,
+        amountUsdc: amountCngn,
         buyerLossBps,
         sellerLossBps,
       });
@@ -205,54 +205,36 @@ export default function Step3Review() {
         <ReviewRow label="Total Value" value={`${data.currency} ${total}`} />
         <ReviewRow label="USDC Amount" value={`${amountCngn} cNGN`} />
         <ReviewRow label="Seller Address" value={data.sellerAddress} />
-        <ReviewRow label="Loss Ratio" value={`Buyer ${data.buyerRatio}% / Seller ${data.sellerRatio}%`} />
-        <ReviewRow label="Delivery Window" value={`${data.deliveryDays} days`} />
-        {data.notes && <ReviewRow label="Notes" value={data.notes} />}
-      </div>
-
-      <div className="rounded-lg bg-gold-muted border border-gold/20 px-4 py-3 text-sm text-gold">
-        By submitting, you authorize a Stellar transaction to create an escrow trade,
-        locking {amountCngn} cNGN in the Amana escrow contract.
       </div>
 
       {error && (
-        <p className="text-status-danger text-sm text-center">{error}</p>
+        <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3">
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
       )}
-
-      <LegalDisclaimerModal
-        isOpen={showDisclaimer}
-        onAccept={handleDisclaimerAccept}
-        onDecline={() => setShowDisclaimer(false)}
-        lossRatio={{ buyer: data.buyerRatio * 100, seller: data.sellerRatio * 100 }}
-        tradeValueCngn={amountCngn}
-      />
 
       <div className="flex gap-3">
         <button
-          disabled={loading}
           onClick={() => setStep(2)}
-          className="flex-1 h-12 rounded-full border border-border-default text-text-secondary hover:border-border-hover transition-colors disabled:opacity-40"
+          disabled={loading}
+          className="h-12 flex-1 flex items-center justify-center rounded-full border border-border-default text-text-primary font-semibold disabled:opacity-50"
         >
           Back
         </button>
         <button
-          disabled={loading || !isFormValid}
           onClick={() => setShowDisclaimer(true)}
-          className="flex-1 h-12 rounded-full bg-gradient-gold-cta text-text-inverse font-semibold disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          disabled={loading || !isFormValid}
+          className="h-12 flex-1 flex items-center justify-center rounded-full bg-gradient-gold-cta text-text-inverse font-semibold disabled:opacity-50"
         >
-          {loading ? (
-            <>
-              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                <path d="M12 2a10 10 0 0 1 10 10" />
-              </svg>
-              Creating Trade...
-            </>
-          ) : (
-            "Lock Funds & Create Trade"
-          )}
+          {loading ? "Creating..." : "Create Trade"}
         </button>
       </div>
+
+      <LegalDisclaimerModal
+        isOpen={showDisclaimer}
+        onClose={() => setShowDisclaimer(false)}
+        onAccept={handleDisclaimerAccept}
+      />
     </div>
   );
 }

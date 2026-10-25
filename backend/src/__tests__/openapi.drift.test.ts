@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import request from "supertest";
 import YAML from "yamljs";
+import { GoalStatus, TradeStatus } from "@prisma/client";
 import { createApp } from "../app";
 
 const SPEC_PATH = path.resolve(__dirname, "../docs/openapi.yaml");
@@ -17,6 +18,14 @@ interface SchemaObject {
   enum?: unknown[];
   minimum?: number;
   maximum?: number;
+  minItems?: number;
+  maxItems?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  nullable?: boolean;
+  format?: string;
+  description?: string;
 }
 
 interface OpenApiSpec {
@@ -111,6 +120,7 @@ const IMPLEMENTED_ROUTES = [
   "/admin/evidence/verify/queue",
   "/webhooks",
   "/webhooks/{id}",
+  "/api/v1/csp-violation",
 ];
 
 describe("OpenAPI drift detection", () => {
@@ -237,7 +247,14 @@ describe("OpenAPI drift detection", () => {
         (p: any) => p.name === "status" && p.in === "query",
       ) as any;
       expect(statusParam).toBeDefined();
-      expect(statusParam?.schema?.enum).toEqual(
+      // The enum lives in the shared TradeStatus schema, referenced by $ref.
+      const statusSchema = statusParam?.schema?.$ref
+        ? requiredSchema(
+            spec,
+            statusParam.schema.$ref.replace("#/components/schemas/", ""),
+          )
+        : statusParam?.schema;
+      expect(statusSchema?.enum).toEqual(
         expect.arrayContaining(["CREATED", "FUNDED", "DISPUTED"]),
       );
     });
@@ -490,6 +507,309 @@ describe("OpenAPI drift detection", () => {
       const types = amountUsdcSchema?.oneOf?.map((s: SchemaObject) => s.type);
       expect(types).toContain("string");
       expect(types).toContain("number");
+    });
+  });
+
+  // ── #1106: comprehensive documentation for goals, treasury, csp,
+  // escrow-schedule, trade-watchlist and trade-export ─────────────────────
+
+  describe("#1106 newly documented endpoints", () => {
+    const parameters = () =>
+      (spec as any).components.parameters as Record<string, any>;
+
+    function queryParameterNames(path: string, method: string): string[] {
+      const operation = (spec.paths[path] as any)?.[method];
+      const declared: string[] = (operation?.parameters ?? []).map((param: any) =>
+        param.$ref
+          ? param.$ref.replace("#/components/parameters/", "")
+          : param.name,
+      );
+      return declared;
+    }
+
+    it("TradeStatus schema mirrors the Prisma TradeStatus enum", () => {
+      expect(requiredSchema(spec, "TradeStatus").enum).toEqual(
+        Object.values(TradeStatus),
+      );
+    });
+
+    it("GoalStatus schema mirrors the Prisma GoalStatus enum", () => {
+      expect(requiredSchema(spec, "GoalStatus").enum).toEqual(
+        Object.values(GoalStatus),
+      );
+    });
+
+    it("ListTradesStatusQuery status enum is the TradeStatus enum", () => {
+      expect(parameters().ListTradesStatusQuery.schema).toEqual({
+        $ref: "#/components/schemas/TradeStatus",
+      });
+    });
+
+    describe("goals", () => {
+      it("GET /goals documents the 404 raised for an unknown wallet", () => {
+        const operation = (spec.paths["/goals"] as any).get;
+        expect(operation.responses["404"]).toBeDefined();
+        expect(operation.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/GoalsAnalyticsResponse" },
+        );
+      });
+
+      it("GoalsAnalyticsResponse references GoalAnalytics with a GoalStatus", () => {
+        const response = requiredSchema(spec, "GoalsAnalyticsResponse");
+        expect(response.properties?.goals?.items?.$ref).toBe(
+          "#/components/schemas/GoalAnalytics",
+        );
+        const goal = requiredSchema(spec, "GoalAnalytics");
+        expect(goal.properties?.status?.$ref).toBe(
+          "#/components/schemas/GoalStatus",
+        );
+        expect(goal.required).toContain("vaultBalance");
+        expect(goal.required).toContain("isOnTrack");
+      });
+    });
+
+    describe("treasury", () => {
+      it("GET /treasury/balance documents balance, asset and contractId as required", () => {
+        const operation = (spec.paths["/treasury/balance"] as any).get;
+        expect(operation.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/TreasuryBalanceResponse" },
+        );
+        const schema = requiredSchema(spec, "TreasuryBalanceResponse");
+        expect(schema.required).toEqual(["balance", "asset", "contractId"]);
+      });
+
+      it("GET /treasury/config documents contractId, network and asset as required", () => {
+        const operation = (spec.paths["/treasury/config"] as any).get;
+        expect(operation.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/TreasuryConfigResponse" },
+        );
+        const schema = requiredSchema(spec, "TreasuryConfigResponse");
+        expect(schema.required).toEqual(["contractId", "network", "asset"]);
+      });
+
+      it("POST /treasury/withdraw documents body, 400, 403 and the 500 stub failure", () => {
+        const operation = (spec.paths["/treasury/withdraw"] as any).post;
+        const body = operation.requestBody.content["application/json"].schema;
+        expect(body.required).toEqual(["destination", "amount"]);
+        expect(operation.responses["400"]).toBeDefined();
+        expect(operation.responses["403"]).toBeDefined();
+        expect(operation.responses["500"]).toBeDefined();
+        expect(operation.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/UnsignedXdrResponse" },
+        );
+      });
+    });
+
+    describe("csp", () => {
+      it("POST /api/v1/csp-violation is documented as an unauthenticated 204 endpoint", () => {
+        const operation = (spec.paths["/api/v1/csp-violation"] as any).post;
+        expect(operation).toBeDefined();
+        expect(operation.security).toBeUndefined();
+        expect(operation.responses["204"]).toBeDefined();
+        expect(operation.responses["204"].content).toBeUndefined();
+      });
+
+      it("POST /api/v1/csp-violation accepts both CSP report content types", () => {
+        const operation = (spec.paths["/api/v1/csp-violation"] as any).post;
+        const content = operation.requestBody.content;
+        expect(content["application/csp-report"].schema).toEqual({
+          $ref: "#/components/schemas/CspReportBody",
+        });
+        expect(content["application/json"].schema).toEqual({
+          $ref: "#/components/schemas/CspReportBody",
+        });
+        expect(
+          requiredSchema(spec, "CspReportBody").properties?.["csp-report"]?.$ref,
+        ).toBe("#/components/schemas/CspViolationReport");
+      });
+
+      it("POST /api/v1/csp-violation documents the rate limit and payload cap", () => {
+        const operation = (spec.paths["/api/v1/csp-violation"] as any).post;
+        expect(operation.responses["429"]).toBeDefined();
+        expect(operation.responses["413"]).toBeDefined();
+      });
+    });
+
+    describe("escrow schedule", () => {
+      it("POST /trades/{id}/schedule documents the milestone validation constraints", () => {
+        const operation = (spec.paths["/trades/{id}/schedule"] as any).post;
+        const body = operation.requestBody.content["application/json"].schema;
+        expect(body).toEqual({ $ref: "#/components/schemas/EscrowScheduleRequest" });
+
+        const request = requiredSchema(spec, "EscrowScheduleRequest");
+        expect(request.properties?.milestones?.minItems).toBe(1);
+        expect(request.properties?.milestones?.maxItems).toBe(100);
+        expect(request.required).toEqual(["milestones"]);
+
+        const milestone = requiredSchema(spec, "EscrowMilestoneRequest");
+        expect(milestone.properties?.milestoneIndex?.minimum).toBe(0);
+        expect(milestone.properties?.amountUsdc?.pattern).toBe(
+          "^\\d+(\\.\\d{1,7})?$",
+        );
+        expect(milestone.properties?.dueAt?.format).toBe("date-time");
+        expect(milestone.properties?.conditionHash?.maxLength).toBe(64);
+        expect(milestone.required).toEqual([
+          "milestoneIndex",
+          "amountUsdc",
+          "dueAt",
+        ]);
+      });
+
+      it("GET and POST /trades/{id}/schedule share the EscrowReleaseSchedule response", () => {
+        const path = spec.paths["/trades/{id}/schedule"] as any;
+        expect(path.get.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/EscrowReleaseSchedule" },
+        );
+        expect(path.post.responses["201"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/EscrowReleaseSchedule" },
+        );
+
+        const schedule = requiredSchema(spec, "EscrowReleaseSchedule");
+        expect(schedule.required).toEqual([
+          "tradeId",
+          "milestoneCount",
+          "nextReleaseDate",
+          "milestones",
+        ]);
+        expect(schedule.properties?.nextReleaseDate?.nullable).toBe(true);
+        expect(schedule.properties?.milestones?.items?.$ref).toBe(
+          "#/components/schemas/EscrowReleaseMilestoneView",
+        );
+
+        const milestone = requiredSchema(spec, "EscrowReleaseMilestoneView");
+        expect(milestone.properties?.released?.type).toBe("boolean");
+        expect(milestone.properties?.conditionHash?.nullable).toBe(true);
+      });
+
+      it("both schedule operations document 401, 404 and the 500 store failure", () => {
+        const path = spec.paths["/trades/{id}/schedule"] as any;
+        for (const method of ["get", "post"]) {
+          expect(path[method].responses["401"]).toBeDefined();
+          expect(path[method].responses["404"]).toBeDefined();
+          expect(path[method].responses["500"]).toBeDefined();
+        }
+        expect(path.post.responses["400"]).toBeDefined();
+        expect(path.post.responses["403"]).toBeDefined();
+      });
+    });
+
+    describe("trade watchlist", () => {
+      it("GET /trades/watched documents page/limit and a paginated response", () => {
+        const operation = (spec.paths["/trades/watched"] as any).get;
+        expect(queryParameterNames("/trades/watched", "get").sort()).toEqual([
+          "ListTradesLimitQuery",
+          "ListTradesPageQuery",
+        ]);
+        expect(operation.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/WatchedTradeListResponse" },
+        );
+        expect(operation.responses["400"]).toBeDefined();
+
+        const response = requiredSchema(spec, "WatchedTradeListResponse");
+        expect(response.required).toEqual(["items", "pagination"]);
+        expect(response.properties?.items?.items?.$ref).toBe(
+          "#/components/schemas/WatchedTrade",
+        );
+        expect(response.properties?.pagination?.$ref).toBe(
+          "#/components/schemas/Pagination",
+        );
+      });
+
+      it("WatchedTrade documents the trade row plus watchedAt", () => {
+        const watched = requiredSchema(spec, "WatchedTrade");
+        expect(watched.properties?.status?.$ref).toBe(
+          "#/components/schemas/TradeStatus",
+        );
+        expect(watched.properties?.watchedAt?.format).toBe("date-time");
+        expect(watched.required).toContain("watchedAt");
+        expect(watched.required).toContain("tradeId");
+      });
+
+      it("POST /trades/{id}/watch documents the watch record and error statuses", () => {
+        const operation = (spec.paths["/trades/{id}/watch"] as any).post;
+        expect(operation.responses["201"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/WatchResponse" },
+        );
+        expect(operation.responses["400"]).toBeDefined();
+        expect(operation.responses["401"]).toBeDefined();
+        expect(operation.responses["403"]).toBeDefined();
+        expect(operation.responses["404"]).toBeDefined();
+        expect(
+          requiredSchema(spec, "WatchResponse").properties?.watch?.$ref,
+        ).toBe("#/components/schemas/WatchRecord");
+      });
+
+      it("DELETE /trades/{id}/watch documents the removed boolean", () => {
+        const operation = (spec.paths["/trades/{id}/watch"] as any).delete;
+        expect(operation.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/WatchRemovalResponse" },
+        );
+        const removal = requiredSchema(spec, "WatchRemovalResponse");
+        expect(removal.properties?.removed?.type).toBe("boolean");
+        expect(removal.required).toEqual(["removed"]);
+      });
+    });
+
+    describe("trade export", () => {
+      it("GET /trades/export documents format, status, date filters and pagination", () => {
+        expect(queryParameterNames("/trades/export", "get")).toEqual([
+          "format",
+          "ListTradesStatusQuery",
+          "dateFrom",
+          "dateTo",
+          "from",
+          "to",
+          "ListTradesPageQuery",
+          "TradeExportLimitQuery",
+        ]);
+      });
+
+      it("GET /trades/export documents the JSON page and the CSV download", () => {
+        const operation = (spec.paths["/trades/export"] as any).get;
+        expect(operation.responses["200"].content["application/json"].schema).toEqual(
+          { $ref: "#/components/schemas/TradeExportListResponse" },
+        );
+        expect(operation.responses["200"].content["text/csv"].schema.type).toBe(
+          "string",
+        );
+        expect(operation.responses["400"]).toBeDefined();
+        expect(operation.responses["401"]).toBeDefined();
+      });
+
+      it("export pagination defaults match the route (page 1, limit 50, max 100)", () => {
+        expect(parameters().ListTradesPageQuery.schema).toEqual({
+          type: "integer",
+          minimum: 1,
+          default: 1,
+        });
+        expect(parameters().TradeExportLimitQuery.schema).toEqual({
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          default: 50,
+        });
+      });
+
+      it("TradeExportRow documents the snake_case export columns", () => {
+        const row = requiredSchema(spec, "TradeExportRow");
+        expect(row.required).toEqual([
+          "trade_id",
+          "buyer",
+          "seller",
+          "amount",
+          "asset",
+          "status",
+          "created_at",
+          "completed_at",
+          "fee",
+          "dispute_flag",
+        ]);
+        expect(row.properties?.status?.$ref).toBe(
+          "#/components/schemas/TradeStatus",
+        );
+        expect(row.properties?.dispute_flag?.type).toBe("boolean");
+        expect(row.properties?.completed_at?.nullable).toBe(true);
+      });
     });
   });
 

@@ -171,7 +171,7 @@ export function getTraceHeaders(req: Request): Record<string, string> {
 
   return {
     'x-correlation-id': traced.correlationId,
-    '-x-request-id': traced.requestId,
+    'x-request-id': traced.requestId,
     ...(spanContext.trace_id && { 'x-trace-id': spanContext.trace_id }),
     ...(spanContext.span_id && { 'x-span-id': spanContext.span_id }),
   };

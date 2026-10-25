@@ -117,16 +117,27 @@ describe("API Client", () => {
     });
 
     it("uses the 30 second default timeout", async () => {
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: async () => ({ data: "test" }),
-        } as Response),
+      jest.useFakeTimers();
+      global.fetch = jest.fn((_url, init) =>
+        new Promise((_resolve, reject) => {
+          const signal = (init as RequestInit).signal;
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        }),
       );
 
-      await request<{ data: string }>("/test");
+      const pending = request<{ data: string }>("/test");
 
-      expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000);
+      // One millisecond before the default timeout — must still be pending.
+      jest.advanceTimersByTime(DEFAULT_REQUEST_TIMEOUT_MS - 1);
+      await expect(Promise.race([pending, Promise.resolve("still-pending")])).resolves.toBe("still-pending");
+
+      // Advance past the default timeout — must now reject.
+      jest.advanceTimersByTime(1);
+      await expect(pending).rejects.toThrow(`Request timed out after ${DEFAULT_REQUEST_TIMEOUT_MS}ms`);
+
+      jest.useRealTimers();
     });
   });
 

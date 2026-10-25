@@ -26,3 +26,8 @@ Specific files, directories, or components in scope for this task:
 
 ## Related Issues / PRs
 - Links to related issues or pull requests.
+
+## Bounty & Payment
+If this task carries a bounty, note the amount and currency here, and link to the
+issue or PR where the payout was recorded (e.g. the closed bounty issue or the
+payment transaction) so contributors can verify that past bounties were paid out.

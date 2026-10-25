@@ -1,11 +1,20 @@
 import { Router } from "express";
+import { z } from "zod";
+import { StrKey } from "@stellar/stellar-sdk";
 import { prisma } from "../lib/db";
 import { ReputationService } from "../services/reputation.service";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { validateRequest } from "../middleware/validateRequest";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 const router = Router();
 const reputationService = new ReputationService(prisma);
+const publicAddressSchema = z.object({
+  address: z.string().refine((value: string) => StrKey.isValidEd25519PublicKey(value), {
+    message: "Invalid Stellar public key",
+  }),
+});
 
 router.get(
   "/me/reputation",
@@ -26,6 +35,7 @@ router.get(
 
 router.get(
   "/:address/reputation",
+  validateRequest({ params: publicAddressSchema }),
   async (req, res, next) => {
     try {
       const raw = req.params.address;

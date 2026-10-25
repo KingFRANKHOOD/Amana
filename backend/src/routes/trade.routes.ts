@@ -9,11 +9,13 @@ import { EncryptionService } from "../services/encryption.service";
 import { getAdminAllowlistLowercase } from "../lib/accessControl";
 import { validateRequest } from "../middleware/validateRequest";
 import { idempotencyMiddleware } from "../middleware/idempotency";
-import { 
-  createTradeSchema, 
-  tradeIdParamSchema, 
-  listTradesQuerySchema, 
-  initiateDisputeSchema 
+import {
+  createTradeSchema,
+  tradeIdParamSchema,
+  listTradesQuerySchema,
+  initiateDisputeSchema,
+  submitSignedTransactionSchema,
+  rotateKeySchema,
 } from "../schemas/trade.schemas";
 import { RATE_LIMIT_CONFIG } from "../config/rateLimit";
 import { createWalletRateLimiter } from "../lib/rateLimit";
@@ -49,6 +51,16 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
     idempotencyMiddleware,
     validateRequest({ params: tradeIdParamSchema }),
     tradeController.buildDepositTx
+  );
+
+  router.post(
+    "/:id/submit",
+    authMiddleware,
+    validateRequest({
+      params: tradeIdParamSchema,
+      body: submitSignedTransactionSchema,
+    }),
+    tradeController.submitSignedTransaction,
   );
 
   router.post(
@@ -119,7 +131,7 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
   router.post(
     "/:id/rotate-key",
     authMiddleware,
-    validateRequest({ params: tradeIdParamSchema }),
+    validateRequest({ params: tradeIdParamSchema, body: rotateKeySchema }),
     async (req: AuthRequest, res, next: NextFunction) => {
       const callerAddress = requireWalletFromJwt(req, res);
       if (!callerAddress) {
@@ -128,6 +140,7 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
 
       try {
         const tradeId = req.params.id as string;
+        const { keyVersion } = req.body as { keyVersion: string };
         const trade = await prisma.trade.findUnique({ where: { tradeId } });
         if (!trade) {
           res.status(404).json({ error: "Trade not found" });
@@ -144,7 +157,6 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
           return;
         }
 
-        const { keyVersion = "v2" } = req.body as { keyVersion?: string };
         const encryptionService = new EncryptionService();
 
         const notes = await prisma.tradeNote.findMany({
@@ -153,23 +165,34 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
         });
 
         await Promise.all(
-          notes.map((note) =>
+          notes.map(async (note) =>
             prisma.tradeNote.update({
               where: { id: note.id },
-              data: { content: encryptionService.rotateCiphertext(note.content, tradeId, keyVersion) },
+              data: { content: await encryptionService.rotateCiphertext(note.content, tradeId, keyVersion) },
             }),
           ),
         );
 
         const manifest = await prisma.deliveryManifest.findUnique({ where: { tradeId } });
         if (manifest) {
+          const [
+            driverName,
+            driverIdNumber,
+            vehicleRegistration,
+            routeDescription,
+          ] = await Promise.all([
+            encryptionService.rotateCiphertext(manifest.driverName, tradeId, keyVersion),
+            encryptionService.rotateCiphertext(manifest.driverIdNumber, tradeId, keyVersion),
+            encryptionService.rotateCiphertext(manifest.vehicleRegistration, tradeId, keyVersion),
+            encryptionService.rotateCiphertext(manifest.routeDescription, tradeId, keyVersion),
+          ]);
           await prisma.deliveryManifest.update({
             where: { tradeId },
             data: {
-              driverName: encryptionService.rotateCiphertext(manifest.driverName, tradeId, keyVersion),
-              driverIdNumber: encryptionService.rotateCiphertext(manifest.driverIdNumber, tradeId, keyVersion),
-              vehicleRegistration: encryptionService.rotateCiphertext(manifest.vehicleRegistration, tradeId, keyVersion),
-              routeDescription: encryptionService.rotateCiphertext(manifest.routeDescription, tradeId, keyVersion),
+              driverName,
+              driverIdNumber,
+              vehicleRegistration,
+              routeDescription,
             },
           });
         }

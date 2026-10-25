@@ -8,9 +8,10 @@ import {
   isConnected,
 } from "@stellar/freighter-api";
 import { Horizon } from "@stellar/stellar-sdk";
-import { getStellarHorizonUrl } from "@/lib/api/env";
-
-const BALANCE_REFRESH_INTERVAL_MS = 30_000;
+import {
+  getStellarHorizonUrl,
+  getWalletBalanceRefreshIntervalMs,
+} from "@/lib/api/env";
 
 interface UseWalletResult {
   publicKey: string | null;
@@ -106,7 +107,7 @@ export function useWallet(): UseWalletResult {
   useEffect(() => {
     const interval = setInterval(() => {
       void refreshBalances();
-    }, BALANCE_REFRESH_INTERVAL_MS);
+    }, getWalletBalanceRefreshIntervalMs());
 
     return () => clearInterval(interval);
   }, [refreshBalances]);

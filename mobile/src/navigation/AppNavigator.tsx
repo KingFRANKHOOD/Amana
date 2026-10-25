@@ -1,8 +1,8 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useCallback, useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import type { LinkingOptions } from '@react-navigation/native';
+import type { LinkingOptions, NavigationProp } from '@react-navigation/native';
 
 import type { RootStackParamList } from '../types/navigation';
 import { useDeepLink } from '../hooks/useDeepLink';
@@ -50,24 +50,25 @@ interface AppNavigatorProps {
 }
 
 export function AppNavigator({ isAuthenticated }: AppNavigatorProps) {
-  const { handleDeepLink, pendingDeepLink } = useDeepLink();
+  const { pendingDeepLink, navigateToDeepLink } = useDeepLink();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
-  useEffect(() => {
-    if (pendingDeepLink) {
-      handleDeepLink(pendingDeepLink);
+  // Consume the pending deep link once the container can navigate. Re-runs
+  // when the target or auth state changes (navigateToDeepLink depends on both).
+  const flushDeepLink = useCallback(() => {
+    if (pendingDeepLink && navigationRef.isReady()) {
+      navigateToDeepLink(navigationRef as unknown as NavigationProp<RootStackParamList>);
     }
-  }, [pendingDeepLink, handleDeepLink]);
+  }, [pendingDeepLink, navigateToDeepLink, navigationRef]);
+
+  useEffect(flushDeepLink, [flushDeepLink]);
 
   return (
     <NavigationContainer
+      ref={navigationRef}
       linking={linking}
       fallback={null}
-      onReady={() => {
-        // Handle any initial deep link
-        if (pendingDeepLink) {
-          handleDeepLink(pendingDeepLink);
-        }
-      }}
+      onReady={flushDeepLink}
     >
       <Suspense fallback={<ScreenFallback />}>
         <Stack.Navigator

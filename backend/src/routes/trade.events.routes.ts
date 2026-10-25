@@ -1,9 +1,19 @@
 import { NextFunction, Request, Response, Router } from "express";
+import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { validateRequest } from "../middleware/validateRequest";
 import { AuthRequest } from "../services/auth.service";
 import { tradeStatusEvents, TradeStatusEvent } from "../services/tradeStatusEvents";
+
+const eventStreamQuerySchema = z.object({
+  token: z.string().min(1).optional(),
+  trade_ids: z
+    .string()
+    .refine((value) => value.split(",").every((id) => id.trim() !== "" && /^[A-Za-z0-9_-]+$/.test(id.trim())), { message: "trade_ids must be a comma-separated list of trade IDs" })
+    .optional(),
+});
 
 function parseTradeIds(value: unknown): Set<string> {
   if (typeof value !== "string" || value.trim() === "") return new Set();
@@ -26,7 +36,7 @@ function allowEventSourceToken(req: Request, _res: Response, next: NextFunction)
 export function createTradeEventsRouter(prisma: PrismaClient = defaultPrisma) {
   const router = Router();
 
-  router.get("/events/stream", allowEventSourceToken, authMiddleware, (req: Request, res: Response) => {
+  router.get("/events/stream", allowEventSourceToken, authMiddleware, validateRequest({ query: eventStreamQuerySchema }), (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     const walletAddress = authReq.user?.walletAddress?.trim();
     if (!walletAddress) {

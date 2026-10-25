@@ -712,7 +712,7 @@ Loki-based alert rules are defined in `grafana/provisioning/alerting/`. Key thre
 - [`docs/ERROR_LOGGING_STANDARDS.md`](./ERROR_LOGGING_STANDARDS.md) — AppError, error correlation IDs, Zod error format
 - [`docs/audit-logging.md`](./audit-logging.md) — Tamper-evident audit trail for business events
 - [`docs/DATA_RETENTION_POLICY.md`](./DATA_RETENTION_POLICY.md) — Retention schedules for all data including logs
-- [`DISTRIBUTED_TRACING_GUIDE.md`](../DISTRIBUTED_TRACING_GUIDE.md) — OpenTelemetry setup, Jaeger, span creation
+- [`DISTRIBUTED_TRACING_GUIDE.md`](../backend/DISTRIBUTED_TRACING_GUIDE.md) — OpenTelemetry setup, Jaeger, span creation
 - [`docs/PROMETHEUS_METRICS.md`](./PROMETHEUS_METRICS.md) — Metrics (not logs) collected per route and queue
 - [`backend/src/lib/logging.ts`](../backend/src/lib/logging.ts) — `getContextualLogger`, `getJobContextualLogger`, `extractTraceContext`
 - [`backend/src/middleware/logger.ts`](../backend/src/middleware/logger.ts) — Pino root logger and pinoHttp config

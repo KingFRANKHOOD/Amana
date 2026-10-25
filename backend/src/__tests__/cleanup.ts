@@ -5,6 +5,7 @@
  * forceExit is removed from the Jest config (issue #1080).
  */
 
+declare const afterAll: (fn: () => Promise<void> | void) => void;
 import { prisma } from "../lib/db";
 
 /**

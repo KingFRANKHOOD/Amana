@@ -105,6 +105,18 @@ describe("ReputationService", () => {
       expect(result.completedTrades).toBe(3);
     });
 
+    it("labels history as buyer when stored buyerAddress is uppercase (issue #1630)", async () => {
+      setMockTrades([]);
+      setMockDisputes([]);
+      mockPrisma.trade.findMany.mockResolvedValue([
+        makeTrade({ tradeId: "trade-upper-1", buyerAddress: "GUSER" }),
+      ]);
+
+      const result = await service.getUserReputation("GUSER");
+
+      expect(result.history[0]?.event).toContain("as buyer");
+    });
+
     it("should apply dispute penalties to trust score", async () => {
       setMockTrades([]);
       setMockDisputes([
@@ -126,8 +138,29 @@ describe("ReputationService", () => {
 
       const result = await service.getUserReputation("guser");
 
-      expect(result.trustScore).toBe(38);
+      // Only the initiation penalty applies: a RESOLVED status carries no outcome.
+      expect(result.trustScore).toBe(46);
       expect(result.disputedTrades).toBe(0);
+    });
+
+    it("does not treat a resolved dispute as lost (issue #1400)", async () => {
+      setMockTrades([]);
+      setMockDisputes([
+        {
+          id: 1,
+          tradeId: "trade-001",
+          status: "RESOLVED",
+          initiator: "guser",
+          createdAt: new Date("2025-01-10"),
+        },
+      ]);
+
+      const result = await service.getUserReputation("guser");
+
+      expect(result.trustScore).toBe(48);
+      expect(result.history).toHaveLength(1);
+      expect(result.history[0]!.impact).toBe(-2);
+      expect(result.history[0]!.event).not.toMatch(/against you/);
     });
 
     it("should compute success rate correctly", async () => {

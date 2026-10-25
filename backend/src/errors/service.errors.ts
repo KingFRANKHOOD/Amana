@@ -1,4 +1,5 @@
-import { AppError } from "./errorCodes";
+import { AppError } from './appError';
+import { ErrorCode } from './errorCodes';
 
 export interface ClassifiedServiceErrorOptions {
   code: string;
@@ -15,10 +16,14 @@ export class ClassifiedServiceError extends AppError {
     public readonly service: "stellar" | "database" | "ipfs" | "cache",
     options: ClassifiedServiceErrorOptions,
   ) {
-    super(options.code, options.message, options.httpStatus, {
-      service,
-      retryable: options.retryable,
-      ...(options.details ?? {}),
+    super(options.message, {
+      code: options.code as ErrorCode,
+      statusCode: options.httpStatus,
+      details: {
+        service,
+        retryable: options.retryable,
+        ...(options.details ?? {}),
+      },
     });
     this.name = this.constructor.name;
     this.retryable = options.retryable;

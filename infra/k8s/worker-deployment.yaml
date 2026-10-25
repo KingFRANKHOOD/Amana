@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: worker-deployment
+  namespace: default
   labels:
     app: worker
 spec:
@@ -14,21 +15,82 @@ spec:
       labels:
         app: worker
     spec:
+      securityContext:
+        fsGroup: 10001
       containers:
-      - name: worker
-        image: busybox:1.36
-        command: ["sh", "-c", "echo Worker started; sleep 3600"]
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          runAsGroup: 1000
-          readOnlyRootFilesystem: true
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: ["ALL"]
-        volumeMounts:
-        - name: tmp
-          mountPath: /tmp
+        - name: worker
+          # Same image as the backend; the worker-only entrypoint boots the
+          # BullMQ consumers (webhook/notification/export + scheduled workers)
+          # without starting the HTTP API. Previously this ran a busybox sleep
+          # loop, so no process ever consumed the queues (see #1478).
+          image: kingfrankhood/amana-backend:1.0.0
+          command: ["node", "dist/worker.js"]
+          envFrom:
+            - configMapRef:
+                name: amana-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/amana"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: REDIS_PASSWORD
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/0"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: JWT_SECRET
+            - name: PINATA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: PINATA_API_KEY
+            - name: PINATA_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: PINATA_SECRET
+            - name: PINATA_JWT
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: PINATA_JWT
+            - name: IPFS_URL_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: IPFS_URL_SIGNING_SECRET
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
       volumes:
-      - name: tmp
-        emptyDir: {}
+        - name: tmp
+          emptyDir: {}

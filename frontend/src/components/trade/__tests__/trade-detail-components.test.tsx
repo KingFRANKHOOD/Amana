@@ -127,6 +127,54 @@ describe("trade detail component coverage", () => {
     expect(screen.getByText("SMART CONTRACT SECURED")).toBeInTheDocument();
   });
 
+  it("uses the supplied ngnExchangeRate instead of a hardcoded constant", () => {
+    render(
+      <FinancialSummary trade={{ ...baseTrade, ngnExchangeRate: 2000 }} />,
+    );
+
+    expect(screen.getByText(/₦50,000 NGN/)).toBeInTheDocument();
+    expect(screen.queryByText(/NGN value is an estimate/)).not.toBeInTheDocument();
+  });
+
+  it("labels the NGN value as an estimate when no rate is supplied", () => {
+    render(<FinancialSummary trade={baseTrade} />);
+
+    expect(screen.getByText(/NGN value is an estimate/)).toBeInTheDocument();
+  });
+
+  it("fires onRaiseDispute and onVerifyPoD when their buttons are clicked", async () => {
+    const user = userEvent.setup();
+    const onRaiseDispute = jest.fn();
+    const onVerifyPoD = jest.fn();
+    render(
+      <ActionBar
+        trade={{ ...baseTrade, status: "IN TRANSIT" }}
+        onConfirmDelivery={jest.fn()}
+        onRaiseDispute={onRaiseDispute}
+        onVerifyPoD={onVerifyPoD}
+        confirmingDelivery={false}
+      />,
+    );
+
+    await user.click(screen.getByText("Raise Dispute"));
+    await user.click(screen.getByText("PoD Verification"));
+    expect(onRaiseDispute).toHaveBeenCalledTimes(1);
+    expect(onVerifyPoD).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Raise Dispute and PoD Verification when no handlers are provided", () => {
+    render(
+      <ActionBar
+        trade={{ ...baseTrade, status: "IN TRANSIT" }}
+        onConfirmDelivery={jest.fn()}
+        confirmingDelivery={false}
+      />,
+    );
+
+    expect(screen.getByText("Raise Dispute").closest("button")).toBeDisabled();
+    expect(screen.getByText("PoD Verification").closest("button")).toBeDisabled();
+  });
+
   it("renders timeline events in declared order", () => {
     render(<TradeTimeline events={baseTrade.timeline} />);
 
@@ -194,6 +242,36 @@ describe("trade detail component coverage", () => {
     );
     expect(screen.getByText("Release Funds")).toBeInTheDocument();
     expect(screen.queryByText("Raise Dispute")).not.toBeInTheDocument();
+  });
+
+  it("shows ActionBar in-transit actions for a backend FUNDED status", () => {
+    render(
+      <ActionBar
+        trade={{ ...baseTrade, status: "FUNDED" as unknown as TradeStatus }}
+        onConfirmDelivery={jest.fn()}
+        confirmingDelivery={false}
+      />,
+    );
+
+    expect(screen.getByText("Raise Dispute")).toBeInTheDocument();
+    expect(screen.getByText("PoD Verification")).toBeInTheDocument();
+    expect(screen.getByText("Confirm Delivery")).toBeInTheDocument();
+  });
+
+  it("links ContractInfo wallets to the public explorer on mainnet", () => {
+    const original = process.env.NEXT_PUBLIC_STELLAR_NETWORK;
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK = "public";
+    try {
+      render(<ContractInfo trade={baseTrade} />);
+      const links = screen.getAllByLabelText("Open wallet in Stellar Expert");
+      expect(links).toHaveLength(2);
+      links.forEach((link) =>
+        expect(link.getAttribute("href")).toContain("/explorer/public/"),
+      );
+    } finally {
+      if (original === undefined) delete process.env.NEXT_PUBLIC_STELLAR_NETWORK;
+      else process.env.NEXT_PUBLIC_STELLAR_NETWORK = original;
+    }
   });
 
   it("renders without optional timelines", () => {

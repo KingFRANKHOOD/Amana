@@ -37,9 +37,25 @@ export default function SecuritySettingsScreen() {
 
     setSaving(true);
     try {
-      if (next) {
-        const passed = await authenticateWithBiometrics('Enable Amana app lock');
-        if (!passed) return;
+      // Always require biometric authentication for any state change (enable or disable)
+      const passed = await authenticateWithBiometrics(
+        next ? 'Enable Amana app lock' : 'Disable Amana app lock'
+      );
+      if (!passed) return;
+
+      // Additional confirmation when disabling
+      if (!next) {
+        const confirmed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Disable App Lock?',
+            'Your app will no longer be protected by biometrics. Anyone with access to your device will be able to open Amana.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Disable', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+        if (!confirmed) return;
       }
 
       await setBiometricEnabled(next);

@@ -1,10 +1,11 @@
-import { Router } from "express";
+import { NextFunction, Router } from "express";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { WalletService } from "../services/wallet.service";
 import { PathPaymentService } from "../services/pathPayment.service";
 import { TOKEN_CONFIG } from "../config/token";
+import { isAppError } from "../errors/appError";
 
 export const walletRoutes = Router();
 const walletService = new WalletService();
@@ -30,7 +31,13 @@ const pathPaymentQuoteQuerySchema = z.object({
     .string()
     .regex(/^G[A-Z0-9]{55}$/, "sourceAssetIssuer must be a valid Stellar public key")
     .optional(),
-});
+}).refine(
+  (q) => q.sourceAsset === "XLM" || q.sourceAsset === "native" || !!q.sourceAssetIssuer,
+  {
+    message: "sourceAssetIssuer is required for non-native source assets",
+    path: ["sourceAssetIssuer"],
+  },
+);
 
 walletRoutes.get("/balance", authMiddleware, async (req: any, res) => {
   try {
@@ -50,7 +57,7 @@ walletRoutes.get(
   "/path-payment-quote",
   authMiddleware,
   pathPaymentQuoteLimiter,
-  async (req, res) => {
+  async (req, res, next: NextFunction) => {
     const parsed = pathPaymentQuoteQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return res.status(400).json({
@@ -65,17 +72,21 @@ walletRoutes.get(
       const quotes = await pathPaymentService.getPathPaymentQuote(
         sourceAmount,
         sourceAsset,
-        sourceAssetIssuer as string
+        sourceAssetIssuer
       );
       res.json({ routes: quotes });
     } catch (error: any) {
+      if (isAppError(error)) {
+        return next(error);
+      }
       if (error?.response?.status === 404 || error?.status === 404) {
         return res.status(404).json({ error: "No payment path found" });
       }
       if (error?.isAxiosError || error?.response) {
         return res.status(502).json({ error: "Upstream payment provider error" });
       }
-      res.status(503).json({ error: "Failed to fetch quotes" });
+      // Fallback for unexpected plain errors — preserve distinction where possible
+      return next(error);
     }
   }
 );

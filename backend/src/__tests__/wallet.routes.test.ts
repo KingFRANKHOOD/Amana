@@ -10,6 +10,8 @@ import { AuthService } from "../services/auth.service";
 jest.mock("../services/wallet.service");
 jest.mock("../services/pathPayment.service");
 
+const NGN_ISSUER = "GASIVS63V6PAKAMW3ZYEX2RNNB3Q4UMRKDIQHNMH3LRNTSWVHXMTANKE";
+
 const app = express();
 app.use(express.json());
 app.use("/wallet", walletRoutes);
@@ -95,6 +97,7 @@ describe("Wallet Routes", () => {
         .query({
           sourceAmount: "1000",
           sourceAsset: "NGN",
+          sourceAssetIssuer: NGN_ISSUER,
         });
 
       expect(res.status).toBe(200);
@@ -102,8 +105,24 @@ describe("Wallet Routes", () => {
       expect(PathPaymentService.prototype.getPathPaymentQuote).toHaveBeenCalledWith(
         "1000",
         "NGN",
-        undefined
+        NGN_ISSUER
       );
+    });
+
+    it("should return 400 when a non-native sourceAsset omits sourceAssetIssuer", async () => {
+      const res = await request(app)
+        .get("/wallet/path-payment-quote")
+        .set("Authorization", `Bearer ${token}`)
+        .query({
+          sourceAmount: "1000",
+          sourceAsset: "NGN",
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.details.sourceAssetIssuer).toEqual([
+        "sourceAssetIssuer is required for non-native source assets",
+      ]);
+      expect(PathPaymentService.prototype.getPathPaymentQuote).not.toHaveBeenCalled();
     });
 
     it("should return 400 without required query parameters", async () => {

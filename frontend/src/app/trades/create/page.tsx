@@ -1,7 +1,6 @@
 "use client";
-import { TradeProvider, useTradeStep, useTradeData } from "./TradeContext";
+import { TradeProvider, TradeDataSchema, useTradeStep, useTradeData, type TradeData } from "./TradeContext";
 import { useDraftForm } from "@/hooks/useDraftForm";
-import { z } from "zod";
 import Step1Details from "./steps/Step1Details";
 import Step2Negotiation from "./steps/Step2Negotiation";
 import Step3Review from "./steps/Step3Review";
@@ -52,14 +51,14 @@ function StepIndicator() {
 
 function CreateTradeInner() {
   const { step } = useTradeStep();
-  const draft = useDraftForm("trade:create", z.any());
+  const draft = useDraftForm<TradeData>("trade:create", TradeDataSchema);
   const { update } = useTradeData();
   const drafts = draft.list();
   const hasDrafts = drafts.length > 0;
 
   function handleRestoreLatest() {
     const loaded = draft.load();
-    if (loaded) update(loaded as any);
+    if (loaded) update(loaded);
   }
   return (
     <div className="min-h-screen bg-bg-primary flex items-start justify-center px-4 py-12">

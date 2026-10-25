@@ -1,6 +1,8 @@
 import { Response, Router } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.middleware";
+import { validateRequest } from "../middleware/validateRequest";
+import { tradeIdParamSchema } from "../schemas/trade.notes.schemas";
 import { AuthRequest } from "../services/auth.service";
 import {
   ManifestAccessDeniedError,
@@ -22,11 +24,14 @@ const deliveryWindowSchema = z.object({
   path: ["from"],
 });
 
+const noUnsafeHtml = (value: string) => !/[<>]/.test(value) && !/(?:on\w+\s*=|javascript:|data:text\/html)/i.test(value);
+
 const tradeManifestBodySchema = z.object({
-  driverName: z.string().trim().min(1),
-  phone: z.string().trim().min(5),
-  licensePlate: z.string().trim().min(1),
-  vehicleType: z.string().trim().min(1),
+  driverName: z.string().trim().min(1).refine(noUnsafeHtml, "Driver name contains unsupported HTML or script content"),
+  phone: z.string().trim().min(5).refine(noUnsafeHtml, "Phone contains unsupported HTML or script content"),
+  licensePlate: z.string().trim().min(1).refine(noUnsafeHtml, "License plate contains unsupported HTML or script content"),
+  vehicleType: z.string().trim().min(1).refine(noUnsafeHtml, "Vehicle type contains unsupported HTML or script content"),
+  driverIdNumber: z.string().trim().min(1).optional(),
   estimatedDeliveryWindow: deliveryWindowSchema,
 });
 
@@ -49,7 +54,7 @@ export function createTradeManifestRouter(
 ) {
   const router = Router({ mergeParams: true });
 
-  router.get("/", authMiddleware, async (req: AuthRequest, res: Response, next) => {
+  router.get("/", authMiddleware, validateRequest({ params: tradeIdParamSchema }), async (req: AuthRequest, res: Response, next) => {
     const walletAddress = caller(req, res);
     if (!walletAddress) return;
 
@@ -72,7 +77,7 @@ export function createTradeManifestRouter(
     }
   });
 
-  router.post("/", authMiddleware, async (req: AuthRequest, res: Response, next) => {
+  router.post("/", authMiddleware, validateRequest({ params: tradeIdParamSchema, body: tradeManifestBodySchema }), async (req: AuthRequest, res: Response, next) => {
     const walletAddress = caller(req, res);
     if (!walletAddress) return;
 
@@ -107,7 +112,7 @@ export function createTradeManifestRouter(
         tradeId,
         callerAddress: walletAddress,
         driverName: parsed.data.driverName,
-        driverIdNumber: parsed.data.phone,
+        driverIdNumber: parsed.data.driverIdNumber ?? "N/A",
         vehicleRegistration: parsed.data.licensePlate,
         routeDescription,
         expectedDeliveryAt: parsed.data.estimatedDeliveryWindow.to,

@@ -20,6 +20,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKEND_DIR="$ROOT_DIR/backend"
 
+# shellcheck source=lib/db-url.sh
+source "$SCRIPT_DIR/lib/db-url.sh"
+
 MODE=""
 TARGET=""
 ENV="staging"
@@ -76,9 +79,12 @@ case "$MODE" in
     echo "  → Restoring from backup: $TARGET"
     echo "  → Dropping and recreating database..."
     DB_NAME=$(psql "$DB_URL" -At -c "SELECT current_database()")
-    DB_HOST_URL="${DB_URL%/$DB_NAME}"
-    psql "$DB_HOST_URL/postgres" -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" -q
-    psql "$DB_HOST_URL/postgres" -c "CREATE DATABASE \"$DB_NAME\";" -q
+    # Derive the maintenance URL safely: DATABASE_URL may carry query
+    # parameters (e.g. ?sslmode=require on hosted Postgres), in which case
+    # `${DB_URL%/$DB_NAME}` would not match and leave the URL untouched.
+    DB_MAINT_URL="$(amana_pg_maintenance_url "$DB_URL")"
+    psql "$DB_MAINT_URL" -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" -q
+    psql "$DB_MAINT_URL" -c "CREATE DATABASE \"$DB_NAME\";" -q
     echo "  → Restoring data..."
     if [[ "$TARGET" == *.gz ]]; then
       gunzip -c "$TARGET" | psql "$DB_URL" -q

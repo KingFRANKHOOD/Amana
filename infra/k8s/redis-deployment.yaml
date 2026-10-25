@@ -23,11 +23,11 @@ spec:
           command:
             - redis-server
             - --requirepass
-			- $(REDIS_PASSWORD)
+            - $(REDIS_PASSWORD)
           ports:
             - containerPort: 6379
               name: redis
-          environment:
+          env:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -40,6 +40,11 @@ spec:
                 secretKeyRef:
                   name: amana-secrets
                   key: REDIS_PASSWORD
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
           resources:
             requests:
               cpu: 50m
