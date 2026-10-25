@@ -6,12 +6,16 @@ import { toTradeStatus, type TradeDetail } from "@/types/trade";
 interface ActionBarProps {
   trade: TradeDetail;
   onConfirmDelivery: () => void;
+  onRaiseDispute?: () => void;
+  onVerifyPoD?: () => void;
   confirmingDelivery: boolean;
 }
 
 export function ActionBar({
   trade,
   onConfirmDelivery,
+  onRaiseDispute,
+  onVerifyPoD,
   confirmingDelivery,
 }: ActionBarProps) {
   const status = toTradeStatus(trade.status);
@@ -22,7 +26,12 @@ export function ActionBar({
   return (
     <div className="fixed bottom-0 left-0 w-full bg-card/90 backdrop-blur-md border-t border-border-default p-4 flex justify-end gap-4 z-50">
       {showRaiseDispute && (
-        <button className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-status-danger/40 text-status-danger text-sm font-semibold hover:bg-status-danger/10 transition-all">
+        <button
+          onClick={onRaiseDispute}
+          disabled={!onRaiseDispute}
+          title={onRaiseDispute ? undefined : "Coming soon"}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-status-danger/40 text-status-danger text-sm font-semibold hover:bg-status-danger/10 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        >
           <svg
             className="w-4 h-4"
             viewBox="0 0 16 16"
@@ -38,7 +47,12 @@ export function ActionBar({
       )}
 
       {showPoDVerification && (
-        <button className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border-default text-text-secondary text-sm font-semibold hover:border-border-hover hover:text-text-primary transition-all">
+        <button
+          onClick={onVerifyPoD}
+          disabled={!onVerifyPoD}
+          title={onVerifyPoD ? undefined : "Coming soon"}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border-default text-text-secondary text-sm font-semibold hover:border-border-hover hover:text-text-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        >
           <svg
             className="w-4 h-4"
             viewBox="0 0 16 16"
