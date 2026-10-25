@@ -12,10 +12,11 @@
  */
 
 import React from 'react';
-import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import type { RootStackParamList } from '../src/types/navigation';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import type { ComponentProps } from 'react';
+import EvidenceCaptureScreen from '../src/screens/EvidenceCaptureScreen';
 
 jest.mock('../src/api/client', () => ({
   __esModule: true,
@@ -42,30 +43,33 @@ jest.mock('react-native-safe-area-context', () => ({
 
 const TRADE_ID = 'trade-pod-001';
 const mockApiClient = jest.requireMock('../src/api/client').default;
-const Stack = createStackNavigator<RootStackParamList>();
+type EvidenceCaptureProps = ComponentProps<typeof EvidenceCaptureScreen>;
 
-function renderWithNavigation(screen: React.ComponentType<any>, name: string, params?: object) {
+function renderWithNavigation(params: EvidenceCaptureProps['route']['params']) {
+  const props = {
+    route: { key: 'EvidenceCapture', name: 'EvidenceCapture', params },
+    navigation: {
+      goBack: jest.fn(),
+      navigate: jest.fn(),
+    },
+  } as unknown as EvidenceCaptureProps;
+
   return render(
-    <NavigationContainer>
-      <Stack.Navigator>
-        <Stack.Screen name={name as any} component={screen} initialParams={params as any} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    React.createElement(EvidenceCaptureScreen, props),
   );
 }
 
-describe('Proof-of-Delivery Upload E2E', () => {
+describe('Proof-of-Delivery Evidence Upload', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('renders the evidence capture screen with type selector', () => {
-    const EvidenceCaptureScreen = require('../src/screens/EvidenceCaptureScreen').default;
-    const { getByText } = renderWithNavigation(
-      EvidenceCaptureScreen,
-      'EvidenceCapture',
-      { tradeId: TRADE_ID },
-    );
+    const { getByText } = renderWithNavigation({ tradeId: TRADE_ID });
 
     expect(getByText('Upload Evidence')).toBeTruthy();
     expect(getByText(/Trade:/)).toBeTruthy();
@@ -76,12 +80,7 @@ describe('Proof-of-Delivery Upload E2E', () => {
   });
 
   it('switches between video and photo evidence types', () => {
-    const EvidenceCaptureScreen = require('../src/screens/EvidenceCaptureScreen').default;
-    const { getByText, queryByText } = renderWithNavigation(
-      EvidenceCaptureScreen,
-      'EvidenceCapture',
-      { tradeId: TRADE_ID },
-    );
+    const { getByText, queryByText } = renderWithNavigation({ tradeId: TRADE_ID });
 
     // Default is video
     expect(getByText('Record Delivery Video')).toBeTruthy();
@@ -97,12 +96,7 @@ describe('Proof-of-Delivery Upload E2E', () => {
   });
 
   it('shows capture area placeholder', () => {
-    const EvidenceCaptureScreen = require('../src/screens/EvidenceCaptureScreen').default;
-    const { getByText } = renderWithNavigation(
-      EvidenceCaptureScreen,
-      'EvidenceCapture',
-      { tradeId: TRADE_ID },
-    );
+    const { getByText } = renderWithNavigation({ tradeId: TRADE_ID });
 
     expect(getByText('Tap to record')).toBeTruthy();
   });
@@ -110,35 +104,54 @@ describe('Proof-of-Delivery Upload E2E', () => {
   it('uploads evidence to the API and shows success', async () => {
     mockApiClient.post.mockResolvedValueOnce({ data: { cid: 'QmTestEvidence123' } });
 
-    const EvidenceCaptureScreen = require('../src/screens/EvidenceCaptureScreen').default;
-    const { getByText, queryByText } = renderWithNavigation(
-      EvidenceCaptureScreen,
-      'EvidenceCapture',
-      { tradeId: TRADE_ID },
-    );
+    const formDataFields: Record<string, unknown> = {};
+    const formDataMock = {
+      append: jest.fn((name: string, value: unknown) => {
+        formDataFields[name] = value;
+      }),
+    };
+    jest
+      .spyOn(globalThis, 'FormData')
+      .mockImplementation(() => formDataMock as unknown as FormData);
+    jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find(({ text }) => text === 'Simulate Capture')?.onPress?.();
+    });
+
+    const { getByText } = renderWithNavigation({ tradeId: TRADE_ID });
 
     // Simulate capture by pressing the capture area
     const captureArea = getByText('Tap to record');
     fireEvent.press(captureArea);
 
-    // Alert dialog appears — simulate the capture
-    await act(async () => {
-      // Alert auto-dismisses, then capture state updates
+    expect(getByText(/Ready to upload/)).toBeTruthy();
+
+    fireEvent.press(getByText('☁️ Upload Video'));
+
+    await waitFor(() => {
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(getByText('Evidence Uploaded')).toBeTruthy();
     });
 
-    // Upload the evidence
-    await act(async () => {
-      // After capture, the upload button should be available
-    });
+    expect(mockApiClient.post).toHaveBeenCalledWith(
+      `/trades/${TRADE_ID}/evidence`,
+      formDataMock,
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Content-Type': 'multipart/form-data' }),
+      }),
+    );
+    expect(formDataFields.tradeId).toBe(TRADE_ID);
+    expect(formDataFields.mediaType).toBe('video');
+    expect(formDataFields.file).toEqual(
+      expect.objectContaining({
+        uri: expect.stringMatching(/^file:\/\/simulated-evidence-/),
+        name: expect.stringMatching(/^evidence-trade-pod-001-/),
+        type: 'video/mp4',
+      }),
+    );
   });
 
   it('shows guidance text for video evidence', () => {
-    const EvidenceCaptureScreen = require('../src/screens/EvidenceCaptureScreen').default;
-    const { getByText } = renderWithNavigation(
-      EvidenceCaptureScreen,
-      'EvidenceCapture',
-      { tradeId: TRADE_ID },
-    );
+    const { getByText } = renderWithNavigation({ tradeId: TRADE_ID });
 
     expect(
       getByText(/Record a video showing the goods and their condition/),
@@ -146,12 +159,7 @@ describe('Proof-of-Delivery Upload E2E', () => {
   });
 
   it('shows guidance text for photo evidence', () => {
-    const EvidenceCaptureScreen = require('../src/screens/EvidenceCaptureScreen').default;
-    const { getByText } = renderWithNavigation(
-      EvidenceCaptureScreen,
-      'EvidenceCapture',
-      { tradeId: TRADE_ID },
-    );
+    const { getByText } = renderWithNavigation({ tradeId: TRADE_ID });
 
     fireEvent.press(getByText('Photo'));
 

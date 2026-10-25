@@ -1,5 +1,7 @@
 # 🌾 Amana: Trust as a Service for Agricultural Products
 
+[![codecov](https://codecov.io/gh/KingFRANKHOOD/Amana/branch/main/graph/badge.svg)](https://codecov.io/gh/KingFRANKHOOD/Amana)
+
 ![Stellar](https://img.shields.io/badge/Network-Stellar-black?style=for-the-badge&logo=stellar)
 ![Soroban](<https://img.shields.io/badge/Contracts-Soroban%20(Rust)-orange?style=for-the-badge>)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
@@ -61,7 +63,6 @@ pnpm run dev
 ```bash
 cd backend
 cp .env.example .env
-cp .env.tracing.example .env.tracing  # for distributed tracing configuration
 pnpm install
 pnpm run dev
 ```
@@ -105,9 +106,9 @@ Path-aware execution is enabled to avoid unnecessary runtime. If a stack has no 
 
 For the protected branch (`main`), set these required status checks:
 
-- `Frontend Required Gate`
-- `Backend Required Gate`
-- `Contracts Required Gate`
+- `frontend CI`
+- `backend CI`
+- `contracts CI`
 
 ---
 
@@ -161,14 +162,18 @@ Amana includes comprehensive distributed tracing with OpenTelemetry for end-to-e
 
 ### Quick Start
 
-1. Configure tracing environment variables (see `backend/.env.tracing.example`)
+1. Configure tracing environment variables in `.env` (see the `Distributed tracing (optional)` section in `backend/.env.example`)
 2. Start Jaeger for trace visualization: `docker run -p 16686:16686 jaegertracing/all-in-one`
 3. View traces at `http://localhost:16686`
 4. Check metrics at `http://localhost:9464/metrics`
 
 ### Documentation
 
-See [DISTRIBUTED_TRACING_GUIDE.md](./DISTRIBUTED_TRACING_GUIDE.md) for detailed setup and usage instructions.
+See [DISTRIBUTED_TRACING_GUIDE.md](./backend/DISTRIBUTED_TRACING_GUIDE.md) for detailed setup and usage instructions.
+
+**Logging & Observability**:
+- **[Logging Standards](./docs/LOGGING_STANDARDS.md)** — Comprehensive logging standards across all stacks (backend Pino, frontend TracedHttpClient, mobile, contracts, background jobs, log levels, PII redaction, Loki queries, and retention)
+- **[Error Logging Standards](./docs/ERROR_LOGGING_STANDARDS.md)** — Structured error logging with AppError, error correlation IDs, and Zod validation errors
 
 **Application Metrics & Monitoring**:
 - **[Prometheus Metrics](./docs/PROMETHEUS_METRICS.md)** — Trade throughput, dispute counts, and processing latency metrics exposed at `/metrics`
@@ -196,6 +201,7 @@ Key architectural decisions are documented as ADRs in [`docs/adr/`](./docs/adr):
 - [ADR-003: Off-chain vs. On-chain Data Partitioning](./docs/adr/ADR-003-offchain-vs-onchain-data-partitioning.md)
 - [ADR-004: Idempotency and Retry Strategy](./docs/adr/ADR-004-idempotency-and-retry-strategy.md)
 - [ADR-005: Frontend State Management](./docs/adr/ADR-005-frontend-state-management.md)
+- [ADR-008: CI/CD Pipeline Architecture](./docs/adr/ADR-008-cicd-pipeline-architecture.md)
 
 ## 🤝 Contributing
 
@@ -217,3 +223,8 @@ Quick start:
 Distributed under the MIT License. See `LICENSE` for more information.
 
 // setting up and starting out
+
+## Handsoff notes
+
+<!-- handsoff-issue-1347 -->
+- #1347: Question: proof of contributor payments?

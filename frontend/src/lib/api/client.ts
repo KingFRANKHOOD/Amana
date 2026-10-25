@@ -4,6 +4,7 @@ import { parseBackendError, BackendErrorResponse } from "../errorHandler";
 import { z } from "zod";
 
 export type FetchOptions = RequestInit & {
+  /** @deprecated Authentication is supplied by HttpOnly cookies. */
   token?: string | null;
   skipAuth?: boolean;
   timeoutMs?: number;
@@ -27,13 +28,7 @@ export class ApiError extends Error {
   }
 }
 
-const TOKEN_STORAGE_KEY = "amana_jwt";
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
-}
 
 export const navigationHelpers = {
   reload(): void {
@@ -45,7 +40,6 @@ export const navigationHelpers = {
 
 function createHeaders(
   headers?: HeadersInit,
-  token?: string | null,
   skipDefaultContentType = false,
 ): Record<string, string> {
   const resolvedHeaders: Record<string, string> = skipDefaultContentType
@@ -64,10 +58,6 @@ function createHeaders(
     }
   } else if (headers) {
     Object.assign(resolvedHeaders, headers);
-  }
-
-  if (token) {
-    resolvedHeaders.Authorization = `Bearer ${token}`;
   }
 
   return resolvedHeaders;
@@ -92,6 +82,7 @@ export function createQueryString(
 export async function request<T>(
   endpoint: string,
   options: FetchOptions = {},
+  retryAfterRefresh = true,
 ): Promise<T> {
   const {
     token,
@@ -102,7 +93,9 @@ export async function request<T>(
     ...fetchOptions
   } = options;
 
-  const authToken = token ?? (!skipAuth ? getStoredToken() : null);
+  // Retain the legacy option in the public type while deliberately ignoring
+  // its value. Browser JavaScript must never receive or assemble bearer JWTs.
+  void token;
   const isFormData =
     typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
   const controller = new AbortController();
@@ -125,9 +118,26 @@ export async function request<T>(
   try {
     const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       ...fetchOptions,
-      headers: createHeaders(headers, authToken, isFormData),
+      credentials: "include",
+      headers: createHeaders(headers, isFormData),
       signal: controller.signal,
     });
+
+    if (
+      response.status === 401 &&
+      retryAfterRefresh &&
+      !skipAuth &&
+      endpoint !== "/auth/refresh"
+    ) {
+      const refreshResponse = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (refreshResponse.ok) {
+        return request<T>(endpoint, options, false);
+      }
+    }
 
     const data = await response.json().catch(() => null);
 
@@ -190,11 +200,7 @@ export async function requestWithResult<T>(
   } catch (error) {
     if (error instanceof ApiError) {
       if (error.status === 401) {
-        const storedToken = getStoredToken();
-        if (storedToken) {
-          sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-          navigationHelpers.reload();
-        }
+        navigationHelpers.reload();
       }
       return { success: false, error };
     }

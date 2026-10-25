@@ -102,6 +102,7 @@ describe("OpenAPI documentation coverage", () => {
     "/webhooks": ["get", "post"],
     "/webhooks/{id}": ["delete"],
     "/goals": ["get"],
+    "/api/v1/csp-violation": ["post"],
   };
 
   const protectedOperations = [
@@ -185,10 +186,10 @@ describe("OpenAPI documentation coverage", () => {
     }
   });
 
-  it("marks every protected endpoint with bearer authentication", () => {
+  it("marks every protected endpoint with cookie authentication", () => {
     for (const [route, method] of protectedOperations) {
       expect(spec.paths[route]?.[method]?.security).toEqual([
-        { bearerAuth: [] },
+        { cookieAuth: [] },
       ]);
     }
   });

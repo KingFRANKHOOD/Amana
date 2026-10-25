@@ -108,14 +108,10 @@ describe("Evidence Upload and Playback Journey", () => {
         const file = new File(["video"], "test.mp4", { type: "video/mp4" });
         fireEvent.change(input, { target: { files: [file] } });
 
-        // Progress should be visible during upload
+        // Progress must be visible during upload
         await waitFor(
           () => {
-            const progressText = screen.queryByText(/Uploading to IPFS/i);
-            // Progress may or may not be visible depending on timing
-            if (progressText) {
-              expect(progressText).toBeInTheDocument();
-            }
+            expect(screen.getByText(/Uploading to IPFS/i)).toBeInTheDocument();
           },
           { timeout: 1000 },
         );
@@ -148,10 +144,7 @@ describe("Evidence Upload and Playback Journey", () => {
 
         await waitFor(
           () => {
-            const errorMsg = screen.queryByText(/Network error/i);
-            if (errorMsg) {
-              expect(errorMsg).toBeInTheDocument();
-            }
+            expect(screen.getByText(/Network error/i)).toBeInTheDocument();
           },
           { timeout: 1000 },
         );
@@ -363,10 +356,7 @@ describe("Evidence Upload and Playback Journey", () => {
 
         await waitFor(
           () => {
-            const errorMsg = screen.queryByText(/Network error/i);
-            if (errorMsg) {
-              expect(errorMsg).toBeInTheDocument();
-            }
+            expect(screen.getByText(/Network error/i)).toBeInTheDocument();
           },
           { timeout: 1000 },
         );

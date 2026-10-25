@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 function securityHeaders(_req: Request, res: Response, next: NextFunction) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('X-DNS-Prefetch-Control', 'off');
   res.setHeader('X-Download-Options', 'noopen');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');

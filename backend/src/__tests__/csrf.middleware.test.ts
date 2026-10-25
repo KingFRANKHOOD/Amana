@@ -223,6 +223,23 @@ describe("csrfProtection middleware (integration)", () => {
       .expect(201);
   });
 
+  it("always protects cookie-authenticated mutations when the feature flag is disabled", async () => {
+    mockIsEnabled.mockResolvedValue(false);
+    const app = buildTestApp();
+
+    await request(app)
+      .post("/trades")
+      .set("Cookie", "amana_access=jwt")
+      .set("Origin", EVIL)
+      .expect(403);
+
+    await request(app)
+      .post("/trades")
+      .set("Cookie", "amana_access=jwt")
+      .set("Origin", ALLOWED)
+      .expect(201);
+  });
+
   it("allows POST with no origin headers when allowMissingOrigin=true", async () => {
     const app = buildTestApp(true);
     await request(app).post("/trades").expect(201);

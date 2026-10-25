@@ -22,13 +22,90 @@ jobs:
   smoke:
     name: k6 health smoke test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: amana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d amana_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        if: ${{ !vars.K6_BASE_URL }}
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        if: ${{ !vars.K6_BASE_URL }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        if: ${{ !vars.K6_BASE_URL }}
+        run: pnpm install --frozen-lockfile
+        working-directory: backend
+
+      - name: Start backend for local smoke test
+        if: ${{ !vars.K6_BASE_URL }}
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          PORT: 3001
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/amana_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-jwt-secret-value-with-minimum-length-32
+          AMANA_ESCROW_CONTRACT_ID: test-escrow-contract
+          USDC_CONTRACT_ID: test-usdc-contract
+          TRADE_NOTES_ENCRYPTION_KEY: test-trade-notes-encryption-key-base64-32chr
+          STELLAR_NETWORK: testnet
+          STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+        run: |
+          pnpm dev > "$RUNNER_TEMP/amana-backend.log" 2>&1 &
+          backend_pid=$!
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3001/health/live >/dev/null; then
+              echo "Backend liveness endpoint is responding."
+              exit 0
+            fi
+
+            if ! kill -0 "$backend_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/amana-backend.log"
+              echo "Backend exited before becoming ready."
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          cat "$RUNNER_TEMP/amana-backend.log"
+          echo "Backend did not become ready within 60 seconds."
+          exit 1
 
       - name: Run k6 smoke test
-        uses: grafana/k6-action@v0.3.1
+        uses: grafana/k6-action@e4714b734f2b0afaabeb7b4a69142745548ab9ec # v0.3.1
         with:
           filename: k6/ci-smoke.js
         env:
-          BASE_URL: ${{ vars.K6_BASE_URL }}
+          BASE_URL: ${{ vars.K6_BASE_URL || 'http://127.0.0.1:3001' }}

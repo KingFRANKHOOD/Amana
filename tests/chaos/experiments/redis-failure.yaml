@@ -1,0 +1,36 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: redis-pod-kill-60s
+  namespace: default
+  labels:
+    experiment: redis-failure
+    severity: medium
+    environment: staging
+  annotations:
+    hypothesis: |
+      When Redis pod is killed for 60 seconds:
+      1. Backend health check reports "degraded" (not "unhealthy")
+      2. CacheService falls back to direct DB fetch (cache disabled)
+      3. BullMQ jobs remain queued but not processed during outage
+      4. All requests return 200/4xx (no 5xx from cache layer)
+      5. After Redis recovers: cache re-enables, BullMQ resumes processing
+      6. Alert service dispatches "redis_connection_failure" alert
+    steady-state-check: /health/detail must report redis.status="up" and status="healthy"
+    rollback: kubectl delete podchaos redis-pod-kill-60s -n default
+    post-experiment-verification: |
+      - /health/detail reports redis.status="up" within 30s
+      - BullMQ completed jobs count increases within 60s
+      - No stuck jobs in "active" state for >120s
+      - Cache hit/miss counters increment on subsequent requests
+spec:
+  action: pod-kill
+  mode: all
+  duration: "60s"
+  selector:
+    labelSelectors:
+      app: redis
+    namespaces:
+      - default
+  scheduler:
+    cron: "@never"

@@ -288,6 +288,63 @@ describe("idempotencyMiddleware", () => {
     expect(headers2["X-Idempotency-Cache"]).toBe("HIT");
   });
 
+  it("returns 409 when an in-flight duplicate has a different body (issue #1398)", async () => {
+    let cachedPayload: string | null = null;
+    let lockHeld = false;
+
+    redisMock.get.mockImplementation(async (key: string) => {
+      if (key === "idempotency:POST:/trades:idem-1") {
+        return cachedPayload as any;
+      }
+      return null as any;
+    });
+
+    redisMock.set.mockImplementation(async (key: string, value: string, mode: string) => {
+      if (key === "idempotency:lock:POST:/trades:idem-1" && mode === "NX") {
+        if (lockHeld) return null as any;
+        lockHeld = true;
+        return "OK" as any;
+      }
+
+      if (key === "idempotency:POST:/trades:idem-1") {
+        cachedPayload = value;
+      }
+      return "OK" as any;
+    });
+
+    redisMock.del.mockImplementation(async (key: string) => {
+      if (key === "idempotency:lock:POST:/trades:idem-1") {
+        lockHeld = false;
+      }
+      return 1 as any;
+    });
+
+    const req1 = createReq({ body: { amountUsdc: "100" } } as any);
+    const req2 = createReq({ body: { amountUsdc: "5000" } } as any);
+    const { res: res1 } = createRes();
+    const { res: res2, headers: headers2 } = createRes();
+
+    const next1 = jest.fn(() => {
+      setTimeout(() => {
+        res1.status(201).json({ tradeId: "trade-for-100" });
+      }, 10);
+    });
+    const next2 = jest.fn();
+
+    await Promise.all([
+      idempotencyMiddleware(req1, res1, next1),
+      idempotencyMiddleware(req2, res2, next2),
+    ]);
+
+    expect(next2).not.toHaveBeenCalled();
+    expect(res2.status).toHaveBeenCalledWith(409);
+    expect((res2 as any).body).toMatchObject({
+      error: expect.stringContaining("different request body"),
+    });
+    expect((res2 as any).body).not.toEqual({ tradeId: "trade-for-100" });
+    expect(headers2["X-Idempotency-Cache"]).not.toBe("HIT");
+  });
+
   it("returns 409 when same key is reused with a different request body", async () => {
     const crypto = await import("crypto");
     const originalBodyHash = crypto

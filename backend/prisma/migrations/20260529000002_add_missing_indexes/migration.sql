@@ -1,6 +1,13 @@
 -- Add missing indexes for performance optimization
 -- These indexes were identified during schema review to improve query performance
 
+-- Ensure Trade.version exists before indexing it. schema.prisma declares
+-- Trade.version Int @default(0) for optimistic concurrency, but no prior
+-- migration ever added the column, so a fresh database would fail here with
+-- "column \"version\" does not exist". ADD COLUMN IF NOT EXISTS keeps this
+-- safe for environments where the column was already applied out-of-band.
+ALTER TABLE "Trade" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 0;
+
 -- Index on Trade.version for optimistic concurrency queries
 CREATE INDEX IF NOT EXISTS "Trade_version_idx" ON "Trade"("version");
 

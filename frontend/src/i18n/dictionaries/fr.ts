@@ -1,4 +1,6 @@
-const fr: Record<string, string> = {
+import type { TranslationKeys } from "./en";
+
+const fr: Record<TranslationKeys, string> = {
   // Navigation
   "nav.dashboard": "Tableau de bord",
   "nav.trades": "\u00c9changes",
@@ -145,7 +147,7 @@ const fr: Record<string, string> = {
   "settings.security.nonCustodial": "Non d\u00e9positaire",
   "settings.security.nonCustodialDesc": "Amana ne d\u00e9tient jamais vos cl\u00e9s priv\u00e9es. Toute signature se fait dans Freighter.",
   "settings.security.sessionToken": "Jeton de session",
-  "settings.security.sessionTokenActive": "Actif \u2014 stock\u00e9 dans sessionStorage, effac\u00e9 \u00e0 la fermeture de l\u2019onglet.",
+  "settings.security.sessionTokenActive": "Actif \u2014 prot\u00e9g\u00e9 par un cookie HttpOnly s\u00e9curis\u00e9.",
   "settings.security.sessionTokenInactive": "Aucune session active.",
   "settings.security.challengeResponse": "Authentification d\u00e9fi-r\u00e9ponse",
   "settings.security.challengeResponseDesc": "La connexion utilise un d\u00e9fi \u00e0 usage unique sign\u00e9 par votre portefeuille \u2014 aucun mot de passe.",
@@ -196,7 +198,7 @@ const fr: Record<string, string> = {
   "trust.tier.developing": "En d\u00e9veloppement",
   "trust.tier.established": "\u00c9tabli",
   "trust.tier.trusted": "Fiable",
-  "trust.tier.elite": "D\u00e9lit\u00e9",
+  "trust.tier.elite": "\u00c9lite",
 
   // Trust Breakdown
   "trust.breakdown.title": "D\u00e9composition du score",

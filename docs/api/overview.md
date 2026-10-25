@@ -15,15 +15,19 @@ The machine-readable spec lives at
 
 ## Base URL
 
-The backend listens on `PORT` (default `4000`), with all routes mounted at
-the root:
+The backend listens on `PORT` (default `4000`). Every API route is served
+twice: under the canonical versioned prefix, and unprefixed for backwards
+compatibility (those responses carry `Deprecation`/`Sunset` headers).
 
 ```
-http://localhost:4000
+http://localhost:4000/api/v1   # canonical
+http://localhost:4000          # legacy, deprecated
 ```
 
-There is no versioned URL prefix (e.g. no `/v1`) today - all paths in this
-guide are relative to the base URL above.
+Paths in this guide are written without the prefix. Two exceptions matter:
+operational endpoints (`/health*`, `/metrics-info`) are only mounted
+unversioned, and the browser CSP report collector is only mounted versioned at
+`POST /api/v1/csp-violation`.
 
 ## Authentication
 
@@ -35,11 +39,13 @@ passwords, since the only identity a client has is a Stellar keypair:
 2. Sign the challenge with your Stellar secret key (client-side - the secret
    key never leaves the wallet).
 3. `POST /auth/verify` with the public key and the signature. The server
-   verifies it against the challenge and returns a JWT bearer token.
-4. Send `Authorization: Bearer <token>` on every subsequent protected
-   request.
-5. `POST /auth/logout` revokes the current token immediately by adding its
-   `jti` to a denylist, instead of waiting for natural expiry.
+   verifies it and sets HttpOnly, Secure, SameSite=Strict access and refresh
+   cookies; token values are never returned to browser JavaScript.
+4. Send protected requests with credentials enabled so the browser includes
+   the access cookie automatically.
+5. On a `401`, `POST /auth/refresh` rotates the single-use refresh cookie and
+   retries the request. `POST /auth/logout` revokes the session and clears both
+   cookies.
 
 ```bash
 curl -X POST http://localhost:4000/auth/challenge \
@@ -49,10 +55,11 @@ curl -X POST http://localhost:4000/auth/challenge \
 
 curl -X POST http://localhost:4000/auth/verify \
   -H 'Content-Type: application/json' \
+  -c amana.cookies \
   -d '{"walletAddress":"GAAA...WHF","signedChallenge":"<base64url signature>"}'
-# => {"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...."}
+# => {"authenticated":true}
 
-curl http://localhost:4000/users/me -H 'Authorization: Bearer <token>'
+curl http://localhost:4000/users/me -b amana.cookies
 ```
 
 ### JWT semantics enforced by the server
@@ -72,7 +79,8 @@ A request with a missing, expired, revoked, or otherwise invalid token gets
 
 ### Public vs. protected endpoints
 
-Most endpoints require a bearer token. A few are intentionally public, e.g.
+Most endpoints require the session cookie. Non-browser clients may also use
+the existing bearer-token transport. A few endpoints are intentionally public, e.g.
 `GET /users/:address` (public profile lookup) and the `/health*` endpoints.
 Each endpoint's own doc page notes whether auth is required.
 
@@ -119,17 +127,20 @@ List endpoints that support pagination (e.g. `GET /trades`) use `page` +
 | Parameter | Default | Notes |
 |---|---|---|
 | `page` | `1` | 1-indexed |
-| `limit` | `20` | Max `100` |
+| `limit` | `20` | Max `100`. `GET /trades/export` defaults to `50` |
 | `sort` | server default | Format `field:direction`, e.g. `createdAt:desc` |
 
 ```bash
 curl 'http://localhost:4000/trades?status=FUNDED&page=2&limit=50&sort=createdAt:desc' \
-  -H 'Authorization: Bearer <token>'
+  -b amana.cookies
 ```
 
-Responses return the page of items under `items`; there is no total count or
-next-page cursor in the payload today, so clients should keep requesting
-increasing `page` values until a page comes back shorter than `limit`.
+Responses return the page of items under `items`. Endpoints that expose a total
+count (`GET /trades/watched`, `GET /trades/export`, `GET /disputes`) also return
+a `pagination` object with `page`, `limit`, `total`, and `totalPages`; the
+remaining list endpoints return the page of items only, so clients should keep
+requesting increasing `page` values until a page comes back shorter than
+`limit`.
 
 ## Idempotency
 

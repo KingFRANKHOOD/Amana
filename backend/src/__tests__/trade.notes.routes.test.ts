@@ -291,7 +291,7 @@ describe("Trade Notes Routes", () => {
 
       mockAddNote.mockImplementation(
         async (_tradeId: string, _author: string, content: string) => {
-          storedContent = encrypt(content);
+          storedContent = await encrypt(content);
           return { id: 1, createdAt: new Date() };
         },
       );
@@ -303,7 +303,7 @@ describe("Trade Notes Routes", () => {
 
       expect(storedContent).toBeDefined();
       expect(storedContent).not.toBe(plaintext);
-      const decrypted = decrypt(storedContent!);
+      const decrypted = await decrypt(storedContent!);
       expect(decrypted).toBe(plaintext);
     });
   });

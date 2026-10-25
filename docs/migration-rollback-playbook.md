@@ -156,11 +156,28 @@ Backups are stored in `backups/` locally (staging) and in encrypted cloud storag
 
 ## 7. CI Migration Check
 
-The CI workflow `.github/workflows/migration-check.yml` runs on every PR that touches `backend/prisma/`:
+The CI workflow `.github/workflows/migration-rollback.yml` runs on every PR that touches `backend/prisma/`, migration scripts, or this workflow file. It consists of five parallel jobs:
 
-- Lists the migration diff versus `main`
-- Scans new migration SQL for destructive DDL and emits warnings as PR annotations
-- Verifies `migration_lock.toml` is up to date
+| Job | Description | Requires DB |
+|-----|-------------|-------------|
+| **Migration Rollback Test** | Spins up PostgreSQL, applies all migrations forward, inserts test data, verifies rollback and data integrity | Yes |
+| **Destructive DDL Scan** | Static analysis of migration SQL for destructive patterns (DROP, TRUNCATE, NOT NULL without DEFAULT) | No |
+| **Migration Unit Tests** | Jest-based tests for migration file hygiene, schema validation, and rollback SQL coverage | No |
+| **Migration Dry-Run** | Verifies `migrate-safe.sh --dry-run` does NOT modify the database | Yes |
+| **Rollback SQL Validation** | Validates existing `rollback.sql` files for non-empty content and balanced syntax | No |
+
+All five jobs must pass for the **Migration Safety Gate** to succeed.
+
+### Running migration tests locally
+
+```bash
+# Full integration test (requires PostgreSQL)
+DATABASE_URL=postgresql://user:pass@localhost:5432/amana_test \
+  ./scripts/test-migration-rollback.sh
+
+# Jest-based unit tests (no database needed)
+cd backend && npx jest --testPathPattern="migration-rollback" --no-coverage
+```
 
 Failures block merge for production branches (`main`).
 

@@ -1,18 +1,21 @@
 export type TradeStatus =
-  | 'PENDING'
+  | 'PENDING_SIGNATURE'
+  | 'CREATED'
   | 'FUNDED'
-  | 'IN_TRANSIT'
   | 'DELIVERED'
-  | 'DISPUTED'
   | 'COMPLETED'
-  | 'REFUNDED';
+  | 'DISPUTED'
+  | 'CANCELLED';
+
+export const ACTIVE_TRADE_STATUSES: ReadonlySet<string> = new Set(['FUNDED', 'IN_TRANSIT']);
 
 export interface Trade {
   id: number;
   tradeId: string;
   buyerAddress: string;
   sellerAddress: string;
-  amountUsdc: string;
+  /** Amount locked in escrow, denominated in cNGN */
+  amountCngn: string;
   status: TradeStatus;
   createdAt?: string;
   updatedAt?: string;

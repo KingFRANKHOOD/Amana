@@ -34,7 +34,7 @@ export const disputesApi = {
         format: "csv",
         status: params?.status,
       })}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { credentials: "include" },
     );
     if (!response.ok) {
       throw new Error(response.statusText || "Failed to export disputes");

@@ -1,11 +1,14 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { env } from '../config/env';
+import { lowercaseWalletAddressesMiddleware } from './walletAddressMiddleware';
 
 // Ensure a single instance of Prisma Client is used across the application
 declare global {
   // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
+
+const SLOW_QUERY_THRESHOLD_MS = 1000;
 
 const prismaClientSingleton = () => {
   const client = new PrismaClient({
@@ -14,30 +17,38 @@ const prismaClientSingleton = () => {
 
   client.$use(async (params: Prisma.MiddlewareParams, next: (params: Prisma.MiddlewareParams) => Promise<unknown>) => {
     const model = String(params.model ?? "");
+    const operation = params.action ?? "unknown";
+    const start = performance.now();
 
-    const data = params.args?.data as Record<string, unknown> | undefined;
+    try {
+      const result = await next(params);
+      const durationMs = performance.now() - start;
 
-    if (data) {
-      if (model === 'User' && typeof data.walletAddress === 'string') {
-        data.walletAddress = data.walletAddress.toLowerCase();
+      // Log slow queries for pool exhaustion diagnosis
+      if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+        console.warn(
+          `[db] Slow query: ${model}.${operation} took ${durationMs.toFixed(1)}ms`,
+        );
       }
 
-      if (model === 'Trade') {
-        if (typeof data.buyerAddress === 'string') {
-          data.buyerAddress = data.buyerAddress.toLowerCase();
-        }
-        if (typeof data.sellerAddress === 'string') {
-          data.sellerAddress = data.sellerAddress.toLowerCase();
-        }
+      return result;
+    } catch (error) {
+      const durationMs = performance.now() - start;
+
+      // Log connection acquisition failures (pool exhaustion indicator)
+      const message = error instanceof Error ? error.message : String(error);
+      if (/connection|pool|timeout/i.test(message)) {
+        console.error(
+          `[db] Connection pool error: ${model}.${operation} failed after ${durationMs.toFixed(1)}ms — ${message}`,
+        );
       }
 
-      if (model === 'Dispute' && typeof data.initiator === 'string') {
-        data.initiator = data.initiator.toLowerCase();
-      }
+      throw error;
     }
-
-    return next(params);
   });
+
+  // Lowercase wallet addresses on write operations
+  client.$use(lowercaseWalletAddressesMiddleware);
 
   return client;
 };

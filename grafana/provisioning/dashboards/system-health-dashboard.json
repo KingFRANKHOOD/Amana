@@ -1,0 +1,178 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "System Health & Dependency Aggregation Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Database Active Pool Connections",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "pg_pool_active_connections",
+          "legendFormat": "Active Connections",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 50,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 45 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "title": "Database Waiting Queries",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "pg_pool_waiting_queries",
+          "legendFormat": "Waiting Queries",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "title": "HTTP Request Latency (p99 ms)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(http_request_duration_ms_bucket[5m]))",
+          "legendFormat": "p99 Latency",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "title": "Active BullMQ Queue Depths",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(bullmq_queue_waiting_jobs)",
+          "legendFormat": "Total Waiting Jobs",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 6,
+      "title": "Dependency Latency & Throughput",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "id": 7,
+      "title": "HTTP Latency Distribution",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(http_request_duration_ms_bucket[5m]))",
+          "legendFormat": "p50 Latency",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m]))",
+          "legendFormat": "p95 Latency",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(http_request_duration_ms_bucket[5m]))",
+          "legendFormat": "p99 Latency",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "id": 8,
+      "title": "Error Rates by Type",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(errors_total[5m]))",
+          "legendFormat": "{{error_type}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["amana", "health", "observability"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "timezone": "utc",
+  "title": "Amana System Health & Dependency Aggregation",
+  "uid": "amana-system-health",
+  "version": 1
+}

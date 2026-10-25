@@ -27,7 +27,7 @@ export default function WalletConnectScreen({ navigation }: Props) {
         'Enter Wallet Address',
         'Paste your Stellar wallet public key (G…)',
         async (address) => {
-          if (!address?.startsWith('G') || address.length < 56) {
+          if (!address?.startsWith('G') || address.length !== 56) {
             Alert.alert('Invalid address', 'Please enter a valid Stellar public key.');
             setConnecting(false);
             return;
@@ -38,7 +38,7 @@ export default function WalletConnectScreen({ navigation }: Props) {
             // On mobile we cannot sign with Freighter; we use the challenge as a demo token
             const { token } = await authApi.verifyChallenge(address, challenge);
             await setToken(token);
-            setWalletAddress(address);
+            await setWalletAddress(address);
             navigation.replace('TradeList');
           } catch (err: unknown) {
             Alert.alert('Connection failed', (err as Error)?.message ?? 'Unknown error');

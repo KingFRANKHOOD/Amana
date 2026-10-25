@@ -3,6 +3,15 @@ import { env } from "../config/env";
 import { appLogger } from "../middleware/logger";
 import { prisma } from "../lib/db";
 import { TradeStatus } from "@prisma/client";
+import { EncryptionService } from "./encryption.service";
+import { alertService } from "./alert.service";
+import {
+  recordWebhookDelivery,
+  recordWebhookDeadLetter,
+  recordWebhookConsecutiveFailures,
+} from "../lib/metrics";
+
+const WEBHOOK_SECRET_CONTEXT = "webhook-secret";
 
 interface WebhookPayload {
   event: string;
@@ -18,19 +27,31 @@ interface DeliveryTarget {
   subscriptionId?: number | null;
 }
 
+interface DeliveryState {
+  target: DeliveryTarget;
+  consecutiveFailures: number;
+}
+
+const consecutiveFailureState = new Map<string, DeliveryState>();
+
 export class WebhookService {
+  private readonly encryptionService: EncryptionService;
   private readonly webhookUrl: string | undefined;
   private readonly webhookSecret: string | undefined;
   private readonly maxAttempts: number;
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
+  private readonly requestTimeoutMs = 10000;
+  private readonly consecutiveFailureThreshold: number;
 
   constructor() {
+    this.encryptionService = new EncryptionService();
     this.webhookUrl = env.WEBHOOK_URL;
     this.webhookSecret = env.WEBHOOK_SECRET;
     this.maxAttempts = env.WEBHOOK_MAX_ATTEMPTS;
     this.retryBaseMs = env.WEBHOOK_RETRY_BASE_MS;
     this.retryMaxMs = env.WEBHOOK_RETRY_MAX_MS;
+    this.consecutiveFailureThreshold = env.WEBHOOK_CONSECUTIVE_FAILURE_THRESHOLD;
   }
 
   async dispatch(tradeId: string, status: TradeStatus, metadata: Record<string, unknown> = {}): Promise<void> {
@@ -47,11 +68,13 @@ export class WebhookService {
       },
     });
 
-    const deliveryTargets: DeliveryTarget[] = activeSubscriptions.map((subscription) => ({
-      url: subscription.url,
-      secret: subscription.secretHash,
-      subscriptionId: subscription.id,
-    }));
+    const deliveryTargets: DeliveryTarget[] = await Promise.all(
+      activeSubscriptions.map(async (subscription) => ({
+        url: subscription.url,
+        secret: await this.decryptSubscriptionSecret(subscription.secretHash),
+        subscriptionId: subscription.id,
+      })),
+    );
 
     if (this.webhookUrl) {
       deliveryTargets.push({
@@ -80,13 +103,56 @@ export class WebhookService {
     );
   }
 
+  private async decryptSubscriptionSecret(secretHash: string | null | undefined): Promise<string | undefined> {
+    if (!secretHash) return undefined;
+    try {
+      return await this.encryptionService.decrypt(secretHash, WEBHOOK_SECRET_CONTEXT);
+    } catch (error) {
+      appLogger.warn({ error }, "Failed to decrypt webhook subscription secret");
+      return undefined;
+    }
+  }
+
+  private async persistDeliveryAttempt(
+    target: DeliveryTarget,
+    tradeId: string,
+    _status: TradeStatus,
+    _attempt: number,
+    success: boolean,
+    statusCode: number | null,
+    errorMessage: string | null,
+    _durationMs: number,
+  ): Promise<void> {
+    if (target.subscriptionId == null) {
+      return;
+    }
+
+    try {
+      await prisma.webhookDeliveryAttempt.create({
+        data: {
+          webhookId: target.subscriptionId,
+          status: success ? "SUCCESS" : "FAILED",
+          statusCode: statusCode ?? 0,
+          responseBody: errorMessage ?? null,
+        },
+      });
+    } catch (error) {
+      appLogger.warn(
+        { error, subscriptionId: target.subscriptionId, tradeId },
+        "Failed to persist webhook delivery attempt",
+      );
+    }
+  }
+
   private async sendWebhookWithRetry(
     target: DeliveryTarget,
     body: string,
     tradeId: string,
     status: TradeStatus,
   ): Promise<void> {
+    const start = performance.now();
     let lastError: unknown = null;
+    const stateKey = target.url;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       try {
@@ -94,14 +160,22 @@ export class WebhookService {
           ? crypto.createHmac("sha256", target.secret).update(body).digest("hex")
           : undefined;
 
-        const response = await fetch(target.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(signature ? { "X-Webhook-Signature": signature } : {}),
-          },
-          body,
-        });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+        let response: Response;
+        try {
+          response = await fetch(target.url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(signature ? { "X-Webhook-Signature": signature } : {}),
+            },
+            body,
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
 
         if (response.ok) {
           appLogger.debug(
@@ -114,6 +188,26 @@ export class WebhookService {
             },
             "Webhook dispatched successfully",
           );
+
+          const durationMs = performance.now() - start;
+          recordWebhookDelivery("success", durationMs, {
+            webhook_url: target.url,
+            subscription_id: target.subscriptionId ?? "system",
+            event: `trade.${status.toLowerCase()}`,
+          });
+
+          await this.persistDeliveryAttempt(
+            target,
+            tradeId,
+            status,
+            attempt,
+            true,
+            response.status,
+            null,
+            durationMs,
+          );
+
+          consecutiveFailureState.delete(stateKey);
           return;
         }
 
@@ -132,6 +226,26 @@ export class WebhookService {
         );
 
         if (!shouldRetry || attempt === this.maxAttempts) {
+          const durationMs = performance.now() - start;
+          recordWebhookDelivery("failure", durationMs, {
+            webhook_url: target.url,
+            subscription_id: target.subscriptionId ?? "system",
+            event: `trade.${status.toLowerCase()}`,
+            status_code: response.status,
+          });
+
+          await this.persistDeliveryAttempt(
+            target,
+            tradeId,
+            status,
+            attempt,
+            false,
+            response.status,
+            `Non-OK status: ${response.status}`,
+            durationMs,
+          );
+
+          this.incrementConsecutiveFailures(stateKey, target, tradeId, status);
           return;
         }
       } catch (error) {
@@ -147,6 +261,17 @@ export class WebhookService {
           },
           "Webhook delivery attempt failed",
         );
+
+        await this.persistDeliveryAttempt(
+          target,
+          tradeId,
+          status,
+          attempt,
+          false,
+          null,
+          error instanceof Error ? error.message : String(error),
+          performance.now() - start,
+        );
       }
 
       if (attempt < this.maxAttempts) {
@@ -156,19 +281,46 @@ export class WebhookService {
     }
 
     appLogger.error(
-      {
-        tradeId,
-        status,
-        webhookUrl: target.url,
-        subscriptionId: target.subscriptionId,
-        error: lastError,
-      },
-      "Webhook delivery failed after retries",
+      { tradeId, status, webhookUrl: target.url, subscriptionId: target.subscriptionId, error: lastError },
+      "Webhook delivery exhausted all retry attempts",
     );
+
+    recordWebhookDeadLetter({
+      webhook_url: target.url,
+      subscription_id: target.subscriptionId ?? "system",
+      event: `trade.${status.toLowerCase()}`,
+    });
+
+    this.incrementConsecutiveFailures(stateKey, target, tradeId, status);
   }
 
-  isConfigured(): boolean {
-    return !!this.webhookUrl;
+  private incrementConsecutiveFailures(
+    stateKey: string,
+    target: DeliveryTarget,
+    tradeId: string,
+    status: TradeStatus,
+  ): void {
+    const existing = consecutiveFailureState.get(stateKey);
+    const consecutiveFailures = (existing?.consecutiveFailures ?? 0) + 1;
+    consecutiveFailureState.set(stateKey, { target, consecutiveFailures });
+
+    recordWebhookConsecutiveFailures({
+      webhook_url: target.url,
+      subscription_id: String(target.subscriptionId ?? "system"),
+    });
+
+    if (consecutiveFailures >= this.consecutiveFailureThreshold) {
+      appLogger.error(
+        { webhookUrl: target.url, subscriptionId: target.subscriptionId, consecutiveFailures, tradeId, status },
+        "Webhook consecutive failure threshold reached",
+      );
+      void alertService.dispatch(
+        "webhook_delivery_failure",
+        `Webhook ${target.url} has failed ${consecutiveFailures} consecutive times.`,
+        { webhookUrl: target.url, subscriptionId: target.subscriptionId, tradeId, status },
+        "critical",
+      );
+    }
   }
 }
 

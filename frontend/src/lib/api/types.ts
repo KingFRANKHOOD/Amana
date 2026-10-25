@@ -2,15 +2,20 @@ export interface ChallengeResponse {
   challenge: string;
 }
 
-export interface VerifyResponse {
-  token: string;
+export interface SessionResponse {
+  authenticated: true;
+}
+
+export interface ValidateSessionResponse {
+  valid: true;
+  user: { walletAddress: string };
 }
 
 export interface TradeResponse {
   tradeId: string;
   buyerAddress: string;
   sellerAddress: string;
-  amountCngn: string;
+  amountUsdc: string;
   buyerLossBps: number;
   sellerLossBps: number;
   status: string;
@@ -61,7 +66,7 @@ export interface EvidenceResponse {
 
 export interface CreateTradeRequest {
   sellerAddress: string;
-  amountCngn: string;
+  amountUsdc: string;
   buyerLossBps: number;
   sellerLossBps: number;
 }

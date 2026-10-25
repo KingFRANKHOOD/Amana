@@ -1,6 +1,6 @@
 extern crate std;
 
-use amana_escrow::{EscrowContract, EscrowContractClient, TradeStatus};
+use amana_escrow::{EscrowContract, EscrowContractClient, MAX_FEE_BPS, MIN_FEE_BPS, TradeStatus};
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
 use soroban_sdk::{Address, Env, String as SStr, testutils::Address as _, token};
@@ -25,7 +25,7 @@ impl FuzzEnv {
             .address();
         let contract_id = env.register(EscrowContract, ());
         EscrowContractClient::new(&env, &contract_id)
-            .initialize(&admin, &usdc_id, &treasury, &fee_bps, &usdc_id);
+            .initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         FuzzEnv {
             env,
             contract_id,
@@ -48,6 +48,10 @@ fn valid_bps(raw: u32) -> u32 {
     raw % 10_001
 }
 
+fn valid_fee_bps(raw: u32) -> u32 {
+    MIN_FEE_BPS + raw % (MAX_FEE_BPS - MIN_FEE_BPS + 1)
+}
+
 fn valid_loss_pair(buyer_loss_bps: u32, _seller_loss_bps: u32) -> (u32, u32) {
     let blbps = valid_bps(buyer_loss_bps);
     let slbps = 10_000 - blbps;
@@ -67,7 +71,7 @@ fn prop_state_machine_random_ops(
     raw_op_seq: u64,
 ) -> TestResult {
     let amount = valid_amount(raw_amount);
-    let fee_bps = valid_bps(raw_fee_bps);
+    let fee_bps = valid_fee_bps(raw_fee_bps);
     let (buyer_loss_bps, seller_loss_bps) = valid_loss_pair(raw_buyer_bps, raw_seller_bps);
 
     let fe = FuzzEnv::new(fee_bps);
@@ -150,7 +154,7 @@ fn prop_state_machine_random_ops(
 
 #[quickcheck]
 fn prop_fuzz_addresses_in_create_trade(raw_amount: i64, raw_fee_bps: u32) -> TestResult {
-    let fe = FuzzEnv::new(valid_bps(raw_fee_bps));
+    let fe = FuzzEnv::new(valid_fee_bps(raw_fee_bps));
     let client = fe.client();
 
     let addr_a = Address::generate(&fe.env);
@@ -186,7 +190,7 @@ fn prop_fuzz_addresses_in_create_trade(raw_amount: i64, raw_fee_bps: u32) -> Tes
 
 #[quickcheck]
 fn prop_storage_integrity_rapid_transitions(raw_amount: i64, raw_fee_bps: u32) -> TestResult {
-    let fee_bps = valid_bps(raw_fee_bps);
+    let fee_bps = valid_fee_bps(raw_fee_bps);
     let amount = valid_amount(raw_amount);
 
     let fe = FuzzEnv::new(fee_bps);
@@ -290,7 +294,7 @@ fn prop_boundary_fuzz(raw_amount_seed: u64, raw_fee_bps: u32) -> TestResult {
         return TestResult::discard();
     }
 
-    let fee_bps = valid_bps(raw_fee_bps);
+    let fee_bps = valid_fee_bps(raw_fee_bps);
     let fe = FuzzEnv::new(fee_bps);
     let client = fe.client();
     let buyer = Address::generate(&fe.env);
@@ -337,7 +341,7 @@ fn prop_boundary_fuzz(raw_amount_seed: u64, raw_fee_bps: u32) -> TestResult {
 #[quickcheck]
 fn prop_many_trades_rapid_creation(raw_count: u32, raw_fee_bps: u32) -> TestResult {
     let count = (raw_count % 50) + 1;
-    let fee_bps = valid_bps(raw_fee_bps);
+    let fee_bps = valid_fee_bps(raw_fee_bps);
 
     let fe = FuzzEnv::new(fee_bps);
     let client = fe.client();

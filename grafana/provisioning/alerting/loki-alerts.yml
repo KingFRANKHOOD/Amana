@@ -1,0 +1,62 @@
+apiVersion: 1
+
+groups:
+  - name: amana-loki-alerts
+    folder: Amana Operations
+    interval: 1m
+    rules:
+      - uid: amana-loki-error-rate
+        title: High error rate in backend logs
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: loki
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              datasource:
+                type: loki
+                uid: loki
+              editorMode: code
+              expr: sum(count_over_time({app="amana-backend"} |= "error" [5m]))
+              queryType: range
+              refId: A
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+          service: amana-backend
+        annotations:
+          summary: High error rate detected in amana-backend logs
+          description: More than 10 error log lines in the last 5 minutes for the amana-backend service.
+        isPaused: false
+
+      - uid: amana-loki-log-volume
+        title: Abnormal log volume for backend
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: loki
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: loki
+                uid: loki
+              editorMode: code
+              expr: sum(count_over_time({app="amana-backend"} [10m]))
+              queryType: range
+              refId: A
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: info
+          service: amana-backend
+        annotations:
+          summary: Abnormal log volume for amana-backend
+          description: Log volume for the amana-backend service deviates from the expected baseline over the last 10 minutes.
+        isPaused: false

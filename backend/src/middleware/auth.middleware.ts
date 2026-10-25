@@ -1,6 +1,6 @@
 import { Response, NextFunction } from "express";
 import { AuthService, AuthRequest } from "../services/auth.service";
-import { isAppError } from "../errors/errorCodes";
+import { isAppError } from "../errors/appError";
 import { AuthHelper } from "../lib/authHelper";
 
 export { AuthRequest };
@@ -26,7 +26,7 @@ export const authMiddleware = async (
     if (isAppError(error)) {
       res.status(error.statusCode).json({
         code: error.code,
-        error: "Unauthorized",
+        error: error.message || "Unauthorized",
         details: error.details,
       });
       return;

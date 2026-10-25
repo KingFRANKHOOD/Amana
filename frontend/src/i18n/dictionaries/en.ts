@@ -1,5 +1,3 @@
-export type TranslationKeys = typeof en;
-
 const en = {
   // Navigation
   "nav.dashboard": "Dashboard",
@@ -147,7 +145,7 @@ const en = {
   "settings.security.nonCustodial": "Non-custodial",
   "settings.security.nonCustodialDesc": "Amana never holds your private keys. All signing happens in Freighter.",
   "settings.security.sessionToken": "Session token",
-  "settings.security.sessionTokenActive": "Active \u2014 stored in sessionStorage, cleared on tab close.",
+  "settings.security.sessionTokenActive": "Active \u2014 protected by an HttpOnly secure cookie.",
   "settings.security.sessionTokenInactive": "No active session.",
   "settings.security.challengeResponse": "Challenge-response auth",
   "settings.security.challengeResponseDesc": "Sign-in uses a one-time challenge signed by your wallet \u2014 no passwords.",
@@ -241,5 +239,7 @@ const en = {
   "reputation.trustHistorySubtitle": "Recent events that impacted your reputation score",
   "reputation.trustHistoryEmpty": "No reputation events yet. Complete trades to build your trust history.",
 } as const;
+
+export type TranslationKeys = keyof typeof en;
 
 export default en;

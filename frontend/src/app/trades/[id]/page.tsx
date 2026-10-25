@@ -10,6 +10,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { useTranslation } from "@/hooks/useTranslation";
 import { ApiError } from "@/lib/api";
 import { apiConfig } from "@/lib/api";
+import { DisputeReasonDialog } from "@/components/trade/DisputeReasonDialog";
 
 function formatDate(dateString: string, locale: string) {
   return new Date(dateString).toLocaleString(locale, {
@@ -99,6 +100,7 @@ export default function TradeDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [disputeDialogOpen, setDisputeDialogOpen] = useState(false);
 
   const role: UserRole = trade
     ? deriveRole(address, trade.buyerAddress, trade.sellerAddress)
@@ -110,7 +112,7 @@ export default function TradeDetailPage() {
     label: string,
     apiCall: () => Promise<{ unsignedXdr: string }>,
   ) {
-    if (!token) return;
+    if (!token) return false;
 
     setActionLoading(true);
     setActionError(null);
@@ -131,6 +133,7 @@ export default function TradeDetailPage() {
 
       setActionSuccess(`${label} signed successfully. Submit the transaction to Stellar to finalize.`);
       void refetch();
+      return true;
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -139,6 +142,7 @@ export default function TradeDetailPage() {
             ? err.message
             : `${label} failed`;
       setActionError(message);
+      return false;
     } finally {
       setActionLoading(false);
     }
@@ -157,12 +161,12 @@ export default function TradeDetailPage() {
   }
 
   function handleInitiateDispute() {
-    const reason = window.prompt("Enter dispute reason (min 10 characters):");
-    if (!reason || reason.length < 10) {
-      setActionError("Dispute reason must be at least 10 characters.");
-      return;
-    }
-    void runAction("Initiate Dispute", () => raiseDispute(reason, "other"));
+    setActionError(null);
+    setDisputeDialogOpen(true);
+  }
+
+  function handleSubmitDispute(reason: string) {
+    return runAction("Initiate Dispute", () => raiseDispute(reason, "other"));
   }
 
   return (
@@ -355,6 +359,13 @@ export default function TradeDetailPage() {
           <p className="text-text-muted">Trade not found</p>
         </div>
       )}
+
+      <DisputeReasonDialog
+        open={disputeDialogOpen}
+        onOpenChange={setDisputeDialogOpen}
+        onSubmit={handleSubmitDispute}
+        submissionError={actionError}
+      />
     </div>
   );
 }

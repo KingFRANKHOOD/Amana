@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backend-migration
+  namespace: default
+spec:
+  template:
+    metadata:
+      labels:
+        app: backend-migration
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: migration
+          image: kingfrankhood/amana-backend:1.0.0
+          command: ["node", "dist/migrate.js"]
+          envFrom:
+            - configMapRef:
+                name: amana-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: amana-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/amana"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

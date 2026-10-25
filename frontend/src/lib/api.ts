@@ -37,7 +37,8 @@ export type {
   TrustScoreDetails,
   TrustScoreEvent,
   TrustTier,
-  VerifyResponse,
+  SessionResponse,
+  ValidateSessionResponse,
 } from "./api/types";
 
 export const api = {

@@ -16,6 +16,7 @@ import { useFreighterIdentity } from "@/hooks/useFreighterIdentity";
 import { Badge } from "@/components/ui/Badge";
 import { WalletAddressBadge } from "@/components/ui/WalletAddressBadge";
 import { api, ApiError, type EvidenceRecord } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 
 type Props = { disputeId: string };
 
@@ -28,7 +29,6 @@ type ConfirmationModalState = {
 type VideoLoadState = "loading" | "ready" | "terminal-failure";
 
 const DEFAULT_MEDIATOR_ADDRESSES = ["GEXAMPLEMEDIATORPUBLICKEY1"];
-const TOKEN_STORAGE_KEY = "amana_jwt";
 
 const PINATA_GATEWAYS = [
   process.env.NEXT_PUBLIC_PINATA_GATEWAY_URL?.trim(),
@@ -38,14 +38,6 @@ const PINATA_GATEWAYS = [
 
 const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
 const isDev = process.env.NEXT_PUBLIC_APP_ENV === "development";
-
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
-}
 
 function isProbablyIpfsCid(value: string): boolean {
   const trimmedValue = value.trim();
@@ -112,6 +104,7 @@ function useFocusTrap(isActive: boolean) {
 }
 
 export default function MediatorPanelClient({ disputeId }: Props) {
+  const { token, isAuthenticated } = useAuth();
   const { address, isAuthorized, isLoading, connectWallet } =
     useFreighterIdentity();
   const [txStatus, setTxStatus] = useState<string>("");
@@ -173,9 +166,7 @@ export default function MediatorPanelClient({ disputeId }: Props) {
       const url = new URL(window.location.href);
       const queryCid = url.searchParams.get("cid")?.trim() ?? "";
       const fallbackCid = isProbablyIpfsCid(queryCid) ? queryCid : null;
-      const token = getStoredToken();
-
-      if (!token) {
+      if (!isAuthenticated || !token) {
         if (!cancelled && fallbackCid) {
           setCidSource("query");
           setResolvedCid(fallbackCid);
@@ -243,7 +234,7 @@ export default function MediatorPanelClient({ disputeId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [disputeId]);
+  }, [disputeId, isAuthenticated, token]);
 
   useEffect(() => {
     if (!resolvedCid) {

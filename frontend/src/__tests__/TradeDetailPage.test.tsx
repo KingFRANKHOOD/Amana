@@ -311,10 +311,12 @@ describe("Trade Detail — Freighter signing flow", () => {
     mockAuth(BUYER_ADDRESS);
     const raiseDispute = jest.fn().mockResolvedValue({ unsignedXdr: "dispute-xdr" });
     mockTradeDetail({ trade: makeTrade("FUNDED"), raiseDispute });
-    jest.spyOn(window, "prompt").mockReturnValue("Item never arrived");
 
     render(<TradeDetailPage />);
     await userEvent.click(screen.getByTestId("action-dispute"));
+    const reason = await screen.findByRole("textbox", { name: /dispute reason/i });
+    await userEvent.type(reason, "Item never arrived");
+    await userEvent.click(screen.getByRole("button", { name: /submit dispute/i }));
 
     await waitFor(() =>
       expect(raiseDispute).toHaveBeenCalledWith("Item never arrived", "other"),

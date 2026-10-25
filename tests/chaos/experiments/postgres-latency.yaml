@@ -1,0 +1,44 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: postgres-network-delay-2s-120s
+  namespace: default
+  labels:
+    experiment: postgres-latency
+    severity: high
+    environment: staging
+  annotations:
+    hypothesis: |
+      When 2s network latency injected on PostgreSQL for 120 seconds:
+      1. Connection pool does NOT exhaust (Prisma pool size ~10-20)
+      2. Slow queries timeout gracefully with 503 "Service Unavailable"
+      3. Database health check reports responseTime > 200ms (degraded state)
+      4. Write requests fail safely with 503, no partial writes
+      5. Idempotency keys are honored during retries (no duplicate effects)
+      6. Alert service dispatches "db_connection_failure" or slow-query alerts
+      7. After latency is removed: pool recovers, requests resume within 30s
+    steady-state-check: |
+      - /health/detail reports database.status="up" and database.responseTime < 50ms
+      - No active alerts for DB connection
+      - Prisma pool idle count > 5 (via metrics endpoint)
+    rollback: kubectl delete networkchaos postgres-network-delay-2s-120s -n default
+    post-experiment-verification: |
+      - /health/detail reports database.responseTime < 100ms within 30s
+      - Prisma pool wait count returns to 0
+      - HTTP 503 rate drops to 0 within 60s
+      - No duplicate trade/dispute records created during latency window
+spec:
+  action: delay
+  mode: all
+  duration: "120s"
+  selector:
+    labelSelectors:
+      app: postgres
+    namespaces:
+      - default
+  delay:
+    latency: "2000ms"
+    correlation: "50"
+    jitter: "200ms"
+  scheduler:
+    cron: "@never"

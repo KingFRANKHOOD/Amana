@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import { EventType } from "../types/events";
 
 const vi = jest as any;
@@ -9,11 +8,6 @@ const vi = jest as any;
 
 const mockGetEvents = vi.fn();
 const mockDispatchEvent = vi.fn().mockResolvedValue(undefined);
-const mockProcessEventAtomically = vi.fn().mockImplementation(
-  async (_prisma: unknown, event: unknown, handler: (...args: unknown[]) => Promise<void>) => {
-    await handler({} as unknown, event);
-  },
-);
 
 /* ------------------------------------------------------------------ */
 /*  Module-level mocks (hoisted by vitest)                            */
@@ -37,10 +31,10 @@ vi.mock("../services/eventHandlers", () => ({
 }));
 
 /* Import after mocks are set up */
-import { EventListenerService, isAlreadyProcessed, processEventAtomically } from "../services/eventListener.service";
+import { EventListenerService, isAlreadyProcessed } from "../services/eventListener.service";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { getEventListenerConfig } from "../config/eventListener.config";
-import * as eventListenerModule from "../services/eventListener.service";
+import { appLogger } from "../middleware/logger";
 
 const TEST_CONFIG = {
   rpcUrl: "https://test-rpc.example.com",
@@ -173,8 +167,7 @@ describe("EventListenerService", () => {
       const raw = makeRawEvent(12345);
       mockGetEvents.mockResolvedValue({ events: [raw] });
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("trade-abc");
+        .mockReturnValueOnce("TRDFND");
 
       await service.pollEvents();
 
@@ -194,8 +187,7 @@ describe("EventListenerService", () => {
     it("should check processedEvent in DB when event is not in cache", async () => {
       const raw = makeRawEvent(12345);
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("trade-abc");
+        .mockReturnValueOnce("TRDFND");
 
       await service.processEvent(raw as any);
 
@@ -213,8 +205,7 @@ describe("EventListenerService", () => {
     it("should advance lastLedger after processing", async () => {
       const raw = makeRawEvent(500);
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t-1");
+        .mockReturnValueOnce("TRDFND");
 
       await service.processEvent(raw as any);
 
@@ -229,14 +220,12 @@ describe("EventListenerService", () => {
       const raw = makeRawEvent(99999, "evt-99999", "CONTRACT_TEST_123");
 
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeCreated")
-        .mockReturnValueOnce("trade-dup");
+        .mockReturnValueOnce("TRDCRT");
       await service.processEvent(raw as any);
 
       /* Second attempt — same composite key, in-memory cache hit */
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeCreated")
-        .mockReturnValueOnce("trade-dup");
+        .mockReturnValueOnce("TRDCRT");
       await service.processEvent(raw as any);
 
       expect(mockDispatchEvent).toHaveBeenCalledTimes(1);
@@ -247,10 +236,8 @@ describe("EventListenerService", () => {
       const raw2 = makeRawEvent(101);
 
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeCreated")
-        .mockReturnValueOnce("t-1")
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t-1");
+        .mockReturnValueOnce("TRDCRT")
+        .mockReturnValueOnce("TRDFND");
 
       await service.processEvent(raw1 as any);
       await service.processEvent(raw2 as any);
@@ -263,10 +250,8 @@ describe("EventListenerService", () => {
       const raw2 = makeRawEvent(200, "evt-200-b");
 
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeCreated")
-        .mockReturnValueOnce("t-1")
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t-2");
+        .mockReturnValueOnce("TRDCRT")
+        .mockReturnValueOnce("TRDFND");
 
       await service.processEvent(raw1 as any);
       await service.processEvent(raw2 as any);
@@ -285,8 +270,7 @@ describe("EventListenerService", () => {
       });
 
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t-restart");
+        .mockReturnValueOnce("TRDFND");
 
       await service.processEvent(raw as any);
 
@@ -296,8 +280,7 @@ describe("EventListenerService", () => {
     it("should add event to the in-memory processedEvents set", async () => {
       const raw = makeRawEvent(777, "evt-777");
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t");
+        .mockReturnValueOnce("TRDFND");
 
       await service.processEvent(raw as any);
 
@@ -363,20 +346,6 @@ describe("EventListenerService", () => {
   /* ====== 4. Event parsing ======================================= */
 
   describe("Event parsing", () => {
-    it("should recognise snake_case symbols (trade_funded → TradeFunded)", async () => {
-      const raw = makeRawEvent(200);
-      (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("trade_funded")
-        .mockReturnValueOnce("trade-sc");
-
-      await service.processEvent(raw as any);
-
-      expect(mockDispatchEvent).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ eventType: EventType.TradeFunded })
-      );
-    });
-
     it("should return null for events with empty topic array", async () => {
       const raw = { ledger: 300, topic: [], value: null };
       await service.processEvent(raw as any);
@@ -391,15 +360,19 @@ describe("EventListenerService", () => {
       expect(mockDispatchEvent).not.toHaveBeenCalled();
     });
 
-    it("should skip unknown event symbols", async () => {
+    it("should skip unknown event symbols and log a warning", async () => {
       const raw = makeRawEvent(302);
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("UnknownSymbol")
-        .mockReturnValueOnce("trade-x");
+        .mockReturnValueOnce("UnknownSymbol");
+      const warnSpy = vi.spyOn(appLogger, "warn");
 
       await service.processEvent(raw as any);
 
       expect(mockDispatchEvent).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ symbol: "UnknownSymbol" }),
+        expect.stringContaining("Unknown event symbol"),
+      );
     });
 
     it("should handle scValToNative throwing (corrupt XDR)", async () => {
@@ -413,24 +386,38 @@ describe("EventListenerService", () => {
       expect(mockDispatchEvent).not.toHaveBeenCalled();
     });
 
-    it("should correctly map all six event type symbols", async () => {
+    it("should correctly map every real contract topic symbol emitted by amana_escrow", async () => {
+      // Short topic codes exactly as emitted by contracts/amana_escrow/src/lib.rs,
+      // per the shared EVENT_TOPIC_MAP in ../types/events.
       const symbols: [string, EventType][] = [
-        ["TradeCreated", EventType.TradeCreated],
-        ["TradeFunded", EventType.TradeFunded],
-        ["DeliveryConfirmed", EventType.DeliveryConfirmed],
-        ["FundsReleased", EventType.FundsReleased],
-        ["DisputeInitiated", EventType.DisputeInitiated],
-        ["DisputeResolved", EventType.DisputeResolved],
+        ["TRDCRT", EventType.TradeCreated],
+        ["TRDFND", EventType.TradeFunded],
+        ["TRDCAN", EventType.TradeCancelled],
+        ["TCNBYR", EventType.TradeCancelledByBuyer],
+        ["TRDEXP", EventType.TradeExpired],
+        ["DELCNF", EventType.DeliveryConfirmed],
+        ["RELSD", EventType.FundsReleased],
+        ["DISINI", EventType.DisputeInitiated],
+        ["DISRES", EventType.DisputeResolved],
+        ["EVDSUB", EventType.EvidenceSubmitted],
+        ["VIDPRF", EventType.VideoProofSubmitted],
+        ["MNFST", EventType.ManifestSubmitted],
+        ["DEDEXT", EventType.DeadlineExtended],
+        ["MEDADD", EventType.MediatorAdded],
+        ["MEDREM", EventType.MediatorRemoved],
+        ["FEEUPD", EventType.FeeRateUpdated],
+        ["FEEWTH", EventType.FeesWithdrawn],
+        ["PTHINT", EventType.PathPaymentInitiated],
+        ["PTHPAY", EventType.PathPaymentExecuted],
+        ["UPGRAD", EventType.ContractUpgraded],
       ];
 
       for (let i = 0; i < symbols.length; i++) {
-        const [symbol, expected] = symbols[i];
+        const [symbol, expected] = symbols[i]!;
         mockDispatchEvent.mockClear();
 
         const raw = makeRawEvent(400 + i, `evt-${400 + i}`);
-        (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-          .mockReturnValueOnce(symbol)
-          .mockReturnValueOnce(`trade-${i}`);
+        (StellarSdk.scValToNative as ReturnType<typeof vi.fn>).mockReturnValueOnce(symbol);
 
         await service.processEvent(raw as any);
 
@@ -441,15 +428,41 @@ describe("EventListenerService", () => {
       }
     });
 
-    it("should extract tradeId as 'unknown' when topic has only one element", async () => {
-      const raw = { ledger: 450, id: "evt-450", contractId: "CONTRACT_TEST_123", topic: [{ _scval: "sym" }], value: null };
-      (StellarSdk.scValToNative as ReturnType<typeof vi.fn>).mockReturnValueOnce("TradeFunded");
+    it("should resolve tradeId from the event data map, not the topic", async () => {
+      const raw = {
+        ledger: 450,
+        id: "evt-450",
+        contractId: "CONTRACT_TEST_123",
+        topic: [{ _scval: "sym" }],
+        value: {
+          type: "map",
+          value: [{ key: { value: "trade_id" }, val: { value: "trade-real" } }],
+        },
+      };
+      (StellarSdk.scValToNative as ReturnType<typeof vi.fn>).mockReturnValueOnce("TRDFND");
+
+      await service.processEvent(raw as any);
+
+      expect(mockDispatchEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ tradeId: "trade-real" })
+      );
+    });
+
+    it("should fall back to 'unknown' and log a warning when data has no trade_id", async () => {
+      const raw = { ledger: 451, id: "evt-451", contractId: "CONTRACT_TEST_123", topic: [{ _scval: "sym" }], value: null };
+      (StellarSdk.scValToNative as ReturnType<typeof vi.fn>).mockReturnValueOnce("TRDFND");
+      const warnSpy = vi.spyOn(appLogger, "warn");
 
       await service.processEvent(raw as any);
 
       expect(mockDispatchEvent).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ tradeId: "unknown" })
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventId: "evt-451" }),
+        expect.stringContaining("missing trade_id"),
       );
     });
   });
@@ -521,10 +534,8 @@ describe("EventListenerService", () => {
       const events = [makeRawEvent(500), makeRawEvent(501)];
       mockGetEvents.mockResolvedValue({ events });
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeCreated")
-        .mockReturnValueOnce("t-1")
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t-2");
+        .mockReturnValueOnce("TRDCRT")
+        .mockReturnValueOnce("TRDFND");
 
       await service.pollEvents();
 
@@ -574,8 +585,7 @@ describe("EventListenerService", () => {
     it("should not dispatch if dispatchEvent itself throws", async () => {
       const raw = makeRawEvent(600);
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t-err");
+        .mockReturnValueOnce("TRDFND");
       mockDispatchEvent.mockRejectedValueOnce(new Error("DB down"));
 
       await expect(service.processEvent(raw as any)).rejects.toThrow("DB down");
@@ -584,8 +594,7 @@ describe("EventListenerService", () => {
     it("should not persist processedEvent when dispatchEvent fails", async () => {
       const raw = makeRawEvent(601);
       (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce("TradeFunded")
-        .mockReturnValueOnce("t-err2");
+        .mockReturnValueOnce("TRDFND");
       mockDispatchEvent.mockRejectedValueOnce(new Error("DB down"));
 
       await expect(service.processEvent(raw as any)).rejects.toThrow("DB down");
@@ -600,8 +609,7 @@ describe("EventListenerService", () => {
       for (let i = 1; i <= 5; i++) {
         const raw = makeRawEvent(i, `evt-${i}`);
         (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-          .mockReturnValueOnce("TradeFunded")
-          .mockReturnValueOnce(`t-${i}`);
+          .mockReturnValueOnce("TRDFND");
         await service.processEvent(raw as any);
       }
 
@@ -620,8 +628,7 @@ describe("EventListenerService", () => {
       for (let i = 1; i <= 3; i++) {
         const raw = makeRawEvent(i, `bucket-${i}`);
         (StellarSdk.scValToNative as ReturnType<typeof vi.fn>)
-          .mockReturnValueOnce("TradeFunded")
-          .mockReturnValueOnce(`bucket-trade-${i}`);
+          .mockReturnValueOnce("TRDFND");
         await service.processEvent(raw as any);
       }
 

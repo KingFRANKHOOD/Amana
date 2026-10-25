@@ -1,4 +1,5 @@
 import { Account, Networks, rpc } from "@stellar/stellar-sdk";
+import * as StellarSdk from "@stellar/stellar-sdk";
 import { __resetRetrySleepForTests, __setRetrySleepForTests } from "../lib/retry";
 import {
   __resetRpcServerFactoryForTests,
@@ -1027,60 +1028,65 @@ describe("ContractService XDR builders", () => {
   });
 
   describe("Soroban SDK integration", () => {
-    it("uses Address for buyer address", async () => {
+    const altBuyerAddress = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
+    const altSellerAddress = "GBVKI23OQZCANDUZ5C6B7DVKVXJOEL2NJPPFQOWJ4GFPJ7RDHACBGRSF";
+    const altEscrowContractId = "CBIELTK6YBZJU5UP2WWQEUCY7PUJE7R6OB3NIUJKL5UH4WJQJ6HVHKX";
+
+    it("uses Address for buyer address — changing buyer changes the XDR", async () => {
       const { service } = buildService();
 
-      const result = await service.buildCreateTradeTx({
-        buyerAddress,
-        sellerAddress,
-        amountUsdc: "100",
-        buyerLossBps: 5000,
-        sellerLossBps: 5000,
-      });
+      const [resultA, resultB] = await Promise.all([
+        service.buildCreateTradeTx({ buyerAddress, sellerAddress, amountUsdc: "100", buyerLossBps: 5000, sellerLossBps: 5000 }),
+        service.buildCreateTradeTx({ buyerAddress: altBuyerAddress, sellerAddress, amountUsdc: "100", buyerLossBps: 5000, sellerLossBps: 5000 }),
+      ]);
 
-      expect(result.unsignedXdr).toEqual(expect.any(String));
+      expect(resultA.unsignedXdr).toEqual(expect.any(String));
+      expect(resultB.unsignedXdr).toEqual(expect.any(String));
+      expect(resultA.unsignedXdr).not.toEqual(resultB.unsignedXdr);
     });
 
-    it("uses Address for seller address", async () => {
+    it("uses Address for seller address — changing seller changes the XDR", async () => {
       const { service } = buildService();
 
-      const result = await service.buildCreateTradeTx({
-        buyerAddress,
-        sellerAddress,
-        amountUsdc: "100",
-        buyerLossBps: 5000,
-        sellerLossBps: 5000,
-      });
+      const [resultA, resultB] = await Promise.all([
+        service.buildCreateTradeTx({ buyerAddress, sellerAddress, amountUsdc: "100", buyerLossBps: 5000, sellerLossBps: 5000 }),
+        service.buildCreateTradeTx({ buyerAddress, sellerAddress: altSellerAddress, amountUsdc: "100", buyerLossBps: 5000, sellerLossBps: 5000 }),
+      ]);
 
-      expect(result.unsignedXdr).toEqual(expect.any(String));
+      expect(resultA.unsignedXdr).toEqual(expect.any(String));
+      expect(resultB.unsignedXdr).toEqual(expect.any(String));
+      expect(resultA.unsignedXdr).not.toEqual(resultB.unsignedXdr);
     });
 
-    it("uses Contract for escrow contract", async () => {
-      const { service } = buildService();
+    it("uses Contract for escrow contract — changing escrow ID changes the XDR", async () => {
+      // Build two services with different escrow contract IDs and confirm
+      // the resulting XDRs differ, proving Contract is called with the escrow ID.
+      const server = {
+        getAccount: jest.fn().mockImplementation(async (id: string) => new Account(id, "1")),
+        simulateTransaction: jest.fn().mockResolvedValue({ result: { retval: { _value: "7" } } }),
+        prepareTransaction: jest.fn().mockImplementation(async (tx) => tx),
+      } as unknown as rpc.Server;
+      __setRpcServerFactoryForTests(() => server);
 
-      const result = await service.buildCreateTradeTx({
-        buyerAddress,
-        sellerAddress,
-        amountUsdc: "100",
-        buyerLossBps: 5000,
-        sellerLossBps: 5000,
-      });
+      const serviceA = new ContractService("https://rpc.example.com", process.env.AMANA_ESCROW_CONTRACT_ID!, process.env.USDC_CONTRACT_ID!, Networks.TESTNET);
+      const serviceB = new ContractService("https://rpc.example.com", altEscrowContractId, process.env.USDC_CONTRACT_ID!, Networks.TESTNET);
 
-      expect(result.unsignedXdr).toEqual(expect.any(String));
+      const [resultA, resultB] = await Promise.all([
+        serviceA.buildCreateTradeTx({ buyerAddress, sellerAddress, amountUsdc: "100", buyerLossBps: 5000, sellerLossBps: 5000 }),
+        serviceB.buildCreateTradeTx({ buyerAddress, sellerAddress, amountUsdc: "100", buyerLossBps: 5000, sellerLossBps: 5000 }),
+      ]);
+
+      expect(resultA.unsignedXdr).not.toEqual(resultB.unsignedXdr);
     });
 
-    it("uses TransactionBuilder for transaction creation", async () => {
+    it("uses TransactionBuilder for transaction creation — spies on TransactionBuilder", async () => {
+      const builderSpy = jest.spyOn(StellarSdk, "TransactionBuilder");
       const { service } = buildService();
 
-      const result = await service.buildCreateTradeTx({
-        buyerAddress,
-        sellerAddress,
-        amountUsdc: "100",
-        buyerLossBps: 5000,
-        sellerLossBps: 5000,
-      });
+      await service.buildCreateTradeTx({ buyerAddress, sellerAddress, amountUsdc: "100", buyerLossBps: 5000, sellerLossBps: 5000 });
 
-      expect(result.unsignedXdr).toEqual(expect.any(String));
+      expect(builderSpy).toHaveBeenCalled();
+      builderSpy.mockRestore();
     });
   });
 

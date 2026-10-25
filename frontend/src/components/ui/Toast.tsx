@@ -109,12 +109,12 @@ export function Toast({
           }}
         />
       )}
-      <style dangerouslySetInnerHTML={{__html: `
+      <style>{`
         @keyframes shrink {
           from { width: 100%; }
           to { width: 0%; }
         }
-      `}} />
+      `}</style>
     </div>
   );
 }

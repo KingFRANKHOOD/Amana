@@ -5,6 +5,8 @@ import {
   type ReactNode,
   type ErrorInfo,
 } from "react";
+import { trackFailure } from "@/lib/analytics";
+import { ErrorState } from "./ErrorState";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -29,6 +31,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    trackFailure("render_error", {
+      componentStack: errorInfo.componentStack ?? "unknown",
+    });
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[ErrorBoundary] Render error", error, errorInfo);
+    }
     this.props.onError?.(error, errorInfo);
   }
 
@@ -38,27 +46,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         return this.props.fallback;
       }
 
-      // error.message is rendered as a text node — not via dangerouslySetInnerHTML —
-      // so there is no XSS risk. Inline styles replaced with Tailwind classes.
       return (
-        <div className="flex flex-col items-center justify-center gap-4 p-8 text-center">
-          <h2 className="text-lg font-semibold text-red-600">
-            Something went wrong
-          </h2>
-          <p className="max-w-sm text-sm text-text-secondary">
-            {this.state.error?.message ?? "An unexpected error occurred"}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              this.setState({ hasError: false, error: null });
-              this.props.onReset?.();
-            }}
-            className="rounded px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 transition-colors"
-          >
-            Try again
-          </button>
-        </div>
+        <ErrorState
+          className="min-h-[60vh]"
+          variant="card"
+          title="We could not load this page"
+          message="The service may be temporarily unavailable. Your data is safe; retry the request in a moment."
+          onRetry={() => {
+            this.setState({ hasError: false, error: null });
+            this.props.onReset?.();
+          }}
+        />
       );
     }
 

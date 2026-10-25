@@ -8,11 +8,27 @@ import { IPFSService } from "../services/ipfs.service";
 
 const mockAxiosGet = axios.get as jest.Mock;
 
+/** In-memory `findMany` that honours Prisma cursor pagination args. */
+function paginatingFindMany(records: Array<{ id: number }>) {
+  return jest.fn(async (args: any = {}) => {
+    const sorted = [...records].sort((a, b) => Number(a.id) - Number(b.id));
+    let start = 0;
+    if (args.cursor?.id !== undefined) {
+      const idx = sorted.findIndex((r) => r.id === args.cursor.id);
+      start = idx === -1 ? sorted.length : idx + (args.skip ?? 0);
+    }
+    const take = args.take ?? sorted.length;
+    return sorted.slice(start, start + take);
+  });
+}
+
 describe("EvidenceVerificationService", () => {
   let mockPrisma: {
     tradeEvidence: {
       findMany: jest.Mock;
+      count: jest.Mock;
       update: jest.Mock;
+      count: jest.Mock;
     };
   };
   let mockIpfs: jest.Mocked<Pick<IPFSService, "verifyPin" | "uploadFile" | "getFileUrl">>;
@@ -23,7 +39,9 @@ describe("EvidenceVerificationService", () => {
     mockPrisma = {
       tradeEvidence: {
         findMany: jest.fn(),
+        count: jest.fn(),
         update: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
     mockIpfs = {
@@ -32,12 +50,34 @@ describe("EvidenceVerificationService", () => {
       getFileUrl: jest.fn(),
     };
     mockAxiosGet.mockReset();
-    service = new EvidenceVerificationService(mockPrisma as any, mockIpfs as any, 10);
+    service = new EvidenceVerificationService(mockPrisma, mockIpfs, 10);
   });
 
-  function makeEvidence(overrides: Record<string, unknown> = {}) {
+  interface EvidenceTestRecord {
+    id: number;
+    tradeId: string;
+    cid: string;
+    filename: string;
+    mimeType: string;
+    uploadedBy: string;
+    createdAt: Date;
+  }
+
+  interface EvidencePageQuery {
+    where?: {
+      OR: [
+        { createdAt: { gt: Date } },
+        { createdAt: Date; id: { gt: number } },
+      ];
+    };
+    take: number;
+  }
+
+  function makeEvidence(
+    overrides: Partial<EvidenceTestRecord> = {},
+  ): EvidenceTestRecord {
     return {
-      id: overrides.id ?? 1,
+      id: (overrides.id as number) ?? 1,
       tradeId: overrides.tradeId ?? "trade-001",
       cid: overrides.cid ?? "QmTest123",
       filename: overrides.filename ?? "evidence.jpg",
@@ -47,11 +87,38 @@ describe("EvidenceVerificationService", () => {
     };
   }
 
+  function mockEvidencePages(records: EvidenceTestRecord[]) {
+    mockPrisma.tradeEvidence.count.mockResolvedValue(records.length);
+    mockPrisma.tradeEvidence.findMany.mockImplementation(
+      async (args: EvidencePageQuery) => {
+        let remaining = [...records].sort(
+          (a, b) =>
+            a.createdAt.getTime() - b.createdAt.getTime() || a.id - b.id,
+        );
+
+        if (args.where?.OR) {
+          const afterDate = args.where.OR[0].createdAt.gt as Date;
+          const sameDate = args.where.OR[1].createdAt as Date;
+          const afterId = args.where.OR[1].id.gt as number;
+          remaining = remaining.filter(
+            (record) =>
+              record.createdAt > afterDate ||
+              (record.createdAt.getTime() === sameDate.getTime() &&
+                record.id > afterId),
+          );
+        }
+
+        return remaining.slice(0, args.take);
+      },
+    );
+  }
+
   describe("verifyAll", () => {
     it("should return VerificationReport structure with no evidence", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([]);
+      mockEvidencePages([]);
+      const onProgress = jest.fn();
 
-      const report = await service.verifyAll();
+      const report = await service.verifyAll(onProgress);
 
       expect(report).toHaveProperty("totalChecked", 0);
       expect(report).toHaveProperty("pinnedCount", 0);
@@ -61,10 +128,16 @@ describe("EvidenceVerificationService", () => {
       expect(report).toHaveProperty("errors", []);
       expect(report).toHaveProperty("checkedAt");
       expect(report).toHaveProperty("durationMs");
+      expect(onProgress).toHaveBeenCalledWith({
+        processed: 0,
+        total: 0,
+        batchNumber: 0,
+        batchDurationMs: 0,
+      });
     });
 
     it("should report evidence as pinned when verified", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
+      mockEvidencePages([
         makeEvidence({ id: 1, cid: "QmPinned1" }),
       ]);
       mockIpfs.verifyPin.mockResolvedValue({
@@ -84,7 +157,7 @@ describe("EvidenceVerificationService", () => {
     });
 
     it("should report evidence as missing when not pinned", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
+      mockEvidencePages([
         makeEvidence({ id: 1, cid: "QmMissing1" }),
       ]);
       mockIpfs.verifyPin.mockResolvedValue({
@@ -102,7 +175,7 @@ describe("EvidenceVerificationService", () => {
     });
 
     it("should report errors when verification fails", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
+      mockEvidencePages([
         makeEvidence({ id: 1, cid: "QmError1" }),
       ]);
       mockIpfs.verifyPin.mockResolvedValue({
@@ -120,22 +193,27 @@ describe("EvidenceVerificationService", () => {
 
     it("should handle multiple evidence records with batch processing", async () => {
       const records = Array.from({ length: 25 }, (_, i) =>
-        makeEvidence({ id: i, cid: `QmTest${i}` }),
+        makeEvidence({ id: i + 1, cid: `QmTest${i}` }),
       );
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue(records);
+      mockEvidencePages(records);
       mockIpfs.verifyPin.mockResolvedValue({
         pinned: true,
         cid: "placeholder",
       });
+      const progress: number[] = [];
 
-      const report = await service.verifyAll();
+      const report = await service.verifyAll(({ processed }) => {
+        progress.push(processed);
+      });
 
       expect(report.totalChecked).toBe(25);
       expect(mockIpfs.verifyPin).toHaveBeenCalled();
+      expect(mockPrisma.tradeEvidence.findMany).toHaveBeenCalledTimes(4);
+      expect(progress).toEqual([10, 20, 25]);
     });
 
     it("should handle duplicate CIDs efficiently", async () => {
-      mockPrisma.tradeEvidence.findMany.mockResolvedValue([
+      mockEvidencePages([
         makeEvidence({ id: 1, cid: "QmDup" }),
         makeEvidence({ id: 2, cid: "QmDup" }),
         makeEvidence({ id: 3, cid: "QmDup" }),
@@ -150,6 +228,23 @@ describe("EvidenceVerificationService", () => {
       expect(report.totalChecked).toBe(3);
       expect(report.pinnedCount).toBe(3);
       expect(mockIpfs.verifyPin).toHaveBeenCalledTimes(1);
+    });
+
+    it("should retry failed CID verifications before reporting an error", async () => {
+      mockEvidencePages([makeEvidence({ id: 1, cid: "QmRetry" })]);
+      mockIpfs.verifyPin
+        .mockResolvedValueOnce({
+          pinned: false,
+          cid: "QmRetry",
+          error: "Temporary network error",
+        })
+        .mockResolvedValueOnce({ pinned: true, cid: "QmRetry" });
+
+      const report = await service.verifyAll();
+
+      expect(mockIpfs.verifyPin).toHaveBeenCalledTimes(2);
+      expect(report.pinnedCount).toBe(1);
+      expect(report.errorCount).toBe(0);
     });
   });
 

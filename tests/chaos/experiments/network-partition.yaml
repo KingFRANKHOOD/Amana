@@ -1,0 +1,81 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: backend-network-partition
+  namespace: default
+  labels:
+    experiment: network-partition
+    severity: high
+    environment: staging
+  annotations:
+    hypothesis: |
+      When one backend replica is network-partitioned (isolated from peers and DB):
+      1. K8s readiness probe fails on partitioned pod (kubelet probes still work? No — partition includes everything)
+      2. Service removes partitioned pod from endpoints within 10s
+      3. Load Balancer routes 100% of traffic to non-partitioned replica
+      4. Partitioned pod reports 503 on direct calls (no DB/Redis access)
+      5. Total error rate < 10% during partition (failover window)
+      6. BullMQ workers on partitioned pod stop consuming
+      7. Surviving replica picks up pending BullMQ jobs
+      8. After partition removed: pod rejoins, LB restores balance, workers resume
+    steady-state-check: |
+      - kubectl get endpoints backend-service shows 2 addresses
+      - kubectl get pods -l app=backend shows 2/2 Ready
+      - BullMQ workers count == 2 (each pod has workers)
+    rollback: kubectl delete networkchaos backend-network-partition -n default
+    post-experiment-verification: |
+      - kubectl get endpoints backend-service shows 2 addresses within 30s
+      - Both backend pods report Ready=true
+      - HTTP error rate back to baseline within 60s
+      - No BullMQ jobs stuck in "active" state
+      - EventListener catches up within 30s if any lag accumulated
+spec:
+  action: partition
+  mode: one
+  duration: "120s"
+  selector:
+    labelSelectors:
+      app: backend
+    namespaces:
+      - default
+  direction: both
+  target:
+    selector:
+      labelSelectors:
+        app.kubernetes.io/component: control-plane
+      namespaces:
+        - kube-system
+    mode: all
+  scheduler:
+    cron: "@never"
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: backend-network-partition-internal
+  namespace: default
+  labels:
+    experiment: network-partition
+    severity: high
+    environment: staging
+spec:
+  action: partition
+  mode: one
+  duration: "120s"
+  selector:
+    labelSelectors:
+      app: backend
+    namespaces:
+      - default
+  direction: both
+  target:
+    selector:
+      labelSelectors:
+        app:
+          - postgres
+          - redis
+      namespaces:
+        - default
+    mode: all
+  scheduler:
+    cron: "@never"

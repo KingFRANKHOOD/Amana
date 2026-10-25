@@ -3,7 +3,9 @@ import IORedis from 'ioredis';
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 
-export function createQueueConnection(): IORedis {
+// Cast to `any` to work around ioredis version mismatch between the
+// top-level package and bullmq's bundled ioredis copy.
+export function createQueueConnection(): any {
   return new IORedis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
 }
 
@@ -60,6 +62,29 @@ export interface TrustScoreRecalculationJobData {
 
 export const trustScoreRecalculationQueue = new Queue<TrustScoreRecalculationJobData>(
   'trust-score-recalculation',
+  {
+    connection: createQueueConnection(),
+  },
+);
+
+export interface DataRetentionJobData {
+  triggeredBy: string;
+}
+
+export const dataRetentionCleanupQueue = new Queue<DataRetentionJobData>(
+  'data-retention-cleanup',
+  {
+    connection: createQueueConnection(),
+  },
+);
+
+export interface DataArchivalJobData {
+  triggeredBy: string;
+  thresholdDays?: number;
+}
+
+export const dataArchivalQueue = new Queue<DataArchivalJobData>(
+  'data-archival',
   {
     connection: createQueueConnection(),
   },

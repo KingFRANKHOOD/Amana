@@ -17,7 +17,6 @@ module "vpc" {
 
   project_name         = "amana"
   environment           = "staging"
-  region               = var.region
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
   private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24"]
@@ -25,14 +24,24 @@ module "vpc" {
   nat_gateway_count    = 3
 }
 
+module "kms" {
+  source = "../../modules/kms"
+
+  project_name               = "amana"
+  environment                = "staging"
+  enable_key_rotation        = true
+  deletion_window_in_days    = 30
+}
+
 module "rds" {
   source = "../../modules/rds"
 
-  project_name          = "amana"
+  project_name           = "amana"
   environment            = "staging"
   vpc_id                = module.vpc.vpc_id
   subnet_ids            = module.vpc.private_subnet_ids
   allowed_cidr_blocks   = [module.vpc.vpc_cidr]
+  vpc_cidr              = module.vpc.vpc_cidr
   engine                = "aurora-postgresql"
   engine_version        = "15.4"
   instance_class        = "db.r5.large"
@@ -45,6 +54,10 @@ module "rds" {
   preferred_backup_window = "03:00-04:00"
   skip_final_snapshot   = false
   deletion_protection   = true
+  storage_encrypted     = true
+  kms_key_id           = module.kms.key_id
+  kms_key_dependency   = module.kms.key_id
+  backtrack_window     = 14
 }
 
 module "redis" {
@@ -75,7 +88,6 @@ module "eks" {
 
   project_name             = "amana"
   environment              = "staging"
-  region                   = var.region
   vpc_id                   = module.vpc.vpc_id
   subnet_ids               = module.vpc.private_subnet_ids
   kubernetes_version       = "1.29"
