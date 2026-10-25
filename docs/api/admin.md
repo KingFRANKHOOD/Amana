@@ -1,13 +1,9 @@
 # Admin Endpoints
 
-Every endpoint on this page requires a bearer token whose wallet address
-appears in the `ADMIN_STELLAR_PUBKEYS` environment variable (a
-comma-separated allowlist of Stellar public keys). This is enforced by
-`adminMiddleware`, stacked after the usual `authMiddleware`:
-
-1. No/invalid token -> `401 Unauthorized`
-2. Valid token, wallet not on the allowlist -> `403 { "error": "Forbidden: admin access required" }`
-3. Valid token, wallet on the allowlist -> request proceeds
+The endpoints on this page are for administrative operations. Some require
+admin privileges (wallet address in `ADMIN_STELLAR_PUBKEYS` environment
+variable), while others require only authentication. See individual endpoint
+documentation below for specific requirements.
 
 There is no separate "admin login" - the same challenge/verify flow in
 [overview.md](./overview.md#authentication) applies; admin status is purely
@@ -19,6 +15,8 @@ The treasury holds funds swept from resolved/expired escrow contracts.
 
 `GET /treasury/balance` - current balance of the escrow contract treasury.
 
+**Authentication:** Any authenticated user (bearer token required).
+
 ```json
 { "balance": "50000.0000000", "asset": "USDC", "contractId": "CA..." }
 ```
@@ -26,12 +24,20 @@ The treasury holds funds swept from resolved/expired escrow contracts.
 `GET /treasury/config` - the treasury's contract id, network, and settlement
 asset.
 
+**Authentication:** Any authenticated user (bearer token required).
+
 ```json
 { "contractId": "CA...", "network": "testnet", "asset": "USDC" }
 ```
 
 `POST /treasury/withdraw` - builds an unsigned withdrawal transaction moving
 funds out of the treasury.
+
+**Authentication:** Admin only. Wallet address must appear in
+`ADMIN_STELLAR_PUBKEYS` (comma-separated allowlist). Non-admin users receive
+`403 { "error": "Only admin can withdraw treasury funds" }`.
+
+Request:
 
 ```json
 { "destination": "GBBB...C4", "amount": "1000.0000000" }

@@ -57,12 +57,47 @@ type TradeDatabase = Pick<
   PrismaClient,
   "trade" | "dispute" | "disputeCategory" | "auditLog" | "$queryRaw"
 > &
-  Partial<Pick<PrismaClient, "$transaction" | "userWatchlist">>;
+  Partial<Pick<PrismaClient, "$transaction" | "userWatchlist" | "user">>;
+
+/**
+ * Ensure Prisma User rows exist for the given wallet addresses so Trade FKs
+ * (buyerAddress/sellerAddress -> User.walletAddress) never fail for fresh
+ * Supabase-only users. Best-effort: logs and continues if the user model is
+ * not available on the injected mock prisma (tests) — production prisma always
+ * has the model.
+ */
+async function ensureUserRows(
+  prismaOrTx: any,
+  addresses: string[],
+): Promise<void> {
+  const unique = Array.from(new Set(addresses.map((a) => a.toLowerCase()).filter(Boolean)));
+  for (const walletAddress of unique) {
+    try {
+      const userModel = prismaOrTx?.user;
+      if (!userModel?.upsert) continue;
+      await userModel.upsert({
+        where: { walletAddress },
+        update: {},
+        create: { walletAddress, displayName: walletAddress },
+      });
+    } catch (e: any) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue;
+      appLogger.warn({ error: e, walletAddress }, "Failed to ensure Prisma user for trade FK");
+    }
+  }
+}
 
 export class TradeAccessDeniedError extends Error {
   constructor() {
     super("Forbidden");
     this.name = "TradeAccessDeniedError";
+  }
+}
+
+export class TradeNotFoundError extends Error {
+  constructor() {
+    super("Trade not found");
+    this.name = "TradeNotFoundError";
   }
 }
 
@@ -117,6 +152,10 @@ export class TradeService {
         });
 
         const createTradeAndAuditLog = async (tx: TradeDatabase): Promise<Trade> => {
+          // Ensure FK targets exist before creating the Trade row. Handles fresh
+          // users who exist only in Supabase so far.
+          await ensureUserRows(tx as any, [input.buyerAddress, input.sellerAddress]);
+
           const trade = await tx.trade.create({
             data: {
               ...input,
@@ -135,6 +174,10 @@ export class TradeService {
 
           return trade;
         };
+
+        // Best-effort ensure outside transaction as well for non-transaction path
+        // and for mocked prisma instances that lack `user` on the tx.
+        await ensureUserRows(this.prisma as any, [input.buyerAddress, input.sellerAddress]);
 
         try {
           if (this.prisma.$transaction) {
@@ -242,17 +285,10 @@ export class TradeService {
   }
 
   async getTradeById(id: string, callerAddress: string) {
-    const numericId = Number(id);
-    const orConditions: Prisma.TradeWhereInput[] = [{ tradeId: id }];
-
-    if (Number.isInteger(numericId) && numericId > 0) {
-      orConditions.push({ id: numericId });
-    }
-
     const trade = await cacheService.getOrSet<Trade | null>(
       `cache:trade:${id}`,
       60,
-      () => this.prisma.trade.findFirst({ where: { OR: orConditions } }),
+      () => this.prisma.trade.findFirst({ where: { tradeId: id } }),
     );
 
     if (!trade) {
@@ -363,7 +399,7 @@ export class TradeService {
       async (span) => {
         const trade = await this.getTradeById(id, callerAddress);
         if (!trade) {
-          throw new Error("Trade not found");
+          throw new TradeNotFoundError();
         }
 
         // Access check is already done by getTradeById, but let's be explicit
@@ -437,7 +473,7 @@ export class TradeService {
       });
 
       if (!current) {
-        throw new Error("Trade not found");
+        throw new TradeNotFoundError();
       }
 
       if (

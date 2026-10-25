@@ -1,7 +1,8 @@
 import { NextFunction, Response, Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 import { StellarService } from "../services/stellar.service";
 import { prisma as defaultPrisma } from "../lib/db";
 import { authMiddleware } from "../middleware/auth.middleware";

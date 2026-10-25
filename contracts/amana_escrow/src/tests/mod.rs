@@ -5,3 +5,5 @@ pub mod gas_footprint_tests;
 pub mod migration_tests;
 pub mod trade_data_tests;
 pub mod ttl_tests;
+pub mod evidence_storage_tests;
+pub mod path_payment_bounds_tests;

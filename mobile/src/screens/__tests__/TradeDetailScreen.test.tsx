@@ -1,6 +1,9 @@
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import TradeDetailScreen from '../TradeDetailScreen';
+import { StyleSheet } from 'react-native';
 import { useTradeStore } from '../../stores/tradeStore';
+import { STATUS_COLORS, STATUS_LABELS, TRADE_STATUSES } from '../../constants/tradeStatus';
+import type { TradeStatus } from '../../types/trade';
 
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -18,7 +21,7 @@ const baseTrade = {
   buyerAddress: 'GDNM7WSJ7VIUVK2TSZ2OQES5XR2663TZEIBFXRDT56B5IRLHERVWSXMU',
   sellerAddress: 'GA4T33YK6H6D5E7ZQY5W3J2L7F8K9B0N1M2P3Q4R5S6T7U8V9W0X1Y2Z3',
   amountUsdc: '100.00',
-  status: 'PENDING',
+  status: 'CREATED',
   buyerLossBps: 5000,
   sellerLossBps: 5000,
   commodity: 'Maize',
@@ -63,15 +66,15 @@ describe('TradeDetailScreen', () => {
 
   it('renders trade details', () => {
     useTradeStore.setState({ currentTrade: baseTrade as any, isLoading: false });
-    const { getByText } = render(
+    const { getByText, getByTestId } = render(
       <TradeDetailScreen navigation={mockNavigation as any} route={{ params: { tradeId: 'trade-123' } } as any} />
     );
     expect(getByText('Trade Detail')).toBeTruthy();
     expect(getByText('100.00 USDC')).toBeTruthy();
-    expect(getByText('Pending')).toBeTruthy();
+    expect(getByTestId('trade-status-label').props.children).toBe('Created');
   });
 
-  it('shows Deposit Funds button for PENDING status', () => {
+  it('shows Deposit Funds button for CREATED status', () => {
     useTradeStore.setState({ currentTrade: baseTrade as any, isLoading: false });
     const { getByText } = render(
       <TradeDetailScreen navigation={mockNavigation as any} route={{ params: { tradeId: 'trade-123' } } as any} />
@@ -133,5 +136,58 @@ describe('TradeDetailScreen', () => {
     fireEvent.changeText(input, 'Goods damaged');
     fireEvent.press(getByText('Submit'));
     await waitFor(() => expect(initiateDispute).toHaveBeenCalledWith('trade-123', 'Goods damaged'));
+  });
+  describe('for every real TradeStatus', () => {
+    const renderWithStatus = (status: TradeStatus) => {
+      useTradeStore.setState({ currentTrade: { ...baseTrade, status } as any, isLoading: false });
+      return render(
+        <TradeDetailScreen navigation={mockNavigation as any} route={{ params: { tradeId: 'trade-123' } } as any} />
+      );
+    };
+
+    it.each(TRADE_STATUSES.map((s) => [s]))('renders a non-empty label and its own color for %s', (status) => {
+      const { getByTestId } = renderWithStatus(status);
+      const label = getByTestId('trade-status-label');
+      expect(label.props.children).toBe(STATUS_LABELS[status]);
+      expect(String(label.props.children).trim()).not.toBe('');
+      expect(label.props.children).not.toBe('undefined');
+      expect(StyleSheet.flatten(label.props.style).color).toBe(STATUS_COLORS[status]);
+    });
+
+    it('maps each status to a distinct color and label', () => {
+      expect(new Set(TRADE_STATUSES.map((s) => STATUS_COLORS[s])).size).toBe(TRADE_STATUSES.length);
+      expect(new Set(TRADE_STATUSES.map((s) => STATUS_LABELS[s])).size).toBe(TRADE_STATUSES.length);
+    });
+
+    const expectedActions: Record<TradeStatus, string[]> = {
+      PENDING_SIGNATURE: [],
+      CREATED: ['💰 Deposit Funds'],
+      FUNDED: ['✅ Confirm Delivery', '⚠️ Initiate Dispute'],
+      DELIVERED: ['💸 Release Funds', '⚠️ Initiate Dispute'],
+      COMPLETED: [],
+      DISPUTED: ['📹 Upload Evidence'],
+      CANCELLED: [],
+    };
+    const allActions = [
+      '💰 Deposit Funds',
+      '✅ Confirm Delivery',
+      '💸 Release Funds',
+      '⚠️ Initiate Dispute',
+      '📹 Upload Evidence',
+    ];
+
+    it.each(TRADE_STATUSES.map((s) => [s]))('shows only the valid actions for %s', (status) => {
+      const { queryByText } = renderWithStatus(status);
+      for (const action of allActions) {
+        if (expectedActions[status].includes(action)) {
+          expect(queryByText(action)).toBeTruthy();
+        } else {
+          expect(queryByText(action)).toBeNull();
+        }
+      }
+      if (expectedActions[status].length === 0) {
+        expect(queryByText('No actions available for this trade status.')).toBeTruthy();
+      }
+    });
   });
 });

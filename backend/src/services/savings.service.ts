@@ -1,6 +1,7 @@
 import { PrismaClient, Goal, Vault } from "@prisma/client";
 import { prisma as defaultPrisma } from "../lib/db";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 interface GoalAnalytics {
     goalId: string;
@@ -199,6 +200,15 @@ export class SavingsService {
                 ErrorCode.NOT_FOUND,
                 `Vault not found: ${vaultId}`,
                 404,
+            );
+        }
+
+        // Invariant: a goal may only be attached to a vault owned by the caller.
+        if (vault.ownerAddress.toLowerCase() !== normalizedAddress) {
+            throw new AppError(
+                ErrorCode.FORBIDDEN,
+                `Vault ${vaultId} is not owned by caller`,
+                403,
             );
         }
 

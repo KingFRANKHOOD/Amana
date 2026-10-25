@@ -18,6 +18,22 @@ import { useDraftForm } from "@/hooks/useDraftForm";
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { z } from "zod";
 
+const TRADE_STATUS_CLASSES: Record<string, string> = {
+  ACTIVE: "bg-status-success/20 text-status-success border border-status-success/30",
+  FUNDED: "bg-status-success/20 text-status-success border border-status-success/30",
+  PENDING: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  PENDING_SIGNATURE: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  CREATED: "bg-status-warning/20 text-status-warning border border-status-warning/30",
+  DELIVERED: "bg-status-info/10 text-status-info border border-status-info/20",
+  COMPLETED: "bg-bg-elevated text-text-secondary border border-border-default",
+  DISPUTED: "bg-status-danger/20 text-status-danger border border-status-danger/30",
+  CANCELLED: "bg-surface-1 text-text-muted border border-border-default",
+};
+
+function getTradeStatusClass(status: string): string {
+  return TRADE_STATUS_CLASSES[status.toUpperCase()] ?? "bg-bg-elevated text-text-secondary border border-border-default";
+}
+
 export function DashboardContent() {
   const { t } = useTranslation();
   const { token, isAuthenticated } = useAuth();
@@ -216,7 +232,7 @@ export function DashboardContent() {
           icon={<CheckCircle2 className="w-5 h-5" />}
         >
           <div className="text-3xl font-bold text-text-primary mt-2">
-            {(stats?.totalTrades || 0) - (stats?.openTrades || 0)}
+            {stats?.completedTrades || 0}
           </div>
           <div className="text-sm text-text-secondary mt-1">
             {t("dashboard.stats.completedTradesDesc")}
@@ -224,42 +240,31 @@ export function DashboardContent() {
         </BentoCard>
 
         <BentoCard 
-          title={t("dashboard.stats.totalTrades")} 
+          title={t("dashboard.stats.disputedTrades")} 
           icon={<AlertCircle className="w-5 h-5" />}
+          glowVariant="danger"
         >
           <div className="text-3xl font-bold text-text-primary mt-2">
-            {stats?.totalTrades || 0}
+            {stats?.disputedTrades || 0}
           </div>
-          <div className="text-sm text-text-secondary mt-1">
-            {t("dashboard.stats.totalTradesDesc")}
+          <div className="text-sm text-status-danger mt-1">
+            {t("dashboard.stats.disputedTradesDesc")}
           </div>
         </BentoCard>
       </div>
 
-      {/* Recent Activity Section */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-end">
-          <h2 className="text-xl font-semibold text-text-primary">{t("dashboard.recentTrades")}</h2>
-          <Link href="/trades" className="text-sm text-gold hover:underline underline-offset-4">
-            {t("dashboard.recentTrades.viewAll")}
+      {/* Recent Trades */}
+      <div className="rounded-xl border border-border-default bg-bg-card overflow-hidden">
+        <div className="p-5 border-b border-border-default flex justify-between items-center">
+          <h2 className="text-lg font-semibold text-text-primary">{t("dashboard.recentTrades")}</h2>
+          <Link href="/trades" className="text-sm text-gold hover:underline">
+            {t("dashboard.viewAll")}
           </Link>
         </div>
         
         {recentTrades.length === 0 ? (
-          <div className="bg-bg-card border border-border-default rounded-xl p-8 text-center flex flex-col items-center">
-            <div className="w-12 h-12 rounded-full bg-bg-elevated border border-border-default flex items-center justify-center mb-3">
-              <Activity className="w-6 h-6 text-text-muted" />
-            </div>
-            <p className="text-text-primary font-medium">{t("dashboard.recentTrades.empty")}</p>
-            <p className="text-text-secondary text-sm mt-1 max-w-sm mb-4">
-              {t("dashboard.recentTrades.emptyDescription")}
-            </p>
-            <Link
-              href="/trades/create"
-              className="px-4 py-2 bg-bg-elevated border border-border-default text-text-primary text-sm font-medium rounded-lg hover:bg-bg-input transition-colors"
-            >
-              {t("dashboard.recentTrades.startTrading")}
-            </Link>
+          <div className="p-8 text-center text-text-secondary">
+            {t("dashboard.noTrades")}
           </div>
         ) : (
           <div className="bg-bg-card border border-border-default rounded-xl overflow-hidden">
@@ -276,8 +281,8 @@ export function DashboardContent() {
                 </thead>
                 <tbody>
                   {recentTrades.map((trade, idx) => (
-                    <tr 
-                      key={trade.tradeId} 
+                    <tr
+                      key={trade.tradeId}
                       className={`
                         border-b border-border-default hover:bg-bg-elevated/40 transition-colors
                         ${idx === recentTrades.length - 1 ? 'border-b-0' : ''}
@@ -296,11 +301,7 @@ export function DashboardContent() {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2.5 py-1 text-xs font-medium rounded-full capitalize
-                          ${trade.status === 'active' ? 'bg-status-success/20 text-status-success border border-status-success/30' : 
-                            trade.status === 'completed' ? 'bg-bg-elevated text-text-secondary border border-border-default' :
-                            trade.status === 'pending' ? 'bg-status-warning/20 text-status-warning border border-status-warning/30' :
-                            'bg-status-danger/20 text-status-danger border border-status-danger/30'
-                          }
+                          ${getTradeStatusClass(trade.status)}
                         `}>
                           {trade.status}
                         </span>

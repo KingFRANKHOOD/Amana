@@ -5,14 +5,16 @@ import {
   ManifestSchema,
   NotificationPreferencesSchema,
 } from "@/lib/validation/schemas";
+import { StrKey } from "@stellar/stellar-sdk";
 
 // ── TradeSchema ───────────────────────────────────────────────────────────────
 
 describe("TradeSchema", () => {
+  const validAddress = StrKey.encodeEd25519PublicKey(Buffer.alloc(32));
   const valid = {
     tradeId: "trade-001",
-    buyerAddress: "GABCDEF1234567890",
-    sellerAddress: "GXYZABC9876543210",
+    buyerAddress: validAddress,
+    sellerAddress: validAddress,
     amountCngn: "1000.50",
     buyerLossBps: 200,
     sellerLossBps: 300,
@@ -37,6 +39,22 @@ describe("TradeSchema", () => {
     }
   });
 
+  it.each([validAddress.slice(0, 16), "not-a-stellar-address"])(
+    "rejects invalid buyer address %s",
+    (buyerAddress) => {
+      const result = TradeSchema.safeParse({ ...valid, buyerAddress });
+      expect(result.success).toBe(false);
+    },
+  );
+
+  it.each([validAddress.slice(0, 16), "not-a-stellar-address"])(
+    "rejects invalid seller address %s",
+    (sellerAddress) => {
+      const result = TradeSchema.safeParse({ ...valid, sellerAddress });
+      expect(result.success).toBe(false);
+    },
+  );
+
   it("rejects non-numeric amountCngn", () => {
     const result = TradeSchema.safeParse({ ...valid, amountCngn: "not-a-number" });
     expect(result.success).toBe(false);
@@ -44,6 +62,16 @@ describe("TradeSchema", () => {
 
   it("rejects negative amountCngn", () => {
     const result = TradeSchema.safeParse({ ...valid, amountCngn: "-50" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects zero amountCngn", () => {
+    const result = TradeSchema.safeParse({ ...valid, amountCngn: "0" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects decimal zero amountCngn", () => {
+    const result = TradeSchema.safeParse({ ...valid, amountCngn: "0.00" });
     expect(result.success).toBe(false);
   });
 

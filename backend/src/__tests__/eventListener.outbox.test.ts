@@ -23,9 +23,19 @@ jest.mock("../config/eventListener.config", () => ({
 
 jest.mock("../services/eventHandlers", () => ({
   dispatchEvent: jest.fn(),
+  MissingTradeError: class MissingTradeError extends Error {
+    tradeId: string;
+    eventType: string;
+    constructor(tradeId: string, eventType: string) {
+      super(`Trade ${tradeId} not found for event ${eventType}`);
+      this.name = "MissingTradeError";
+      this.tradeId = tradeId;
+      this.eventType = eventType;
+    }
+  },
 }));
 
-import { dispatchEvent } from "../services/eventHandlers";
+import { dispatchEvent, MissingTradeError } from "../services/eventHandlers";
 import * as StellarSdk from "@stellar/stellar-sdk";
 
 type MockOutbox = {
@@ -33,6 +43,8 @@ type MockOutbox = {
   status: "PENDING" | "RETRYING" | "PROCESSED" | "DEAD_LETTER";
   attempts: number;
   nextAttemptAt: Date;
+  tradeId: string;
+  ledgerSequence: number;
 };
 
 function createMockPrisma() {
@@ -41,6 +53,8 @@ function createMockPrisma() {
     status: "PENDING",
     attempts: 0,
     nextAttemptAt: new Date(Date.now() - 1000),
+    tradeId: "trade-001",
+    ledgerSequence: 99,
   };
 
   const tx = {
@@ -48,6 +62,7 @@ function createMockPrisma() {
       create: jest.fn().mockResolvedValue({}),
     },
     chainEventOutbox: {
+      findUnique: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockImplementation(async ({ data }: any) => {
         if (typeof data.attempts === "number") outbox.attempts = data.attempts;
         if (data.attempts?.increment) outbox.attempts += data.attempts.increment;
@@ -65,13 +80,17 @@ function createMockPrisma() {
     },
     chainEventOutbox: {
       findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ ...outbox }),
+      upsert: jest.fn().mockImplementation(async () => ({ ...outbox })),
       update: jest.fn().mockImplementation(async ({ data }: any) => {
         if (typeof data.attempts === "number") outbox.attempts = data.attempts;
+        if (data.attempts?.increment) outbox.attempts += data.attempts.increment;
         if (data.status) outbox.status = data.status;
         if (data.nextAttemptAt) outbox.nextAttemptAt = data.nextAttemptAt;
         return { ...outbox };
       }),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
     _outbox: outbox,
@@ -94,8 +113,7 @@ describe("EventListenerService outbox retries", () => {
     (dispatchEvent as jest.Mock).mockReset();
     (StellarSdk.scValToNative as jest.Mock)
       .mockReset()
-      .mockReturnValueOnce("TradeCreated")
-      .mockReturnValueOnce("trade-001");
+      .mockReturnValue("TRDCRT");
   });
 
   it("marks outbox row RETRYING with backoff when handler fails", async () => {
@@ -120,12 +138,10 @@ describe("EventListenerService outbox retries", () => {
 
   it("moves outbox row to DEAD_LETTER when max attempts reached", async () => {
     const prisma = createMockPrisma();
-    prisma.chainEventOutbox.create = jest.fn().mockResolvedValue({
-      id: 11,
-      status: "RETRYING",
-      attempts: 2,
-      nextAttemptAt: new Date(Date.now() - 1000),
-    });
+    prisma._outbox.status = "RETRYING";
+    prisma._outbox.attempts = 2;
+    prisma._outbox.nextAttemptAt = new Date(Date.now() - 1000);
+    prisma.chainEventOutbox.upsert = jest.fn().mockResolvedValue({ ...prisma._outbox });
 
     const service = new EventListenerService(prisma);
     (service as any).running = true;
@@ -147,20 +163,17 @@ describe("EventListenerService outbox retries", () => {
 
   it("skips processing when nextAttemptAt is in the future", async () => {
     const prisma = createMockPrisma();
-    prisma.chainEventOutbox.create = jest.fn().mockResolvedValue({
-      id: 11,
-      status: "RETRYING",
-      attempts: 1,
-      nextAttemptAt: new Date(Date.now() + 60_000),
-    });
+    prisma._outbox.status = "RETRYING";
+    prisma._outbox.attempts = 1;
+    prisma._outbox.nextAttemptAt = new Date(Date.now() + 60_000);
+    prisma.chainEventOutbox.upsert = jest.fn().mockResolvedValue({ ...prisma._outbox });
 
     const service = new EventListenerService(prisma);
     (service as any).running = true;
 
     (StellarSdk.scValToNative as jest.Mock)
       .mockReset()
-      .mockReturnValueOnce("TradeCreated")
-      .mockReturnValueOnce("trade-001");
+      .mockReturnValue("TRDCRT");
 
     await service.processEvent(rawEvent());
 

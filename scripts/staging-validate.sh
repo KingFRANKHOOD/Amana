@@ -132,6 +132,22 @@ check "No orphaned disputes" \
 check "No orphaned goals" \
   'SELECT COUNT(*) FROM "Goal" g LEFT JOIN "Vault" v ON g."vaultId"=v."vaultId" WHERE v.id IS NULL' "0"
 
+# ── Observability config (Grafana provisioning, Loki/Promtail, compose) ──────
+echo ""
+echo "[7] Observability configuration"
+if command -v node >/dev/null 2>&1; then
+  if node scripts/validate-observability-config.mjs; then
+    echo "  ✓ Observability config validation passed"
+    ((PASS++)) || true
+  else
+    echo "  ✗ Observability config validation failed"
+    ((FAIL++)) || true
+  fi
+else
+  echo "  ✗ node not found — cannot run scripts/validate-observability-config.mjs"
+  ((FAIL++)) || true
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════════════"

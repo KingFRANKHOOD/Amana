@@ -31,7 +31,7 @@ impl Harness {
             .address();
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(&env, &contract_id);
-        client.initialize(&admin, &usdc_id, &treasury, &100u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100u32, &usdc_id);
 
         Self {
             env,

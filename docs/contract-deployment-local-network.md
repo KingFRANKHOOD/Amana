@@ -124,6 +124,16 @@ cargo test local_deployment_tests::test_initialize_with_arbitrary_token_contract
 cargo test local_deployment_tests -- --nocapture
 ```
 
+The deployment script's stale-artifact regression test can be run with:
+
+```bash
+bash scripts/test-deploy-contract-local.sh
+```
+
+It simulates a failed Cargo build while a previous WASM artifact exists and
+verifies that the deployment script exits without invoking Soroban. CI runs
+this check for contract-related changes.
+
 ## CI/CD Integration
 
 ### GitHub Actions
@@ -253,7 +263,7 @@ pub fn initialize(env: Env, admin: Address, ...) {
 - [Event Flow](./event-flow.md) - On-chain event processing
 - [Migration Rollback Playbook](./migration-rollback-playbook.md) - Database migration safety
 - [Contract README](../contracts/amana_escrow/README.md) - Contract-specific guidance
-- [CI Configuration](.github/workflows/ci.yml) - GitHub Actions pipeline
+- [CI Configuration](../.github/workflows/ci.yml) - GitHub Actions pipeline
 
 ## Summary
 

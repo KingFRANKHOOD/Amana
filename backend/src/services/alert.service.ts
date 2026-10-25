@@ -177,7 +177,8 @@ export class AlertService {
     const pattern = new RegExp(`${key}:([^\\r]+)`, "m");
     const match = info.match(pattern);
     if (!match) return null;
-    const value = match[1].trim();
+    const value = match[1]?.trim();
+    if (value === undefined) return null;
     const numeric = Number(value);
     return Number.isNaN(numeric) ? value : numeric;
   }

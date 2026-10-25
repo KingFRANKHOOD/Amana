@@ -95,13 +95,7 @@ impl H {
 
     fn setup(&self) {
         let c = self.c();
-        c.initialize(
-            &self.admin,
-            &self.token,
-            &self.treasury,
-            &100u32,
-            &self.token,
-        );
+        c.initialize(&soroban_sdk::Vec::from_array(&self.env, [self.admin.clone()]), &1_u32, &self.token, &self.treasury, &100u32, &self.token);
         c.set_mediator(&self.mediator);
     }
 

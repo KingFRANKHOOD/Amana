@@ -63,7 +63,8 @@ npm install
 Run tests:
 
 ```bash
-npm test        # vitest run (80% coverage threshold)
+npm test                  # vitest run (no coverage collected)
+npm test -- --coverage    # enforces the 80% coverage threshold, as CI does
 ```
 
 Type-check / lint (both run `tsc --noEmit`):

@@ -1,5 +1,24 @@
-import type { Counter, Gauge, Histogram } from "@opentelemetry/api";
+import type {
+  Counter,
+  Gauge,
+  Histogram,
+  ObservableGauge,
+} from "@opentelemetry/api";
 import { MeterProvider } from "@opentelemetry/sdk-metrics";
+
+/**
+ * Minimal Prisma-shaped interface used by MetricsService for observable gauge
+ * callbacks. Kept narrow so the service is easy to unit-test without a full
+ * PrismaClient.
+ */
+export interface MetricsPrismaClient {
+  trade: {
+    count(args?: { where?: Record<string, unknown> }): Promise<number>;
+  };
+  dispute: {
+    count(args?: { where?: Record<string, unknown> }): Promise<number>;
+  };
+}
 
 export interface LatencyPercentiles {
   p50: number;
@@ -79,16 +98,20 @@ class RollingWindowStats {
 export class MetricsService {
   private static instance: MetricsService;
   private meterProvider: MeterProvider;
+  /** Optional DB client used by observable gauge callbacks. */
+  private prismaClient: MetricsPrismaClient | null = null;
 
   // Trade metrics
   private tradeCounter: Counter;
   private tradeCompletedCounter: Counter;
   private tradeLatencyHistogram: Histogram;
+  private tradesActiveGauge: ObservableGauge;
 
   // Dispute metrics
   private disputeCreatedCounter: Counter;
   private disputeResolvedCounter: Counter;
   private disputeResolutionTimeHistogram: Histogram;
+  private disputesOpenGauge: ObservableGauge;
 
   // General processing metrics
   private requestDurationHistogram: Histogram;
@@ -136,20 +159,34 @@ export class MetricsService {
       unit: "1",
     });
 
-    meter.createObservableGauge(
+    this.tradesActiveGauge = meter.createObservableGauge(
       "trades_active_count",
       {
         description: "Current number of active trades",
         unit: "1",
-      }
+      },
     );
+    this.tradesActiveGauge.addCallback((result) => {
+      if (!this.prismaClient) return;
+      // Active = any trade not yet in a terminal state (COMPLETED / CANCELLED)
+      this.prismaClient.trade
+        .count({
+          where: {
+            status: { notIn: ["COMPLETED", "CANCELLED"] as any },
+          },
+        })
+        .then((n) => result.observe(n))
+        .catch(() => {
+          /* non-fatal: skip observation on DB error */
+        });
+    });
 
     this.tradeLatencyHistogram = meter.createHistogram(
       "trade_processing_duration_ms",
       {
         description: "Duration of trade processing from creation to completion",
         unit: "ms",
-      }
+      },
     );
 
     // Dispute metrics
@@ -163,12 +200,28 @@ export class MetricsService {
       {
         description: "Total number of disputes resolved",
         unit: "1",
-      }
+      },
     );
 
-    meter.createObservableGauge("disputes_open_count", {
-      description: "Current number of open disputes",
-      unit: "1",
+    this.disputesOpenGauge = meter.createObservableGauge(
+      "disputes_open_count",
+      {
+        description: "Current number of open disputes",
+        unit: "1",
+      },
+    );
+    this.disputesOpenGauge.addCallback((result) => {
+      if (!this.prismaClient) return;
+      this.prismaClient.dispute
+        .count({
+          where: {
+            status: { notIn: ["RESOLVED", "CLOSED"] as any },
+          },
+        })
+        .then((n) => result.observe(n))
+        .catch(() => {
+          /* non-fatal: skip observation on DB error */
+        });
     });
 
     this.disputeResolutionTimeHistogram = meter.createHistogram(
@@ -176,7 +229,7 @@ export class MetricsService {
       {
         description: "Duration from dispute creation to resolution",
         unit: "ms",
-      }
+      },
     );
 
     // General metrics with standardized latency buckets for p50/p95/p99 tracking
@@ -185,7 +238,7 @@ export class MetricsService {
       {
         description: "HTTP request processing time",
         unit: "ms",
-      }
+      },
     );
 
     this.slowRequestCounter = meter.createCounter("http_slow_requests_total", {
@@ -204,49 +257,37 @@ export class MetricsService {
       {
         description: "Number of active PostgreSQL connections in the pool",
         unit: "1",
-      }
+      },
     );
 
-    this.pgPoolIdleConnections = meter.createGauge(
-      "pg_pool_idle_connections",
-      {
-        description: "Number of idle PostgreSQL connections in the pool",
-        unit: "1",
-      }
-    );
+    this.pgPoolIdleConnections = meter.createGauge("pg_pool_idle_connections", {
+      description: "Number of idle PostgreSQL connections in the pool",
+      unit: "1",
+    });
 
-    this.pgPoolWaitingQueries = meter.createGauge(
-      "pg_pool_waiting_queries",
-      {
-        description: "Number of queries waiting for a connection from the pool",
-        unit: "1",
-      }
-    );
+    this.pgPoolWaitingQueries = meter.createGauge("pg_pool_waiting_queries", {
+      description: "Number of queries waiting for a connection from the pool",
+      unit: "1",
+    });
 
-    this.pgPoolTimeoutTotal = meter.createCounter(
-      "pg_pool_timeout_total",
-      {
-        description:
-          "Total number of connections that waited too long for a pool connection",
-        unit: "1",
-      }
-    );
+    this.pgPoolTimeoutTotal = meter.createCounter("pg_pool_timeout_total", {
+      description:
+        "Total number of connections that waited too long for a pool connection",
+      unit: "1",
+    });
 
     // Storage and retention growth metrics
-    this.storageTableSizeGauge = meter.createGauge(
-      "storage_table_size_bytes",
-      {
-        description: "Size in bytes of PostgreSQL table including indexes",
-        unit: "By",
-      }
-    );
+    this.storageTableSizeGauge = meter.createGauge("storage_table_size_bytes", {
+      description: "Size in bytes of PostgreSQL table including indexes",
+      unit: "By",
+    });
 
     this.storageDatabaseSizeGauge = meter.createGauge(
       "storage_database_size_bytes",
       {
         description: "Total size in bytes of the PostgreSQL database",
         unit: "By",
-      }
+      },
     );
 
     this.storageTableRowCountGauge = meter.createGauge(
@@ -254,15 +295,16 @@ export class MetricsService {
       {
         description: "Estimated row count of PostgreSQL table",
         unit: "1",
-      }
+      },
     );
 
     this.dataRetentionPrunedCounter = meter.createCounter(
       "data_retention_records_pruned_total",
       {
-        description: "Total number of records pruned by automated retention jobs",
+        description:
+          "Total number of records pruned by automated retention jobs",
         unit: "1",
-      }
+      },
     );
 
     this.dataArchivalRecordsCounter = meter.createCounter(
@@ -270,40 +312,35 @@ export class MetricsService {
       {
         description: "Total number of records moved to archival cold storage",
         unit: "1",
-      }
+      },
     );
 
     // Redis metrics
-    this.redisMemoryUsedGauge = meter.createGauge(
-      "redis_memory_used_bytes",
-      {
-        description: "Current memory used by Redis in bytes",
-        unit: "By",
-      }
-    );
+    this.redisMemoryUsedGauge = meter.createGauge("redis_memory_used_bytes", {
+      description: "Current memory used by Redis in bytes",
+      unit: "By",
+    });
 
-    this.redisMaxmemoryGauge = meter.createGauge(
-      "redis_maxmemory_bytes",
-      {
-        description: "Configured maxmemory limit for Redis in bytes",
-        unit: "By",
-      }
-    );
+    this.redisMaxmemoryGauge = meter.createGauge("redis_maxmemory_bytes", {
+      description: "Configured maxmemory limit for Redis in bytes",
+      unit: "By",
+    });
 
     this.redisMemoryUsagePercentGauge = meter.createGauge(
       "redis_memory_used_percent",
       {
         description: "Redis memory usage as a percentage of maxmemory",
         unit: "1",
-      }
+      },
     );
 
     this.redisEvictedKeysCounter = meter.createCounter(
       "redis_evicted_keys_total",
       {
-        description: "Total number of keys evicted by Redis due to maxmemory policy",
+        description:
+          "Total number of keys evicted by Redis due to maxmemory policy",
         unit: "1",
-      }
+      },
     );
 
     this.redisConnectedClientsGauge = meter.createGauge(
@@ -311,25 +348,30 @@ export class MetricsService {
       {
         description: "Number of client connections to Redis",
         unit: "1",
-      }
+      },
     );
 
-    this.redisHealthGauge = meter.createGauge(
-      "redis_health_status",
-      {
-        description: "Whether Redis is reachable and healthy (1 = healthy, 0 = unhealthy)",
-        unit: "1",
-      }
-    );
+    this.redisHealthGauge = meter.createGauge("redis_health_status", {
+      description:
+        "Whether Redis is reachable and healthy (1 = healthy, 0 = unhealthy)",
+      unit: "1",
+    });
   }
 
-  static getInstance(
-    meterProvider?: MeterProvider
-  ): MetricsService {
+  static getInstance(meterProvider?: MeterProvider): MetricsService {
     if (!MetricsService.instance) {
       MetricsService.instance = new MetricsService(meterProvider);
     }
     return MetricsService.instance;
+  }
+
+  /**
+   * Wire up the Prisma client so observable gauge callbacks can query live
+   * trade/dispute counts. Call this once during application bootstrap.
+   */
+  initialize(prisma: MetricsPrismaClient): this {
+    this.prismaClient = prisma;
+    return this;
   }
 
   // Trade methods
@@ -339,7 +381,7 @@ export class MetricsService {
 
   recordTradeCompleted(
     durationMs: number,
-    attributes?: Record<string, string | number | boolean>
+    attributes?: Record<string, string | number | boolean>,
   ) {
     this.tradeCompletedCounter.add(1, attributes);
     this.tradeLatencyHistogram.record(durationMs, attributes);
@@ -347,21 +389,19 @@ export class MetricsService {
 
   recordTradeLatency(
     durationMs: number,
-    attributes?: Record<string, string | number | boolean>
+    attributes?: Record<string, string | number | boolean>,
   ) {
     this.tradeLatencyHistogram.record(durationMs, attributes);
   }
 
   // Dispute methods
-  recordDisputeCreated(
-    attributes?: Record<string, string | number | boolean>
-  ) {
+  recordDisputeCreated(attributes?: Record<string, string | number | boolean>) {
     this.disputeCreatedCounter.add(1, attributes);
   }
 
   recordDisputeResolved(
     durationMs: number,
-    attributes?: Record<string, string | number | boolean>
+    attributes?: Record<string, string | number | boolean>,
   ) {
     this.disputeResolvedCounter.add(1, attributes);
     this.disputeResolutionTimeHistogram.record(durationMs, attributes);
@@ -370,12 +410,17 @@ export class MetricsService {
   // Request metrics
   recordRequestDuration(
     durationMs: number,
-    attributes?: Record<string, string | number | boolean>
+    attributes?: Record<string, string | number | boolean>,
   ) {
     this.requestDurationHistogram.record(durationMs, attributes);
     this.globalRollingStats.add(durationMs);
 
-    const route = typeof attributes?.route === "string" ? attributes.route : (typeof attributes?.path === "string" ? attributes.path : undefined);
+    const route =
+      typeof attributes?.route === "string"
+        ? attributes.route
+        : typeof attributes?.path === "string"
+          ? attributes.path
+          : undefined;
     if (route) {
       if (!this.routeRollingStats.has(route)) {
         this.routeRollingStats.set(route, new RollingWindowStats(500));
@@ -393,7 +438,7 @@ export class MetricsService {
     method: string,
     route: string,
     statusCode: number,
-    durationMs: number
+    durationMs: number,
   ): void {
     const statusGroup = `${Math.floor(statusCode / 100)}xx`;
     this.recordRequestDuration(durationMs, {
@@ -425,7 +470,7 @@ export class MetricsService {
   recordPoolMetrics(
     activeConnections: number,
     idleConnections: number,
-    waitingQueries: number
+    waitingQueries: number,
   ) {
     this.pgPoolActiveConnections.record(activeConnections);
     this.pgPoolIdleConnections.record(idleConnections);
@@ -440,7 +485,7 @@ export class MetricsService {
   recordStorageTableMetrics(
     tableName: string,
     sizeBytes: number,
-    rowCount: number
+    rowCount: number,
   ) {
     this.storageTableSizeGauge.record(sizeBytes, { table: tableName });
     this.storageTableRowCountGauge.record(rowCount, { table: tableName });
@@ -462,7 +507,7 @@ export class MetricsService {
   recordRedisMetrics(
     memoryUsed: number,
     maxmemory: number,
-    connectedClients?: number
+    connectedClients?: number,
   ) {
     this.redisMemoryUsedGauge.record(memoryUsed);
     this.redisMaxmemoryGauge.record(maxmemory);

@@ -219,8 +219,7 @@ export class TracedHttpClient {
         }
       }
 
-      const tracedResponse: TracedResponse<T> = {
-        ...response,
+      const tracedResponse = Object.assign(response.clone(), {
         data,
         correlationId,
         requestId,
@@ -229,7 +228,7 @@ export class TracedHttpClient {
           endTime,
           duration,
         },
-      };
+      }) as TracedResponse<T>;
 
       // Handle error responses
       if (!response.ok) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type DisputeResponse, type EvidenceRecord } from "@/lib/api";
 import { useAuth } from "./useAuth";
 
@@ -25,6 +25,7 @@ export function useDispute(tradeId: string): UseDisputeResult {
   const [evidence, setEvidence] = useState<EvidenceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const fetchDispute = useCallback(async () => {
     if (!isAuthenticated || !token) {
@@ -32,6 +33,7 @@ export function useDispute(tradeId: string): UseDisputeResult {
       return;
     }
 
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
 
@@ -40,17 +42,24 @@ export function useDispute(tradeId: string): UseDisputeResult {
         api.disputes.get(token, tradeId),
         api.trades.getEvidence(token, tradeId),
       ]);
+      if (requestId !== requestIdRef.current) return;
       setDispute(disputeData);
       setEvidence(evidenceData.evidence);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       setError(toErrorMessage(err, "Failed to load dispute"));
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [token, isAuthenticated, tradeId]);
 
   useEffect(() => {
     void fetchDispute();
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [fetchDispute]);
 
   const submitEvidence = useCallback(

@@ -1,1 +1,125 @@
-content
+# Grafana Promtail configuration for the `staging` profile (docker-compose.yml
+# service `promtail`, image grafana/promtail:3.0).
+#
+# Tails container logs and host log files, and ships them to the `loki` service
+# in the same compose project. Container streams are labelled
+# `app="amana-backend"` for the API, which is the label every query in
+# docs/LOGGING_STANDARDS.md section 11 and every log panel in the Grafana
+# dashboards selects on.
+#
+# Refs #1457
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: info
+
+# Read offsets for tailed files. This lives on the container filesystem, so
+# offsets reset when the container is recreated and promtail re-ships the tail
+# of each file; mount a volume here to avoid that.
+positions:
+  filename: /promtail/positions.yaml
+  sync_period: 10s
+
+clients:
+  # `loki` is the compose service name, so this resolves on the compose
+  # network and nowhere else.
+  - url: http://loki:3100/loki/api/v1/push
+    # 1 MB batches keep push latency low enough for the live log stream panels
+    # while still amortising the round trip.
+    batchwait: 1s
+    batchsize: 1048576
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+    external_labels:
+      source: promtail
+      env: staging
+
+scrape_configs:
+  # Container logs, including the backend. Needs the Docker socket mounted at
+  # /var/run/docker.sock so labels come from container metadata instead of from
+  # the opaque container id in the log path.
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # /amana-backend-1 -> amana-backend
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: compose_service
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: project
+      - target_label: env
+        replacement: staging
+      # `app` defaults to the compose service name so every container stream is
+      # selectable, then the API service is pinned to the app="amana-backend"
+      # label the docs and dashboards query. A relabel rule whose regex does not
+      # match leaves its target label untouched, so non-API containers keep
+      # their service name. Both the dev profile service name and the
+      # staging-suffixed variants are covered.
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: app
+      - source_labels: ['app']
+        regex: '^(api|api-staging|backend|backend-staging|amana-backend)$'
+        target_label: app
+        replacement: amana-backend
+      # Docker points __path__ at the per-container symlink
+      # /var/lib/docker/containers/<id>/<id>-json.log. Tail the real file
+      # instead, otherwise the container id leaks into the stream as a label.
+      - source_labels: ['__path__']
+        action: replace
+        regex: '/var/lib/docker/containers/(.*)/.*\.log'
+        target_label: __path__
+        replacement: '/var/lib/docker/containers/$1/*.log'
+    pipeline_stages:
+      # Backend logs are Pino JSON (docs/LOGGING_STANDARDS.md section 2), so
+      # the low-cardinality fields are lifted into labels for indexed queries
+      # and alerting. `service` here is the value from the log line, which is
+      # why the compose metadata equivalent is kept under `compose_service`.
+      # High-cardinality fields (correlationId, tradeId, jobId) deliberately
+      # stay in the line: the documented queries extract them with `| json` at
+      # query time, and indexing them per-line would blow up the stream
+      # cardinality.
+      - json:
+          expressions:
+            level: level
+            service: service
+            route: route
+            method: method
+            statusCode: statusCode
+      - labels:
+          level:
+          service:
+          route:
+          method:
+          status_code:
+      # Pino writes `time` as Unix milliseconds.
+      - timestamp:
+          source: time
+          format: UnixMs
+          action_on_failure: skip
+      # No `output` stage on purpose: the raw JSON line has to reach Loki
+      # intact for the `| json` stage in the documented LogQL queries.
+
+  # Host log files, independent of the Docker socket.
+  - job_name: system
+    static_configs:
+      - targets: ['localhost']
+        labels:
+          job: system
+          env: staging
+          __path__: /var/log/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b'
+      - labels:
+          level:
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+          action_on_failure: skip

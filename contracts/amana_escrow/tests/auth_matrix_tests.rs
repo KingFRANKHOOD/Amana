@@ -40,7 +40,7 @@ impl Harness {
             .address();
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(&env, &contract_id);
-        client.initialize(&admin, &usdc_id, &treasury, &100u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100u32, &usdc_id);
         client.add_mediator(&mediator);
         Harness {
             env,
@@ -97,7 +97,7 @@ impl Harness {
 fn test_auth_initialize_rejects_second_call() {
     let h = Harness::new();
     h.client()
-        .initialize(&h.admin, &h.usdc_id, &h.treasury, &100u32, &h.usdc_id);
+        .initialize(&soroban_sdk::Vec::from_array(&h.env, [h.admin.clone()]), &1_u32, &h.usdc_id, &h.treasury, &100u32, &h.usdc_id);
 }
 
 // ---------------------------------------------------------------------------

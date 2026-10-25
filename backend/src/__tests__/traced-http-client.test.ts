@@ -91,9 +91,44 @@ describe('TracedHttpClient', () => {
       });
     });
 
+    // The service name is only observable once a request goes through the
+    // interceptor: it names the tracer and tags the span.
+    function runRequestThrough(tracedClient: () => TracedHttpClient) {
+      const { trace } = jest.requireMock('@opentelemetry/api');
+      const startSpan = jest.fn(() => ({ setAttribute: jest.fn() }));
+      (trace.getTracer as jest.Mock).mockReturnValueOnce({ startSpan });
+      mockAxiosInstance = createMockAxiosInstance();
+      (axios.create as jest.Mock).mockReturnValue(mockAxiosInstance);
+      tracedClient();
+      const requestHandler = mockAxiosInstance.interceptors.request.use.mock.calls[0][0];
+      requestHandler({ method: 'get', url: '/ping', headers: {} });
+      return { getTracer: trace.getTracer as jest.Mock, startSpan };
+    }
+
     it('should use default service name when not provided', () => {
-      new TracedHttpClient('http://test.com');
-      // Should not throw
+      const { getTracer, startSpan } = runRequestThrough(() => new TracedHttpClient('http://test.com'));
+
+      expect(getTracer).toHaveBeenLastCalledWith('amana-backend');
+      expect(startSpan).toHaveBeenCalledWith(
+        'HTTP GET /ping',
+        expect.objectContaining({
+          attributes: expect.objectContaining({ 'correlation.service': 'amana-backend' }),
+        })
+      );
+    });
+
+    it('should use the provided service name instead of the default', () => {
+      const { getTracer, startSpan } = runRequestThrough(
+        () => new TracedHttpClient('http://test.com', 'payments-service')
+      );
+
+      expect(getTracer).toHaveBeenLastCalledWith('payments-service');
+      expect(startSpan).toHaveBeenCalledWith(
+        'HTTP GET /ping',
+        expect.objectContaining({
+          attributes: expect.objectContaining({ 'correlation.service': 'payments-service' }),
+        })
+      );
     });
   });
 
