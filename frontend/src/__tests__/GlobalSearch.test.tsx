@@ -287,3 +287,42 @@ describe("GlobalSearch — navigation on select", () => {
     expect(mockPush).toHaveBeenCalledWith("/trades/t1");
   });
 });
+
+// ── Race conditions ───────────────────────────────────────────────────────────
+
+describe("GlobalSearch — out-of-order responses", () => {
+  it("keeps the newer results when an older request resolves last", async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    let resolveOld!: (value: typeof MOCK_RESULTS) => void;
+    const oldResults = {
+      trades: [{ id: "old", title: "Stale Result" }],
+      users: [],
+      contracts: [],
+    };
+    mockSearch
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValueOnce(MOCK_RESULTS);
+
+    render(<GlobalSearch />);
+    pressMetaK();
+
+    await user.type(screen.getByRole("searchbox"), "t");
+    act(() => jest.advanceTimersByTime(300));
+
+    await user.type(screen.getByRole("searchbox"), "rade");
+    act(() => jest.advanceTimersByTime(300));
+
+    await waitFor(() => screen.getByText("Trade #001"));
+
+    await act(async () => {
+      resolveOld(oldResults);
+    });
+
+    jest.useRealTimers();
+
+    expect(screen.getByText("Trade #001")).toBeInTheDocument();
+    expect(screen.queryByText("Stale Result")).not.toBeInTheDocument();
+  });
+});

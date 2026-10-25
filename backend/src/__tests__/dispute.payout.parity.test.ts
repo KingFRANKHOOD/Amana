@@ -12,41 +12,17 @@
  *   seller_net       = seller_raw − fee
  *   invariant        = seller_net + buyer_refund + fee == total
  *
- * These tests mirror the on-chain arithmetic in TypeScript using BigInt to
- * guarantee integer-exact results, then assert the conservation invariant and
+ * These tests exercise the backend's calculateDisputePayout()
+ * (feeAccounting.service.ts), which mirrors the on-chain arithmetic using
+ * BigInt for integer-exact results, and assert the conservation invariant and
  * compare against hand-computed expected values from the contract's own
  * inline documentation.
  */
 
-const BPS_DIVISOR = 10_000n;
-
-interface PayoutResult {
-  sellerRaw: bigint;
-  sellerNet: bigint;
-  buyerRefund: bigint;
-  fee: bigint;
-}
-
-/**
- * Mirrors the Rust helpers checked_loss_amount() and checked_fee_amount()
- * plus the resolve_dispute() payout calculation.
- */
-function calcPayout(
-  total: bigint,
-  sellerGetsBps: bigint,
-  sellerLossBps: bigint,
-  feeBps: bigint
-): PayoutResult {
-  const lossBps = BPS_DIVISOR - sellerGetsBps;
-  // seller_loss = total * loss_bps * seller_loss_bps / (10_000 * 10_000)
-  const sellerLoss = (total * lossBps * sellerLossBps) / (BPS_DIVISOR * BPS_DIVISOR);
-  const sellerRaw = total - sellerLoss;
-  const buyerRefund = total - sellerRaw; // equals sellerLoss
-  // fee = seller_raw * fee_bps / 10_000
-  const fee = (sellerRaw * feeBps) / BPS_DIVISOR;
-  const sellerNet = sellerRaw - fee;
-  return { sellerRaw, sellerNet, buyerRefund, fee };
-}
+import {
+  calculateDisputePayout as calcPayout,
+  type DisputePayout as PayoutResult,
+} from "../services/feeAccounting.service";
 
 // ---------------------------------------------------------------------------
 // Invariant helper

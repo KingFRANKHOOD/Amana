@@ -349,9 +349,13 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
 
   public async buildTransaction(sourceAccount: string, operations: xdr.Operation[]): Promise<string> {
     const start = performance.now();
+    // Anything thrown after loadAccount() resolves comes from local operation
+    // building, not from the network.
+    let accountLoaded = false;
     try {
       // Load source account from Horizon to get sequence number
       const account = await this.horizonServer.loadAccount(sourceAccount);
+      accountLoaded = true;
       
       // Create TransactionBuilder with source, fee, and network passphrase
       const transactionBuilder = new TransactionBuilder(account, {
@@ -396,7 +400,10 @@ public async getAccountBalance(publicKey: string, assetCode: string = TOKEN_CONF
         throw new Error("Source account does not exist");
       }
       const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('operation')) {
+      const opResultCodes = (error as {
+        response?: { data?: { extras?: { result_codes?: { operations?: unknown } } } };
+      } | null)?.response?.data?.extras?.result_codes?.operations;
+      if (accountLoaded || Array.isArray(opResultCodes)) {
         appLogger.error({ error }, "Invalid transaction operations");
         throw new Error(`Invalid transaction operations: ${msg}`);
       }

@@ -299,7 +299,7 @@ describe("FeeAccountingService", () => {
       db.platformFeeEvent.findMany.mockResolvedValue(records);
 
       const svc = new FeeAccountingService(db as any);
-      const { csv, totalExported, truncated } = await svc.exportCsv({ maxRows: 2 });
+      const { totalExported, truncated } = await svc.exportCsv({ maxRows: 2 });
 
       expect(totalExported).toBe(2);
       expect(truncated).toBe(true);

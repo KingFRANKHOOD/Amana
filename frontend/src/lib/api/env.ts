@@ -28,3 +28,10 @@ export function getStellarHorizonUrl(network?: string | null): string {
     ? "https://horizon.stellar.org"
     : "https://horizon-testnet.stellar.org";
 }
+
+export function getStellarExplorerNetwork(): "public" | "testnet" {
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toUpperCase();
+  return network === "PUBLIC" || network?.startsWith("PUBLIC GLOBAL STELLAR NETWORK")
+    ? "public"
+    : "testnet";
+}

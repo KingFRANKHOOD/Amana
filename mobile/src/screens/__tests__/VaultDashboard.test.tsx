@@ -1,7 +1,10 @@
 import { render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import VaultDashboard from '../VaultDashboard';
 import { useTradeStore } from '../../stores/tradeStore';
 import { useAuthStore } from '../../stores/authStore';
+import { TRADE_STATUSES } from '../../constants/tradeStatus';
+import type { TradeStatus } from '../../types/trade';
 
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -36,7 +39,7 @@ describe('VaultDashboard', () => {
     useTradeStore.setState({
       trades: [
         { id: 1, tradeId: 't1', amountUsdc: '100', status: 'FUNDED' },
-        { id: 2, tradeId: 't2', amountUsdc: '250', status: 'IN_TRANSIT' },
+        { id: 2, tradeId: 't2', amountUsdc: '250', status: 'DELIVERED' },
         { id: 3, tradeId: 't3', amountUsdc: '50', status: 'COMPLETED' },
       ] as any,
       isLoading: false,
@@ -44,6 +47,42 @@ describe('VaultDashboard', () => {
     const { getByText } = render(<VaultDashboard />);
     expect(getByText('$350.00')).toBeTruthy();
     expect(getByText('2')).toBeTruthy();
+  });
+
+  it('counts every in-flight status toward totalLocked and activeTrades', () => {
+    const amounts: Record<TradeStatus, number> = {
+      PENDING_SIGNATURE: 1,
+      CREATED: 2,
+      FUNDED: 4,
+      DELIVERED: 8,
+      COMPLETED: 16,
+      DISPUTED: 32,
+      CANCELLED: 64,
+    };
+    useTradeStore.setState({
+      trades: TRADE_STATUSES.map((status, i) => ({
+        id: i,
+        tradeId: `trade-${status}`,
+        amountUsdc: String(amounts[status]),
+        status,
+      })) as any,
+      isLoading: false,
+    });
+    const { getByText } = render(<VaultDashboard />);
+    // PENDING_SIGNATURE + CREATED + FUNDED + DELIVERED = 1 + 2 + 4 + 8
+    expect(getByText('$15.00')).toBeTruthy();
+    expect(getByText('4')).toBeTruthy();
+  });
+
+  it.each(TRADE_STATUSES.map((s) => [s]))('marks the row indicator correctly for %s', (status) => {
+    useTradeStore.setState({
+      trades: [{ id: 1, tradeId: 'trade-x', amountUsdc: '10', status }] as any,
+      isLoading: false,
+    });
+    const { getByTestId } = render(<VaultDashboard />);
+    const expectedActive = ['PENDING_SIGNATURE', 'CREATED', 'FUNDED', 'DELIVERED'].includes(status);
+    const style = StyleSheet.flatten(getByTestId('trade-status-dot-trade-x').props.style);
+    expect(style.backgroundColor).toBe(expectedActive ? '#10b981' : '#d1d5db');
   });
 
   it('shows loading skeleton while loading', () => {

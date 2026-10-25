@@ -173,28 +173,29 @@ describe("Idempotency markers in migration SQL", () => {
 });
 
 describe("Rollback safety regression samples", () => {
-  const ROLLBACK_REVERSAL_PAIRS: Array<{ forward: string; expected_reversal_pattern: RegExp }> = [
+  const ROLLBACK_REVERSAL_PAIRS: Array<{ forward: string; expected_reversal_pattern: RegExp; canonical_reversal: string }> = [
     {
       forward: 'ALTER TABLE "Foo" ADD COLUMN "bar" TEXT;',
       expected_reversal_pattern: /ALTER\s+TABLE[^;]+DROP\s+COLUMN[^;]+"bar"/i,
+      canonical_reversal: 'ALTER TABLE "Foo" DROP COLUMN IF EXISTS "bar";',
     },
     {
       forward: 'CREATE TABLE "NewTable" (id SERIAL PRIMARY KEY);',
       expected_reversal_pattern: /DROP\s+TABLE[^;]+"NewTable"/i,
+      canonical_reversal: 'DROP TABLE IF EXISTS "NewTable";',
     },
     {
       forward: 'CREATE INDEX idx_foo ON "Foo" ("bar");',
       expected_reversal_pattern: /DROP\s+INDEX[^;]+idx_foo/i,
+      canonical_reversal: 'DROP INDEX IF EXISTS idx_foo;',
     },
   ];
 
   it.each(ROLLBACK_REVERSAL_PAIRS)(
     "forward migration '$forward' has a plausible reversal pattern",
-    ({ forward, expected_reversal_pattern }) => {
-      // This test documents the expected reversal form for common DDL operations.
-      // It validates the regex patterns used for rollback review rather than
-      // asserting that production rollback scripts exist.
-      expect(expected_reversal_pattern.source.length).toBeGreaterThan(0);
+    ({ forward, expected_reversal_pattern, canonical_reversal }) => {
+      // The pattern must match a valid canonical reversal SQL.
+      expect(expected_reversal_pattern.test(canonical_reversal)).toBe(true);
       // The forward statement itself should NOT match its own reversal pattern.
       expect(expected_reversal_pattern.test(forward)).toBe(false);
     }

@@ -69,6 +69,7 @@ export const createTradeSchema = z.object({
   ]),
   buyerLossBps: z.number().int().min(0, "buyerLossBps must be >= 0").max(10000, "buyerLossBps must be <= 10000").default(5000),
   sellerLossBps: z.number().int().min(0, "sellerLossBps must be >= 0").max(10000, "sellerLossBps must be <= 10000").default(5000),
+  deliveryDays: z.number().int().min(1, "deliveryDays must be >= 1").max(365, "deliveryDays must be <= 365").optional(),
   description: z.string().trim().max(2000, "Description must be 2000 characters or fewer").optional().refine((value) => value === undefined || noUnsafeHtml(value), "Description contains unsupported HTML or script content"),
 }).superRefine((data: Record<string, unknown>, ctx: any) => {
   const buyer = (data.buyerLossBps as number) ?? 5000;

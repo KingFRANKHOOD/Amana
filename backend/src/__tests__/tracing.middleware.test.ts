@@ -123,10 +123,10 @@ describe('tracingMiddleware', () => {
 
     it('should add custom attributes to spans', async () => {
       await request(app).get('/test');
-      
-      // The test endpoint adds a custom attribute
-      // Verify the attribute was added
-      expect(true).toBe(true); // Placeholder - actual verification would require mocking
+
+      const { getTracer } = require('@opentelemetry/api');
+      const mockSpan = getTracer().startSpan();
+      expect(mockSpan.setAttribute).toHaveBeenCalledWith('test.attribute', 'test-value');
     });
   });
 
@@ -207,8 +207,9 @@ describe('tracingMiddleware', () => {
         json: jest.fn(),
       };
 
-      // This would test the error handling in the middleware
-      expect(true).toBe(true); // Placeholder
+      // Verify the middleware does not crash when a response error occurs
+      const res = await request(app).post('/test-error');
+      expect(res.status).toBe(500);
     });
 
     it('should handle JSON serialization errors', async () => {

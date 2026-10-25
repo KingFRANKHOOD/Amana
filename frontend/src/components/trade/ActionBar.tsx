@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import type { TradeDetail } from "@/types/trade";
+import { toTradeStatus, type TradeDetail } from "@/types/trade";
 
 interface ActionBarProps {
   trade: TradeDetail;
@@ -14,10 +14,10 @@ export function ActionBar({
   onConfirmDelivery,
   confirmingDelivery,
 }: ActionBarProps) {
-  const showPoDVerification = trade.status === "IN TRANSIT";
-  const showRaiseDispute =
-    trade.status === "IN TRANSIT" || trade.status === "PENDING";
-  const showReleaseFunds = trade.status === "SETTLED";
+  const status = toTradeStatus(trade.status);
+  const showPoDVerification = status === "IN TRANSIT";
+  const showRaiseDispute = status === "IN TRANSIT" || status === "PENDING";
+  const showReleaseFunds = status === "SETTLED";
 
   return (
     <div className="fixed bottom-0 left-0 w-full bg-card/90 backdrop-blur-md border-t border-border-default p-4 flex justify-end gap-4 z-50">
