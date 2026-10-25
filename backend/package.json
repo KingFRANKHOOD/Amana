@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "dev": "node api.js && tsx src/index.ts",
+    "build": "node api.js && tsc -p tsconfig.json",
+    "start": "node api.js && node dist/index.js",
     "test": "jest --config jest.config.js --forceExit --detectOpenHandles",
     "test:pact": "jest --config jest.config.js --runInBand src/__tests__/trades.pact.verify.test.ts",
     "lint": "eslint src/"
