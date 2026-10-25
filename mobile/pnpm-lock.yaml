@@ -50,8 +50,13 @@ importers:
         version: 57.0.30(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
 >>>>>>> origin/main
       expo-background-fetch:
+<<<<<<< HEAD
+        specifier: ~57.0.16
+        version: 57.0.16(expo@57.0.20)(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))
+=======
         specifier: ~57.0.14
         version: 57.0.21(expo@57.0.30)(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))
+>>>>>>> origin/main
       expo-device:
         specifier: ^57.0.1
         version: 57.0.2(expo@57.0.30)
