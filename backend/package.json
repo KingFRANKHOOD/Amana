@@ -29,7 +29,7 @@
     "@opentelemetry/semantic-conventions": "1.25.1",
     "@pinata/sdk": "2.1.0",
     "@prisma/client": "5.22.0",
-    "@stellar/stellar-sdk": "14.6.1",
+    "@stellar/stellar-sdk": "17.3.0",
     "@supabase/supabase-js": "2.117.3",
     "@types/helmet": "4.0.0",
     "axios": "1.13.6",
