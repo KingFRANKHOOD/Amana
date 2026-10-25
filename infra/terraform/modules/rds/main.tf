@@ -48,22 +48,6 @@ resource "aws_security_group" "this" {
   }
 }
 
-resource "aws_kms_key" "rds" {
-  description             = "KMS key for ${var.project_name} RDS encryption at rest"
-  deletion_window_in_days = 30
-  enable_key_rotation     = true
-
-  tags = {
-    Name        = "${var.project_name}-rds-kms"
-    Environment = var.environment
-  }
-}
-
-resource "aws_kms_alias" "rds" {
-  name          = "alias/${var.project_name}-rds"
-  target_key_id = aws_kms_key.rds.key_id
-}
-
 resource "aws_rds_cluster" "this" {
   cluster_identifier      = "${var.project_name}-rds-cluster"
   engine                  = var.engine
@@ -251,7 +235,7 @@ output "instance_ids" {
   value       = aws_rds_cluster_instance.this[*].id
 }
 
-output "kms_key_arn" {
-  description = "ARN of the KMS key used for RDS encryption"
-  value       = aws_kms_key.rds.arn
+output "kms_key_id" {
+  description = "KMS key ID used for RDS encryption (caller-supplied var.kms_key_id)"
+  value       = aws_rds_cluster.this.kms_key_id
 }

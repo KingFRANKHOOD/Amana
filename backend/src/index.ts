@@ -15,6 +15,9 @@ import { HealthService } from "./services/health.service";
 import { metricsService } from "./services/metrics.service";
 import { createEvidenceVerificationWorker } from "./jobs/workers/evidence-verification.worker";
 import { createTrustScoreRecalculationWorker } from "./jobs/workers/trust-score-recalculation.worker";
+import { createWebhookWorker } from "./jobs/workers/webhook.worker";
+import { createNotificationWorker } from "./jobs/workers/notification.worker";
+import { createExportWorker } from "./jobs/workers/export.worker";
 import {
   createIdempotencyCleanupWorker,
   idempotencyCleanupQueue,
@@ -244,6 +247,30 @@ async function bootstrap() {
       appLogger.info("DataArchivalWorker started");
     } catch (error) {
       appLogger.error({ error }, "Failed to start DataArchivalWorker");
+    }
+
+    // Start webhook dispatch worker (consumes the "webhooks" queue)
+    try {
+      workers.push(createWebhookWorker());
+      appLogger.info("WebhookWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start WebhookWorker");
+    }
+
+    // Start notification delivery worker (consumes the "notifications" queue)
+    try {
+      workers.push(createNotificationWorker());
+      appLogger.info("NotificationWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start NotificationWorker");
+    }
+
+    // Start export generation worker (consumes the "exports" queue)
+    try {
+      workers.push(createExportWorker());
+      appLogger.info("ExportWorker started");
+    } catch (error) {
+      appLogger.error({ error }, "Failed to start ExportWorker");
     }
 
     // Schedule periodic evidence pin verification & storage monitoring
