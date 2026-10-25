@@ -57,6 +57,11 @@ function makeTestApp() {
     next(error);
   });
 
+  app.get('/test-response-error', (_req: Request, res: Response) => {
+    res.emit('error', new Error('Response error'));
+    res.status(500).json({ message: 'response error' });
+  });
+
   return app;
 }
 
@@ -123,9 +128,17 @@ describe('tracingMiddleware', () => {
 
     it('should add custom attributes to spans', async () => {
       await request(app).get('/test');
+<<<<<<< HEAD
+      
+      // The test endpoint adds a custom attribute
+      const { getTracer } = require('@opentelemetry/api');
+      const mockSpan = getTracer().startSpan.mock.results[0].value;
+
+=======
 
       const { getTracer } = require('@opentelemetry/api');
       const mockSpan = getTracer().startSpan();
+>>>>>>> origin/main
       expect(mockSpan.setAttribute).toHaveBeenCalledWith('test.attribute', 'test-value');
     });
   });
@@ -193,23 +206,25 @@ describe('tracingMiddleware', () => {
 
   describe('Error handling', () => {
     it('should handle response errors gracefully', async () => {
-      // Mock res.on to simulate an error
-      const mockRes = {
-        on: jest.fn((event, callback) => {
-          if (event === 'error') {
-            callback(new Error('Response error'));
-          }
-        }),
-        getHeaders: jest.fn(() => ({})),
-        statusCode: 200,
-        statusMessage: 'OK',
-        end: jest.fn(),
-        json: jest.fn(),
-      };
+      const res = await request(app).get('/test-response-error');
 
+<<<<<<< HEAD
+      expect(res.status).toBe(500);
+      const { getTracer } = require('@opentelemetry/api');
+      const mockSpan = getTracer().startSpan.mock.results[0].value;
+
+      expect(mockSpan.recordException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Response error' })
+      );
+      expect(mockSpan.setStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'ERROR', message: 'Response error: Response error' })
+      );
+      expect(mockSpan.end).toHaveBeenCalledTimes(1);
+=======
       // Verify the middleware does not crash when a response error occurs
       const res = await request(app).post('/test-error');
       expect(res.status).toBe(500);
+>>>>>>> origin/main
     });
 
     it('should handle JSON serialization errors', async () => {
@@ -273,6 +288,17 @@ describe('Tracing utilities', () => {
       const mockSpan = { setAttribute: jest.fn() } as any;
       const mockReq = { span: mockSpan } as unknown as Request;
 
+<<<<<<< HEAD
+  describe('addRequestSpanAttribute', () => {
+    it('should add attributes to the request span', async () => {
+      await request(app).get('/test');
+      
+      // Verify the attribute was added
+      const { getTracer } = require('@opentelemetry/api');
+      const mockSpan = getTracer().startSpan.mock.results[0].value;
+      
+      expect(mockSpan.setAttribute).toHaveBeenCalledWith('test.attribute', 'test-value');
+=======
       const result = getRequestSpan(mockReq);
 
       expect(result).toBe(mockSpan);
@@ -284,6 +310,7 @@ describe('Tracing utilities', () => {
       const result = getRequestSpan(mockReq);
 
       expect(result).toBeUndefined();
+>>>>>>> origin/main
     });
   });
 });

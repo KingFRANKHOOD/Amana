@@ -92,8 +92,8 @@ describe('Offline Service', () => {
 
   describe('SQLite Cache operations', () => {
     const mockTrades = [
-      { id: '1', sellerAddress: 'A1', amountUsdc: '100', status: 'OPEN' },
-      { id: '2', sellerAddress: 'A2', amountUsdc: '200', status: 'LOCKED' },
+      { id: 1, tradeId: 'trade-1', sellerAddress: 'A1', amountUsdc: '100', status: 'OPEN' },
+      { id: 2, tradeId: 'trade-2', sellerAddress: 'A2', amountUsdc: '200', status: 'LOCKED' },
     ];
 
     it('should cache list of trades', async () => {
@@ -103,7 +103,7 @@ describe('Offline Service', () => {
       expect(mockDb.runAsync).toHaveBeenNthCalledWith(
         1,
         'INSERT OR REPLACE INTO trades (id, data, updated_at) VALUES (?, ?, ?)',
-        ['1', JSON.stringify(mockTrades[0]), expect.any(Number)]
+        ['trade-1', JSON.stringify(mockTrades[0]), expect.any(Number)]
       );
     });
 
@@ -122,13 +122,13 @@ describe('Offline Service', () => {
       await offlineService.cacheTradeDetail(mockTrades[0] as any);
       expect(mockDb.runAsync).toHaveBeenCalledWith(
         'INSERT OR REPLACE INTO trades (id, data, updated_at) VALUES (?, ?, ?)',
-        ['1', JSON.stringify(mockTrades[0]), expect.any(Number)]
+        ['trade-1', JSON.stringify(mockTrades[0]), expect.any(Number)]
       );
 
       mockDb.getFirstAsync.mockResolvedValue({ data: JSON.stringify(mockTrades[0]) });
-      const detail = await offlineService.getCachedTradeDetail('1');
+      const detail = await offlineService.getCachedTradeDetail(mockTrades[0].tradeId);
       expect(detail).toEqual(mockTrades[0]);
-      expect(mockDb.getFirstAsync).toHaveBeenCalledWith('SELECT data FROM trades WHERE id = ?', ['1']);
+      expect(mockDb.getFirstAsync).toHaveBeenCalledWith('SELECT data FROM trades WHERE id = ?', ['trade-1']);
     });
 
     it('should clear cache', async () => {
@@ -139,7 +139,7 @@ describe('Offline Service', () => {
 
   describe('Synchronization & Fallback Strategy', () => {
     const mockApiTrades = [
-      { id: '3', sellerAddress: 'A3', amountUsdc: '300', status: 'OPEN' },
+      { id: 3, tradeId: 'trade-3', sellerAddress: 'A3', amountUsdc: '300', status: 'OPEN' },
     ];
 
     it('should sync from API if online and update cache', async () => {
@@ -150,7 +150,7 @@ describe('Offline Service', () => {
       expect(tradeApi.listTrades).toHaveBeenCalled();
       expect(mockDb.runAsync).toHaveBeenCalledWith(
         'INSERT OR REPLACE INTO trades (id, data, updated_at) VALUES (?, ?, ?)',
-        ['3', JSON.stringify(mockApiTrades[0]), expect.any(Number)]
+        ['trade-3', JSON.stringify(mockApiTrades[0]), expect.any(Number)]
       );
     });
 

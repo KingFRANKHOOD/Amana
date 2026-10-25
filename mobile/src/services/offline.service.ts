@@ -48,7 +48,7 @@ export const offlineService = {
       for (const trade of trades) {
         await database.runAsync(
           'INSERT OR REPLACE INTO trades (id, data, updated_at) VALUES (?, ?, ?)',
-          [trade.id, JSON.stringify(trade), now]
+          [trade.tradeId, JSON.stringify(trade), now]
         );
       }
     });
@@ -65,7 +65,7 @@ export const offlineService = {
     const now = Date.now();
     await database.runAsync(
       'INSERT OR REPLACE INTO trades (id, data, updated_at) VALUES (?, ?, ?)',
-      [trade.id, JSON.stringify(trade), now]
+        [trade.tradeId, JSON.stringify(trade), now]
     );
   },
 
