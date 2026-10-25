@@ -262,6 +262,32 @@ describe("authenticate — challenge-verify flow", () => {
     expect(result.current.token).not.toBe(JWT_TOKEN);
   });
 
+  it("base64url-encodes a non-string signedMessage without relying on Buffer", async () => {
+    mockWalletConnected();
+    mockedChallenge.mockResolvedValue({ challenge: CHALLENGE_STRING });
+    mockedSignMessage.mockResolvedValue({
+      signedMessage: new Uint8Array([251, 255, 254, 1]),
+    } as unknown as SignMessageResponse);
+    mockedVerify.mockResolvedValue({ authenticated: true });
+
+    const originalBuffer = globalThis.Buffer;
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // @ts-expect-error simulate a browser bundle without a Buffer polyfill
+    delete globalThis.Buffer;
+    try {
+      await act(async () => {
+        await result.current.authenticate();
+      });
+    } finally {
+      globalThis.Buffer = originalBuffer;
+    }
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(mockedVerify).toHaveBeenCalledWith(WALLET_ADDRESS, "-__-AQ");
+  });
+
   it("calls POST /auth/challenge with the wallet address", async () => {
     mockWalletConnected();
     mockedChallenge.mockResolvedValue({ challenge: CHALLENGE_STRING });

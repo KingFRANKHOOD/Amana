@@ -45,3 +45,11 @@ export function getStellarExplorerTxUrl(
       : "testnet";
   return `https://stellar.expert/explorer/${segment}/tx/${txHash}`;
 }
+
+export function getStellarExplorerNetwork(): "public" | "testnet" {
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toUpperCase();
+  return network === "PUBLIC" || network?.startsWith("PUBLIC GLOBAL STELLAR NETWORK")
+    ? "public"
+    : "testnet";
+}
+}

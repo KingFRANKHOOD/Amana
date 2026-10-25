@@ -91,7 +91,8 @@ function Step1Details({
   const price = parseFloat(data.pricePerUnit);
   const totalValue = !isNaN(qty) && !isNaN(price) ? `NGN ${(qty * price).toLocaleString()}` : '—';
   const isAddressValid = data.sellerAddress.startsWith('G') && data.sellerAddress.length === 56;
-  const valid = data.commodity !== '' && qty > 0 && price > 0 && isAddressValid;
+  const amountCngn = computeTradeAmount(data.quantity, data.pricePerUnit);
+  const valid = data.commodity !== '' && amountCngn !== '0' && isAddressValid;
 
   return (
     <View style={stepStyles.container}>
@@ -343,7 +344,7 @@ export default function CreateTradeScreen({ navigation }: Props) {
 
     return {
       sellerAddress: data.sellerAddress,
-      amountUsdc: amountCngn,
+      amountCngn: amountCngn,
       buyerLossBps: data.buyerRatio * 100,
       sellerLossBps: data.sellerRatio * 100,
       commodity: data.commodity,
@@ -416,7 +417,7 @@ export default function CreateTradeScreen({ navigation }: Props) {
             data={data}
             onBack={() => setStep(1)}
             onSubmit={handleSubmit}
-            onSaveDraft={() => saveDraft()}
+            onSaveDraft={() => { void saveDraft().catch((err: unknown) => Alert.alert('Error', (err as Error)?.message ?? 'Failed to save draft')); }}
             submitting={submitting}
           />
         )}

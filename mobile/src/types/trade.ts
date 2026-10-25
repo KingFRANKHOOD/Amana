@@ -12,7 +12,8 @@ export interface Trade {
   tradeId: string;
   buyerAddress: string;
   sellerAddress: string;
-  amountUsdc: string;
+  /** Amount locked in escrow, denominated in cNGN */
+  amountCngn: string;
   status: TradeStatus;
   createdAt?: string;
   updatedAt?: string;

@@ -31,6 +31,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 contract_dir="$repo_root/contracts/amana_escrow"
+source "$repo_root/scripts/lib/contract-id.sh"
 
 # Defaults
 NETWORK="standalone"
@@ -137,10 +138,11 @@ if [ "$UPGRADE" = true ]; then
     2>&1 | tail -5
 else
   echo "📝 Deploying contract..."
-  CONTRACT_ID=$(soroban contract deploy \
+  DEPLOY_OUTPUT=$(soroban contract deploy \
     --network "$NETWORK" \
     --wasm "$WASM_FILE" \
-    2>&1 | tail -1)
+  )
+  CONTRACT_ID=$(extract_contract_id "$DEPLOY_OUTPUT")
   
   echo "✓ Contract deployed: $CONTRACT_ID"
   echo ""

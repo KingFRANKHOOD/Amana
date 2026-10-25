@@ -254,7 +254,7 @@ export class DisputeService {
 
           if (!dispute) {
             throw new AppError(
-              ErrorCode.DISPUTE_NOT_FOUND,
+              ErrorCode.NOT_FOUND,
               `No dispute found for trade: ${tradeId}`,
               404,
             );

@@ -42,6 +42,7 @@ export function GlobalSearch({ onClose }: GlobalSearchProps) {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestIdRef = useRef(0);
 
   const allItems = [
     ...results.trades.map((r) => ({ ...r, category: "trades" as const })),
@@ -104,23 +105,29 @@ export function GlobalSearch({ onClose }: GlobalSearchProps) {
         return;
       }
 
+      const requestId = ++requestIdRef.current;
       setLoading(true);
       setError(null);
 
       try {
         const data = await api.search.query(token, query.trim());
+        if (requestId !== requestIdRef.current) return;
         setResults(data);
         setActiveIndex(-1);
       } catch {
+        if (requestId !== requestIdRef.current) return;
         setError("Search failed. Please try again.");
         setResults(EMPTY_RESULTS);
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
     }, 300);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      requestIdRef.current += 1;
     };
   }, [query, isOpen, token]);
 

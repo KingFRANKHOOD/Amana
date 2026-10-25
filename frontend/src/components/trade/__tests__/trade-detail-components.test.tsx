@@ -244,6 +244,36 @@ describe("trade detail component coverage", () => {
     expect(screen.queryByText("Raise Dispute")).not.toBeInTheDocument();
   });
 
+  it("shows ActionBar in-transit actions for a backend FUNDED status", () => {
+    render(
+      <ActionBar
+        trade={{ ...baseTrade, status: "FUNDED" as unknown as TradeStatus }}
+        onConfirmDelivery={jest.fn()}
+        confirmingDelivery={false}
+      />,
+    );
+
+    expect(screen.getByText("Raise Dispute")).toBeInTheDocument();
+    expect(screen.getByText("PoD Verification")).toBeInTheDocument();
+    expect(screen.getByText("Confirm Delivery")).toBeInTheDocument();
+  });
+
+  it("links ContractInfo wallets to the public explorer on mainnet", () => {
+    const original = process.env.NEXT_PUBLIC_STELLAR_NETWORK;
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK = "public";
+    try {
+      render(<ContractInfo trade={baseTrade} />);
+      const links = screen.getAllByLabelText("Open wallet in Stellar Expert");
+      expect(links).toHaveLength(2);
+      links.forEach((link) =>
+        expect(link.getAttribute("href")).toContain("/explorer/public/"),
+      );
+    } finally {
+      if (original === undefined) delete process.env.NEXT_PUBLIC_STELLAR_NETWORK;
+      else process.env.NEXT_PUBLIC_STELLAR_NETWORK = original;
+    }
+  });
+
   it("renders without optional timelines", () => {
     render(
       <TradeDetailPanel
