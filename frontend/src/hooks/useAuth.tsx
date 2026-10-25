@@ -9,15 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  getAddress,
-  isAllowed,
-  isConnected,
-  requestAccess,
-  signMessage,
-} from "@stellar/freighter-api";
+import { requestAccess, signMessage } from "@stellar/freighter-api";
 import { api, ApiError } from "@/lib/api";
 import { trackAuthEvent } from "@/lib/analytics";
+import { readFreighterWalletState, shortenAddress } from "@/lib/freighterWallet";
 import { refreshIdentityStore } from "./useFreighterIdentity";
 
 // Compatibility marker for consumers that still gate requests on `token`.
@@ -44,18 +39,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-function bytesToBase64Url(bytes: ArrayLike<number>): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function shortenAddress(address: string): string {
-  return `${address.slice(0, 6)}...${address.slice(-6)}`;
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     address: null,
@@ -68,38 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     error: null,
   });
 
-  const checkWalletState = useCallback(async () => {
-    try {
-      const [connectedResult, allowedResult] = await Promise.all([
-        isConnected(),
-        isAllowed(),
-      ]);
-
-      const hasWallet =
-        connectedResult.error === undefined && connectedResult.isConnected;
-      const hasPermission =
-        allowedResult.error === undefined && allowedResult.isAllowed;
-
-      let address: string | null = null;
-      if (hasWallet && hasPermission) {
-        const addressResult = await getAddress();
-        if (addressResult.error === undefined) {
-          address = addressResult.address;
-        }
-      }
-
-      return { hasWallet, hasPermission, address };
-    } catch (error) {
-      console.error('Failed to read wallet state:', error);
-      return { hasWallet: false, hasPermission: false, address: null };
-    }
-  }, []);
-
   const refreshAuth = useCallback(async () => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const { hasWallet, hasPermission, address } = await checkWalletState();
+      const { hasWallet, hasPermission, address } = await readFreighterWalletState();
       // Remove credentials written by older releases. The active session can
       // only be discovered through the server's HttpOnly cookie.
       sessionStorage.removeItem("amana_jwt");
@@ -128,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: error instanceof Error ? error.message : "Failed to refresh auth",
       }));
     }
-  }, [checkWalletState]);
+  }, []);
 
   const connectWallet = useCallback(async () => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
