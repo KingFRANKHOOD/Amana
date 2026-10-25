@@ -31,6 +31,7 @@ const tradeManifestBodySchema = z.object({
   phone: z.string().trim().min(5).refine(noUnsafeHtml, "Phone contains unsupported HTML or script content"),
   licensePlate: z.string().trim().min(1).refine(noUnsafeHtml, "License plate contains unsupported HTML or script content"),
   vehicleType: z.string().trim().min(1).refine(noUnsafeHtml, "Vehicle type contains unsupported HTML or script content"),
+  driverIdNumber: z.string().trim().min(1).optional(),
   estimatedDeliveryWindow: deliveryWindowSchema,
 });
 
@@ -44,28 +45,6 @@ function caller(req: AuthRequest, res: Response): string | null {
     return null;
   }
   return walletAddress;
-}
-
-/**
- * Returns true when the request explicitly targets the driverIdNumber-aware
- * manifest contract flow (driverNameHash/driverIdHash + buildSubmitManifestTx).
- * This lets the app mount both manifest routers on the same path without the
- * trade manifest router shadowing this one for those requests.
- */
-function wantsDriverIdManifest(req: AuthRequest): boolean {
-  const body = req.body as Record<string, unknown> | undefined;
-  if (body && typeof body === "object") {
-    if (typeof body.driverIdHash === "string" || typeof body.driverNameHash === "string") {
-      return true;
-    }
-  }
-  const query = req.query as Record<string, unknown> | undefined;
-  if (query && typeof query === "object") {
-    if (query.flow === "driverId" || query.flow === "driver-id") {
-      return true;
-    }
-  }
-  return false;
 }
 
 export function createTradeManifestRouter(
@@ -133,7 +112,7 @@ export function createTradeManifestRouter(
         tradeId,
         callerAddress: walletAddress,
         driverName: parsed.data.driverName,
-        driverIdNumber: parsed.data.driverIdNumber,
+        driverIdNumber: parsed.data.driverIdNumber ?? "N/A",
         vehicleRegistration: parsed.data.licensePlate,
         routeDescription,
         expectedDeliveryAt: parsed.data.estimatedDeliveryWindow.to,

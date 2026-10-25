@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { StrKey } from "@stellar/stellar-sdk";
+import { isValidStellarPublicKey } from "@/lib/validation/schemas";
 
 export const step1Schema = z.object({
   commodity: z.string().min(1, "Select a commodity"),
@@ -20,7 +20,7 @@ export const step1Schema = z.object({
   ),
   currency: z.string().min(1),
   sellerAddress: z.string().refine(
-    (val) => val !== "" && StrKey.isValidEd25519PublicKey(val.trim()),
+    isValidStellarPublicKey,
     { message: "Invalid Stellar public key" }
   ),
 });

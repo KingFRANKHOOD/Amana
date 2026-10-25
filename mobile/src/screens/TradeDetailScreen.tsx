@@ -10,33 +10,15 @@ import {
   TextInput,
   Modal,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../types/navigation';
 import type { Trade, TradeStatus } from '../types/trade';
 import { useTradeStore } from '../stores/tradeStore';
+import { DEFAULT_STATUS_COLOR, STATUS_COLORS, STATUS_LABELS } from '../constants/tradeStatus';
 
 type Props = StackScreenProps<RootStackParamList, 'TradeDetail'>;
-
-const STATUS_COLORS: Record<TradeStatus, string> = {
-  PENDING: '#F59E0B',
-  FUNDED: '#3B82F6',
-  IN_TRANSIT: '#14B8A6',
-  DELIVERED: '#34D399',
-  DISPUTED: '#EF4444',
-  COMPLETED: '#34D399',
-  REFUNDED: '#6B7280',
-};
-
-const STATUS_LABELS: Record<TradeStatus, string> = {
-  PENDING: 'Pending',
-  FUNDED: 'Funded',
-  IN_TRANSIT: 'In Transit',
-  DELIVERED: 'Delivered',
-  DISPUTED: 'Disputed',
-  COMPLETED: 'Completed',
-  REFUNDED: 'Refunded',
-};
 
 type TimelineStep = {
   label: string;
@@ -67,13 +49,13 @@ function ContractCard({ trade }: { trade: Trade }) {
 }
 
 function TradeTimeline({ trade }: { trade: Trade }) {
-  const statusOrder: TradeStatus[] = ['PENDING', 'FUNDED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED'];
+  const statusOrder: TradeStatus[] = ['PENDING_SIGNATURE', 'CREATED', 'FUNDED', 'DELIVERED', 'COMPLETED'];
   const currentIdx = statusOrder.indexOf(trade.status);
 
   const steps: TimelineStep[] = [
-    { label: 'Created', done: true, active: false },
-    { label: 'Funded', done: currentIdx >= 1, active: currentIdx === 1 },
-    { label: 'In Transit', done: currentIdx >= 2, active: currentIdx === 2 },
+    { label: 'Pending Signature', done: currentIdx >= 0, active: currentIdx === 0 },
+    { label: 'Created', done: currentIdx >= 1, active: currentIdx === 1 },
+    { label: 'Funded', done: currentIdx >= 2, active: currentIdx === 2 },
     { label: 'Delivered', done: currentIdx >= 3, active: currentIdx === 3 },
     { label: 'Completed', done: currentIdx >= 4, active: currentIdx === 4 },
   ];
@@ -81,8 +63,8 @@ function TradeTimeline({ trade }: { trade: Trade }) {
   if (trade.status === 'DISPUTED') {
     steps.push({ label: 'Disputed', done: true, active: true });
   }
-  if (trade.status === 'REFUNDED') {
-    steps.push({ label: 'Refunded', done: true, active: true });
+  if (trade.status === 'CANCELLED') {
+    steps.push({ label: 'Cancelled', done: true, active: true });
   }
 
   return (
@@ -105,12 +87,23 @@ function TradeTimeline({ trade }: { trade: Trade }) {
 export default function TradeDetailScreen({ route, navigation }: Props) {
   const tradeId = route.params.tradeId;
   const insets = useSafeAreaInsets();
-  const { currentTrade, isLoading, error, fetchTrade, confirmDelivery, initiateDispute, releaseFunds, deposit, clearError } =
-    useTradeStore();
+  const {
+    currentTrade,
+    isLoading,
+    error,
+    lastTransactionSubmission,
+    fetchTrade,
+    confirmDelivery,
+    initiateDispute,
+    releaseFunds,
+    deposit,
+    clearError,
+  } = useTradeStore();
 
   const [disputeModalVisible, setDisputeModalVisible] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [pairingUri, setPairingUri] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTrade(tradeId);
@@ -127,8 +120,12 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
           style: 'default',
           onPress: async () => {
             setActionLoading(true);
-            await deposit(tradeId);
-            setActionLoading(false);
+            try {
+              await deposit(tradeId, setPairingUri);
+            } finally {
+              setPairingUri(null);
+              setActionLoading(false);
+            }
           },
         },
       ]
@@ -165,8 +162,12 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
           style: 'destructive',
           onPress: async () => {
             setActionLoading(true);
-            await releaseFunds(tradeId);
-            setActionLoading(false);
+            try {
+              await releaseFunds(tradeId, setPairingUri);
+            } finally {
+              setPairingUri(null);
+              setActionLoading(false);
+            }
           },
         },
       ]
@@ -185,14 +186,14 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
     setDisputeReason('');
   }, [tradeId, disputeReason, initiateDispute]);
 
-  const status = currentTrade?.status ?? 'PENDING';
-  const canDeposit = status === 'PENDING';
-  const canConfirm = status === 'IN_TRANSIT' || status === 'FUNDED';
+  const status: TradeStatus = currentTrade?.status ?? 'PENDING_SIGNATURE';
+  // Mirrors the backend's valid transitions: funding happens once the trade
+  // exists on-chain (CREATED), delivery is confirmed on a FUNDED trade, funds
+  // are released after DELIVERED, and disputes open from FUNDED or DELIVERED.
+  const canDeposit = status === 'CREATED';
+  const canConfirm = status === 'FUNDED';
   const canRelease = status === 'DELIVERED';
-  const canDispute =
-    status === 'IN_TRANSIT' ||
-    status === 'FUNDED' ||
-    status === 'DELIVERED';
+  const canDispute = status === 'FUNDED' || status === 'DELIVERED';
   const canUploadEvidence = status === 'DISPUTED';
 
   if (isLoading && !currentTrade) {
@@ -214,10 +215,27 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const statusColor = STATUS_COLORS[status] ?? '#6B7280';
+  const statusColor = STATUS_COLORS[status] ?? DEFAULT_STATUS_COLOR;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <Modal
+        visible={pairingUri !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => undefined}
+      >
+        <View style={styles.pairingOverlay}>
+          <View style={styles.pairingCard}>
+            <Text style={styles.sectionTitle}>Connect Stellar Wallet</Text>
+            <Text style={styles.pairingText}>
+              Scan this WalletConnect QR code with a Stellar wallet to review and sign the transaction.
+            </Text>
+            {pairingUri && <QRCode value={pairingUri} size={220} />}
+          </View>
+        </View>
+      </Modal>
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -232,9 +250,11 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
         <View style={styles.statusCard}>
           <Text style={styles.tradeIdText}>#{currentTrade.tradeId.slice(0, 12)}…</Text>
           <View style={[styles.statusBadge, { backgroundColor: `${statusColor}22` }]}>
-            <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status]}</Text>
+            <Text testID="trade-status-label" style={[styles.statusText, { color: statusColor }]}>
+              {STATUS_LABELS[status] ?? status}
+            </Text>
           </View>
-          <Text style={styles.amountText}>{currentTrade.amountUsdc} USDC</Text>
+          <Text style={styles.amountText}>{currentTrade.amountCngn} cNGN</Text>
           {currentTrade.commodity && (
             <Text style={styles.commodityText}>{currentTrade.commodity}{currentTrade.quantity ? ` — ${currentTrade.quantity} ${currentTrade.unit ?? ''}` : ''}</Text>
           )}
@@ -245,6 +265,14 @@ export default function TradeDetailScreen({ route, navigation }: Props) {
           <TouchableOpacity style={styles.errorBanner} onPress={clearError}>
             <Text style={styles.errorBannerText}>{error} — tap to dismiss</Text>
           </TouchableOpacity>
+        )}
+        {lastTransactionSubmission && (
+          <View style={styles.submissionBanner}>
+            <Text style={styles.submissionText}>
+              Transaction submitted to Stellar ({lastTransactionSubmission.status}).
+            </Text>
+            <Text style={styles.submissionHash}>{lastTransactionSubmission.hash}</Text>
+          </View>
         )}
 
         {/* Trade info */}
@@ -422,6 +450,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   errorBannerText: { color: '#DC2626', fontSize: 13 },
+  submissionBanner: {
+    backgroundColor: '#DCFCE7',
+    padding: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  submissionText: { color: '#166534', fontSize: 13, fontWeight: '600' },
+  submissionHash: { color: '#166534', fontFamily: 'monospace', fontSize: 10 },
   errorText: { fontSize: 16, color: '#DC2626', marginBottom: 16 },
   backBtn: { padding: 12 },
   backBtnText: { color: '#2d6a2d', fontSize: 15 },
@@ -503,4 +539,20 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: '#555', fontSize: 15, fontWeight: '600' },
   submitBtn: { backgroundColor: '#DC2626' },
   submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  pairingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  pairingCard: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    gap: 16,
+  },
+  pairingText: { color: '#555', textAlign: 'center', lineHeight: 22 },
 });

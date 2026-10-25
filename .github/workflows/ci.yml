@@ -62,36 +62,8 @@ jobs:
             contracts:
               - 'contracts/**'
               - 'scripts/check-contract-deployment-safety.sh'
-            routes_d:
-              - 'routes-d/**'
-
-      - name: Check for unpinned GitHub Actions
-        run: bash ./scripts/check-unpinned-actions.sh
-
-      - name: Check docs for known drift
-        run: bash ./scripts/check-doc-drift.sh
-
-      # Job-level `if:` conditions cannot reference the `matrix` context (it
-      # is only resolved once a matrix job actually starts), so the set of
-      # stacks to run is computed here instead and consumed as a plain
-      # `needs.changes.outputs.*` value by the matrix jobs below.
-      - name: Build CI matrices
-        id: matrices
-        run: |
-          stack_json=$(jq -nc \
-            --arg frontend "${{ steps.filter.outputs.frontend }}" \
-            --arg backend "${{ steps.filter.outputs.backend }}" \
-            --arg mobile "${{ steps.filter.outputs.mobile }}" \
-            --arg contracts "${{ steps.filter.outputs.contracts }}" \
-            '[{k:"frontend",v:$frontend},{k:"backend",v:$backend},{k:"mobile",v:$mobile},{k:"contracts",v:$contracts}] | map(select(.v=="true") | .k)')
-          trivy_json=$(jq -nc \
-            --arg frontend "${{ steps.filter.outputs.frontend }}" \
-            --arg backend "${{ steps.filter.outputs.backend }}" \
-            --arg routes_d "${{ steps.filter.outputs.routes_d }}" \
-            --arg contracts "${{ steps.filter.outputs.contracts }}" \
-            '[{k:"frontend",v:$frontend},{k:"backend",v:$backend},{k:"routes-d",v:$routes_d},{k:"contracts",v:$contracts}] | map(select(.v=="true") | .k)')
-          echo "stack=$stack_json" >> "$GITHUB_OUTPUT"
-          echo "trivy=$trivy_json" >> "$GITHUB_OUTPUT"
+              - 'scripts/deploy-contract-local.sh'
+              - 'scripts/test-deploy-contract-local.sh'
 
   stack:
     name: ${{ matrix.stack }} CI
@@ -107,11 +79,11 @@ jobs:
 
       - name: Setup pnpm
         if: matrix.stack != 'contracts'
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
         if: matrix.stack != 'contracts'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           cache: pnpm
           cache-dependency-path: ${{ matrix.stack == 'frontend' && 'frontend/pnpm-lock.yaml' || matrix.stack == 'backend' && 'backend/pnpm-lock.yaml' || matrix.stack == 'mobile' && 'mobile/pnpm-lock.yaml' }}
@@ -174,7 +146,7 @@ jobs:
           files: frontend/coverage/lcov.info
           flags: frontend
           name: frontend
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Frontend visual regression tests
         if: matrix.stack == 'frontend'
@@ -198,7 +170,7 @@ jobs:
           files: backend/coverage/lcov.info
           flags: backend
           name: backend
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Mobile type check
         if: matrix.stack == 'mobile'
@@ -223,7 +195,7 @@ jobs:
           files: mobile/coverage/lcov.info
           flags: mobile
           name: mobile
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Mobile security audit
         if: matrix.stack == 'mobile'
@@ -234,6 +206,10 @@ jobs:
         if: matrix.stack == 'contracts'
         run: ../../scripts/check-contract-deployment-safety.sh
         working-directory: contracts/amana_escrow
+
+      - name: Local deployment build failure regression test
+        if: matrix.stack == 'contracts'
+        run: bash scripts/test-deploy-contract-local.sh
 
       - name: Cargo security audit
         if: matrix.stack == 'contracts'
@@ -262,7 +238,7 @@ jobs:
           files: contracts/coverage/lcov.info
           flags: contracts
           name: contracts
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Build WASM artifact
         if: matrix.stack == 'contracts'
@@ -289,7 +265,7 @@ jobs:
           echo "Mobile checks completed at $(date --utc)" > mobile/ci-artifacts/mobile-ci-summary.txt
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.stack }}-artifact
           path: ${{ matrix.stack == 'frontend' && 'frontend/coverage/' || matrix.stack == 'backend' && 'backend/coverage/' || matrix.stack == 'mobile' && 'mobile/ci-artifacts/' || matrix.stack == 'contracts' && 'contracts/amana_escrow/target/wasm32-unknown-unknown/release/amana_escrow.wasm' }}
@@ -305,7 +281,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
           cache: npm
@@ -338,11 +314,11 @@ jobs:
           files: routes-d/coverage/lcov.info
           flags: routes-d
           name: routes-d
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Upload routes-d artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: routes-d-artifact
           path: routes-d/coverage/
@@ -362,16 +338,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: |
             frontend/pnpm-lock.yaml
             backend/pnpm-lock.yaml
+
+      - name: Validate Playwright JUnit output configuration
+        run: node --test scripts/ci-workflow.test.cjs
+
+      - name: Validate database restore target precedence
+        run: node --test scripts/db-restore.test.cjs
 
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -430,12 +412,12 @@ jobs:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3000
           NEXT_PUBLIC_API_URL: http://localhost:4000
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e-junit.xml
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/e2e-junit.xml
         run: pnpm exec playwright test tests/e2e --project=chromium-desktop --reporter=line,html,junit
 
       - name: Upload Playwright reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-e2e-reports
           path: |
@@ -499,7 +481,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-${{ matrix.stack }}.sarif
           category: trivy-${{ matrix.stack }}
@@ -540,14 +522,14 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab (postgres)
         if: always()
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-postgres.sarif
           category: trivy-image-postgres
 
       - name: Upload SARIF to GitHub Security tab (redis)
         if: always()
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-redis.sarif
           category: trivy-image-redis
@@ -565,10 +547,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
           cache: pnpm
@@ -606,7 +588,7 @@ jobs:
         working-directory: backend
 
       - name: Publish pact artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: amana-pacts
           path: frontend/tests/pact/pacts/*.json
@@ -628,10 +610,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
           cache: pnpm

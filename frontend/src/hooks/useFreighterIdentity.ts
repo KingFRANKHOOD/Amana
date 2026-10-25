@@ -1,12 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import {
-  getAddress,
-  isAllowed,
-  isConnected,
-  requestAccess,
-} from "@stellar/freighter-api";
+import { requestAccess } from "@stellar/freighter-api";
+import { readFreighterWalletState, shortenAddress } from "@/lib/freighterWallet";
 
 interface FreighterIdentityState {
   address: string | null;
@@ -16,10 +12,6 @@ interface FreighterIdentityState {
   isLoading: boolean;
   connectWallet: () => Promise<void>;
   refreshIdentity: () => Promise<void>;
-}
-
-function shortenAddress(address: string): string {
-  return `${address.slice(0, 6)}...${address.slice(-6)}`;
 }
 
 type FreighterIdentitySnapshot = Omit<
@@ -76,49 +68,19 @@ async function runRefreshIdentity(): Promise<void> {
   const operationId = beginOperation();
   updateStore((state) => ({ ...state, isLoading: true }));
 
-  try {
-    const [connectedResult, allowedResult] = await Promise.all([
-      isConnected(),
-      isAllowed(),
-    ]);
+  const { hasWallet, hasPermission, address } = await readFreighterWalletState();
 
-    const hasWallet =
-      connectedResult.error === undefined && connectedResult.isConnected;
-    const hasPermission =
-      allowedResult.error === undefined && allowedResult.isAllowed;
-
-    let address: string | null = null;
-    if (hasWallet && hasPermission) {
-      const addressResult = await getAddress();
-      if (addressResult.error === undefined) {
-        address = addressResult.address;
-      }
-    }
-
-    if (!isLatestOperation(operationId)) {
-      return;
-    }
-
-    updateStore((state) => ({
-      ...state,
-      address,
-      isAuthorized: hasWallet && hasPermission,
-      isWalletDetected: hasWallet,
-      isLoading: false,
-    }));
-  } catch {
-    if (!isLatestOperation(operationId)) {
-      return;
-    }
-
-    updateStore((state) => ({
-      ...state,
-      address: null,
-      isAuthorized: false,
-      isWalletDetected: false,
-      isLoading: false,
-    }));
+  if (!isLatestOperation(operationId)) {
+    return;
   }
+
+  updateStore((state) => ({
+    ...state,
+    address,
+    isAuthorized: hasWallet && hasPermission,
+    isWalletDetected: hasWallet,
+    isLoading: false,
+  }));
 }
 
 async function ensureInitialized(): Promise<void> {

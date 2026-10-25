@@ -7,7 +7,7 @@ import { tracingMiddleware } from './middleware/tracing.middleware';
 import loggerMiddleware from './middleware/logger';
 import { requestLoggerMiddleware } from "./middleware/request.logger.middleware";
 import securityHeaders from "./middleware/securityHeaders";
-import { apiVersionHeader, deprecationHeaders } from "./middleware/apiVersion.middleware";
+import { apiVersionHeader } from "./middleware/apiVersion.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { walletRoutes } from "./routes/wallet.routes";
 import { createTradeRouter } from "./routes/trade.routes";
@@ -96,7 +96,7 @@ function buildCorsOptions(): cors.CorsOptions {
 }
 
 export function createApp(
-  deps?: { prisma?: PrismaClient; eventIndexer?: EventIndexerService }
+  deps: { prisma?: PrismaClient; eventIndexer?: EventIndexerService } = {}
 ): express.Application {
   const app = express();
 
@@ -190,8 +190,7 @@ export function createApp(
   function buildApiRouter(): express.Router {
     const router = express.Router();
 
-    router.use(apiVersionHeader);
-    router.use(deprecationHeaders);
+    router.use(apiVersionHeader(1));
 
     router.use("/auth", authRoutes);
     router.use("/wallet", walletRoutes);
@@ -229,7 +228,7 @@ export function createApp(
     router.use("/audit-logs", createAuditLogRouter());
     router.use("/trust-score", createTrustScoreRouter());
     router.use("/webhooks", webhooksRoutes);
-    router.use("/events", createEventRouter());
+    router.use("/events", createEventRouter(deps.prisma!, deps.eventIndexer!));
     router.use("/trade-events", createTradeEventsRouter());
 
     return router;

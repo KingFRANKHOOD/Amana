@@ -21,6 +21,14 @@ const VALID_PREDECESSORS: Partial<Record<EventType, TradeStatus[]>> = {
   [EventType.FundsReleased]: [TradeStatus.DELIVERED],
   [EventType.DisputeInitiated]: [TradeStatus.FUNDED, TradeStatus.DELIVERED],
   [EventType.DisputeResolved]: [TradeStatus.DISPUTED],
+  // Cancellation paths mirror the escrow contract: cancel_trade() accepts a
+  // CREATED or FUNDED trade, cancel_by_buyer() only CREATED, and the expiry
+  // refund only FUNDED. Without these entries the off-chain row never moves
+  // to CANCELLED, because applyStatusTransition treats an unknown event type
+  // as an out-of-order event.
+  [EventType.TradeCancelled]: [TradeStatus.CREATED, TradeStatus.FUNDED],
+  [EventType.TradeCancelledByBuyer]: [TradeStatus.CREATED],
+  [EventType.TradeExpired]: [TradeStatus.FUNDED],
 };
 
 /** Typed error thrown when a non-create event arrives with no matching trade row. */
@@ -517,6 +525,13 @@ async function handleTradeCancelled(
     sellerAddress: "",
     status: TradeStatus.CANCELLED,
     version: 1,
+  });
+  await logEscrowEvent(tx, {
+    tradeId: event.tradeId,
+    eventType: event.eventType,
+    toStatus: TradeStatus.CANCELLED,
+    ledgerSequence: event.ledgerSequence,
+    contractId: event.contractId,
   });
   appLogger.debug(
     { tradeId: event.tradeId, ledger: event.ledgerSequence },

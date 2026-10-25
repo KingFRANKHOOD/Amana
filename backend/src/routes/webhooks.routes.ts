@@ -7,10 +7,6 @@ import { prisma } from '../lib/db';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validateRequest';
 import { appLogger } from '../middleware/logger';
-import { EncryptionService } from '../services/encryption.service';
-
-const encryptionService = new EncryptionService();
-const WEBHOOK_SECRET_CONTEXT = 'webhook-secret';
 
 const router = Router();
 
@@ -146,25 +142,6 @@ function hashSecret(secret: string): string {
   return `pbkdf2$${SECRET_KDF_ITERATIONS}$${salt.toString('hex')}$${derived.toString('hex')}`;
 }
 
-// Verify a webhook secret against a stored PBKDF2 hash (constant-time compare).
-function verifySecret(secret: string, stored: string): boolean {
-  const parts = stored.split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
-  const iterations = Number(parts[1]);
-  if (!Number.isInteger(iterations) || iterations <= 0) return false;
-  const salt = Buffer.from(parts[2], 'hex');
-  const expected = Buffer.from(parts[3], 'hex');
-  const derived = crypto.pbkdf2Sync(secret, salt, iterations, expected.length, SECRET_KDF_DIGEST);
-  return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
-}
-
-function encryptSecret(secret: string): string {
-  try {
-    return encryptionService.encrypt(secret, WEBHOOK_SECRET_CONTEXT);
-  } catch {
-    return hashSecret(secret);
-  }
-}
 
 // Helper function to generate a random secret
 function generateSecret(): string {
@@ -281,6 +258,57 @@ router.get(
         prisma.webhookSubscription.count({ where: { userId } }),
       ]);
 
-      res.status(200).json({ webhooks, 
+      res.status(200).json({ webhooks, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
+    } catch (error) {
+      console.error('Error listing webhooks:', error);
+      res.status(500).json({ error: 'Failed to list webhooks' });
+    }
+  }
+);
 
-/* … truncated 1577 chars — edit only what you need near the top … */
+// DELETE /webhooks/:id - Delete a webhook by ID
+router.delete(
+  '/:id',
+  authMiddleware,
+  validateRequest({ params: webhookIdParamSchema }),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+      const walletAddress = req.user?.walletAddress;
+
+      if (!walletAddress) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const userId = await getUserIdFromWallet(walletAddress);
+      if (!userId) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Verify the webhook belongs to the user
+      const webhook = await prisma.webhookSubscription.findUnique({
+        where: { id },
+      });
+
+      if (!webhook) {
+        return res.status(404).json({ error: 'Webhook not found' });
+      }
+
+      if (webhook.userId !== userId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      // Delete the webhook
+      await prisma.webhookSubscription.delete({
+        where: { id },
+      });
+
+      res.status(200).json({ message: 'Webhook deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting webhook:', error);
+      res.status(500).json({ error: 'Failed to delete webhook' });
+    }
+  }
+);
+
+export { router as webhooksRoutes };

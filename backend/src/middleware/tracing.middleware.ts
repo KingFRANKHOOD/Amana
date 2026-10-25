@@ -1,7 +1,6 @@
 import { trace, SpanKind, SpanStatusCode, context, Span } from '@opentelemetry/api';
 import { NextFunction, Request, Response } from 'express';
 import { TracedRequest } from './correlationId.middleware';
-import { TracingHelper } from '../config/tracing';
 import { appLogger } from './logger';
 
 /**
@@ -55,6 +54,14 @@ export function tracingMiddleware(
   
   // Store original end method to intercept response completion
   const originalEnd = res.end.bind(res) as typeof res.end;
+  let spanEnded = false;
+  const endSpan = () => {
+    if (!spanEnded) {
+      spanEnded = true;
+      span.end();
+    }
+  };
+
   (res as any).end = function(this: Response, ...args: any[]) {
     // Add response attributes to span
     span.setAttributes({
@@ -85,7 +92,7 @@ export function tracingMiddleware(
     });
 
     // End the span
-    span.end();
+    endSpan();
 
     // Call original end
     return originalEnd.apply(this, args as Parameters<typeof res.end>);
@@ -108,11 +115,12 @@ export function tracingMiddleware(
 
   // Handle request errors
   res.on('error', (error: Error) => {
-    TracingHelper.recordException(error);
+    span.recordException(error);
     span.setStatus({
       code: SpanStatusCode.ERROR,
       message: `Response error: ${error.message}`,
     });
+    endSpan();
   });
 
   // Execute the request in the tracing context

@@ -1,5 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { env } from '../config/env';
+import { lowercaseWalletAddressesMiddleware } from './walletAddressMiddleware';
 
 // Ensure a single instance of Prisma Client is used across the application
 declare global {
@@ -47,32 +48,7 @@ const prismaClientSingleton = () => {
   });
 
   // Lowercase wallet addresses on write operations
-  client.$use(async (params: Prisma.MiddlewareParams, next: (params: Prisma.MiddlewareParams) => Promise<unknown>) => {
-    const model = String(params.model ?? "");
-
-    const data = params.args?.data as Record<string, unknown> | undefined;
-
-    if (data) {
-      if (model === 'User' && typeof data.walletAddress === 'string') {
-        data.walletAddress = data.walletAddress.toLowerCase();
-      }
-
-      if (model === 'Trade') {
-        if (typeof data.buyerAddress === 'string') {
-          data.buyerAddress = data.buyerAddress.toLowerCase();
-        }
-        if (typeof data.sellerAddress === 'string') {
-          data.sellerAddress = data.sellerAddress.toLowerCase();
-        }
-      }
-
-      if (model === 'Dispute' && typeof data.initiator === 'string') {
-        data.initiator = data.initiator.toLowerCase();
-      }
-    }
-
-    return next(params);
-  });
+  client.$use(lowercaseWalletAddressesMiddleware);
 
   return client;
 };
