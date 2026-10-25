@@ -146,7 +146,7 @@ jobs:
           files: frontend/coverage/lcov.info
           flags: frontend
           name: frontend
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Frontend visual regression tests
         if: matrix.stack == 'frontend'
@@ -170,7 +170,7 @@ jobs:
           files: backend/coverage/lcov.info
           flags: backend
           name: backend
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Mobile type check
         if: matrix.stack == 'mobile'
@@ -195,7 +195,7 @@ jobs:
           files: mobile/coverage/lcov.info
           flags: mobile
           name: mobile
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Mobile security audit
         if: matrix.stack == 'mobile'
@@ -238,7 +238,7 @@ jobs:
           files: contracts/coverage/lcov.info
           flags: contracts
           name: contracts
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Build WASM artifact
         if: matrix.stack == 'contracts'
@@ -314,7 +314,7 @@ jobs:
           files: routes-d/coverage/lcov.info
           flags: routes-d
           name: routes-d
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Upload routes-d artifact
         if: always()

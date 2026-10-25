@@ -205,6 +205,10 @@ export class EvidenceService {
     return record;
   }
 
+  async assertStreamAccess(cid: string, callerAddress: string) {
+    return this.authorizeEvidenceAccess(cid, callerAddress);
+  }
+
   /**
    * Upload a video file to IPFS and persist the evidence record.
    * Caller must be buyer or seller of the referenced trade.
@@ -320,6 +324,143 @@ export class EvidenceService {
     throw new ServiceUnavailableError();
   }
 
-  /** Resolve and cache the public gateway URL for
+  /** Resolve and cache the public gateway URL for a CID. */
+  private resolveGatewayUrl(cid: string): string {
+    if (this.urlCache.has(cid)) {
+      return this.urlCache.get(cid)!;
+    }
+    const url = this.ipfs.getFileUrl(cid);
+    this.urlCache.set(cid, url);
+    return url;
+  }
 
-/* … truncated 3704 chars — edit only what you need near the top … */
+  private sniffMimeType(buffer: Buffer): "video/mp4" | "video/webm" | null {
+    // MP4: bytes 4-7 should contain 'ftyp' marker in ISO BMFF containers.
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(4, 8).toString("ascii") === "ftyp"
+    ) {
+      return "video/mp4";
+    }
+
+    // WebM: EBML header starts with 0x1A45DFA3.
+    if (
+      buffer.length >= 4 &&
+      buffer[0] === 0x1a &&
+      buffer[1] === 0x45 &&
+      buffer[2] === 0xdf &&
+      buffer[3] === 0xa3
+    ) {
+      return "video/webm";
+    }
+
+    return null;
+  }
+
+  private async runEvidenceScan(
+    file: Express.Multer.File,
+  ): Promise<EvidenceScanResult> {
+    const required =
+      process.env.EVIDENCE_SCAN_REQUIRED !== undefined
+        ? process.env.EVIDENCE_SCAN_REQUIRED.toLowerCase() === "true"
+        : env.EVIDENCE_SCAN_REQUIRED;
+    try {
+      return await this.scanner.scan(file);
+    } catch (error) {
+      if (!required) {
+        return { clean: true };
+      }
+      throw new EvidenceScanError(
+        error instanceof Error
+          ? error.message
+          : "Evidence scan service unavailable",
+      );
+    }
+  }
+
+  private resolveGatewayUrls(cid: string): string[] {
+    const gatewayUrls = process.env.IPFS_GATEWAY_URLS ?? env.IPFS_GATEWAY_URLS;
+    const allowlist = this.parseGatewayAllowlist();
+    const configured: string[] = [];
+
+    if (gatewayUrls) {
+      for (const value of gatewayUrls.split(",")) {
+        const gateway = value.trim();
+        if (!gateway) continue;
+        const normalized = gateway.replace(/\/$/, "");
+        if (!this.isGatewayAllowed(normalized, allowlist)) {
+          continue;
+        }
+        configured.push(`${normalized}/${cid}`);
+      }
+    }
+
+    if (configured.length > 0) {
+      return configured;
+    }
+
+    const fallback = this.resolveGatewayUrl(cid);
+    const fallbackBase = fallback.replace(/\/+[^/]+$/, "");
+    if (!this.isGatewayAllowed(fallbackBase, allowlist)) {
+      throw new ServiceUnavailableError("No allowed IPFS gateway configured");
+    }
+    return [fallback];
+  }
+
+  private parseGatewayAllowlist(): Set<string> {
+    const raw =
+      process.env.IPFS_GATEWAY_ALLOWLIST ?? env.IPFS_GATEWAY_ALLOWLIST ?? "";
+    return new Set(
+      raw
+        .split(",")
+        .map((v: string) => v.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  private isGatewayAllowed(
+    gatewayBase: string,
+    allowlist: Set<string>,
+  ): boolean {
+    if (allowlist.size === 0) return true;
+    try {
+      const host = new URL(gatewayBase).hostname.toLowerCase();
+      return allowlist.has(host);
+    } catch {
+      return false;
+    }
+  }
+
+  private isGatewayCircuitOpen(url: string): boolean {
+    const state = this.gatewayCircuit.get(url);
+    if (!state) return false;
+    return state.openUntil > Date.now();
+  }
+
+  private onGatewaySuccess(url: string): void {
+    this.gatewayCircuit.delete(url);
+  }
+
+  private onGatewayFailure(url: string): void {
+    const threshold = env.IPFS_GATEWAY_CIRCUIT_FAILURE_THRESHOLD;
+    const cooldownMs = env.IPFS_GATEWAY_CIRCUIT_COOLDOWN_MS;
+    const current = this.gatewayCircuit.get(url) ?? {
+      failures: 0,
+      openUntil: 0,
+    };
+    const failures = current.failures + 1;
+
+    if (failures >= threshold) {
+      this.gatewayCircuit.set(url, {
+        failures,
+        openUntil: Date.now() + cooldownMs,
+      });
+      return;
+    }
+
+    this.gatewayCircuit.set(url, {
+      failures,
+      openUntil: 0,
+    });
+  }
+}

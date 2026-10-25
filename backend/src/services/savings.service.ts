@@ -203,6 +203,15 @@ export class SavingsService {
             );
         }
 
+        // Invariant: a goal may only be attached to a vault owned by the caller.
+        if (vault.ownerAddress.toLowerCase() !== normalizedAddress) {
+            throw new AppError(
+                ErrorCode.FORBIDDEN,
+                `Vault ${vaultId} is not owned by caller`,
+                403,
+            );
+        }
+
         return this.prisma.goal.create({
             data: {
                 goalId,

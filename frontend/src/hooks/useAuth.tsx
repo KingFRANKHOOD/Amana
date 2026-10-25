@@ -151,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const signedChallenge = typeof signedMessage === "string" 
         ? signedMessage 
-        : Buffer.from(signedMessage).toString("base64url");
+        : bytesToBase64Url(signedMessage);
       await api.auth.verify(state.address, signedChallenge);
 
       setState((prev) => ({

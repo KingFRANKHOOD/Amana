@@ -16,6 +16,7 @@ import { useTradeStore } from '../stores/tradeStore';
 import { useAuthStore } from '../stores/authStore';
 import { offlineQueue, QueuedAction } from '../services/offline-queue';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { DEFAULT_STATUS_COLOR, STATUS_COLORS } from '../constants/tradeStatus';
 
 type Props = StackScreenProps<RootStackParamList, 'TradeList'>;
 
@@ -27,18 +28,8 @@ const STATUS_FILTERS: Array<{ label: string; value: TradeStatus | 'ALL' }> = [
   { label: 'Done', value: 'COMPLETED' },
 ];
 
-const STATUS_COLORS: Record<TradeStatus, string> = {
-  PENDING_SIGNATURE: '#F59E0B',
-  CREATED: '#8B5CF6',
-  FUNDED: '#3B82F6',
-  DELIVERED: '#34D399',
-  DISPUTED: '#EF4444',
-  COMPLETED: '#34D399',
-  CANCELLED: '#6B7280',
-};
-
 function TradeCard({ trade, onPress }: { trade: Trade; onPress: () => void }) {
-  const statusColor = STATUS_COLORS[trade.status] ?? '#6B7280';
+  const statusColor = STATUS_COLORS[trade.status] ?? DEFAULT_STATUS_COLOR;
   const shortBuyer = `${trade.buyerAddress.slice(0, 6)}…${trade.buyerAddress.slice(-4)}`;
   const shortSeller = `${trade.sellerAddress.slice(0, 6)}…${trade.sellerAddress.slice(-4)}`;
 

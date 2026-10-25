@@ -165,23 +165,34 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
         });
 
         await Promise.all(
-          notes.map((note) =>
+          notes.map(async (note) =>
             prisma.tradeNote.update({
               where: { id: note.id },
-              data: { content: encryptionService.rotateCiphertext(note.content, tradeId, keyVersion) },
+              data: { content: await encryptionService.rotateCiphertext(note.content, tradeId, keyVersion) },
             }),
           ),
         );
 
         const manifest = await prisma.deliveryManifest.findUnique({ where: { tradeId } });
         if (manifest) {
+          const [
+            driverName,
+            driverIdNumber,
+            vehicleRegistration,
+            routeDescription,
+          ] = await Promise.all([
+            encryptionService.rotateCiphertext(manifest.driverName, tradeId, keyVersion),
+            encryptionService.rotateCiphertext(manifest.driverIdNumber, tradeId, keyVersion),
+            encryptionService.rotateCiphertext(manifest.vehicleRegistration, tradeId, keyVersion),
+            encryptionService.rotateCiphertext(manifest.routeDescription, tradeId, keyVersion),
+          ]);
           await prisma.deliveryManifest.update({
             where: { tradeId },
             data: {
-              driverName: encryptionService.rotateCiphertext(manifest.driverName, tradeId, keyVersion),
-              driverIdNumber: encryptionService.rotateCiphertext(manifest.driverIdNumber, tradeId, keyVersion),
-              vehicleRegistration: encryptionService.rotateCiphertext(manifest.vehicleRegistration, tradeId, keyVersion),
-              routeDescription: encryptionService.rotateCiphertext(manifest.routeDescription, tradeId, keyVersion),
+              driverName,
+              driverIdNumber,
+              vehicleRegistration,
+              routeDescription,
             },
           });
         }

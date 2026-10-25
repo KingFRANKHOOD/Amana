@@ -196,5 +196,58 @@ describe('Offline Service', () => {
 
       removeListener();
     });
+
+    it('does not start overlapping syncs for rapid successive active events', async () => {
+      let resolveOnline: (value: boolean) => void = () => undefined;
+      const checkOnlineStatus = jest.fn(
+        () => new Promise<boolean>((resolve) => { resolveOnline = resolve; })
+      );
+      const onSyncComplete = jest.fn();
+      (tradeApi.listTrades as jest.Mock).mockResolvedValue({ trades: mockApiTrades });
+
+      const removeListener = offlineService.setupForegroundSync(onSyncComplete, checkOnlineStatus);
+      const emit = (AppState as any).emit;
+
+      emit('active');
+      emit('background');
+      emit('active');
+
+      expect(checkOnlineStatus).toHaveBeenCalledTimes(1);
+
+      resolveOnline(true);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(tradeApi.listTrades).toHaveBeenCalledTimes(1);
+      expect(onSyncComplete).toHaveBeenCalledTimes(1);
+
+      // Once the first sync has settled, a later foreground triggers a new one.
+      emit('active');
+      expect(checkOnlineStatus).toHaveBeenCalledTimes(2);
+      resolveOnline(true);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(onSyncComplete).toHaveBeenCalledTimes(2);
+
+      removeListener();
+    });
+
+    it('does not call onSyncComplete after cleanup runs mid-sync', async () => {
+      let resolveOnline: (value: boolean) => void = () => undefined;
+      const checkOnlineStatus = jest.fn(
+        () => new Promise<boolean>((resolve) => { resolveOnline = resolve; })
+      );
+      const onSyncComplete = jest.fn();
+      (tradeApi.listTrades as jest.Mock).mockResolvedValue({ trades: mockApiTrades });
+
+      const removeListener = offlineService.setupForegroundSync(onSyncComplete, checkOnlineStatus);
+      (AppState as any).emit('active');
+      expect(checkOnlineStatus).toHaveBeenCalledTimes(1);
+
+      removeListener();
+      resolveOnline(true);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(tradeApi.listTrades).not.toHaveBeenCalled();
+      expect(onSyncComplete).not.toHaveBeenCalled();
+    });
   });
 });

@@ -132,6 +132,10 @@ export const offlineQueue = {
   },
 
   async enqueue(type: QueuedActionType, payload: Record<string, unknown>): Promise<QueuedAction> {
+    if (type === 'SUBMIT_EVIDENCE' || type === 'INITIATE_DISPUTE') {
+      throw new Error(`${type} sync is not implemented yet`);
+    }
+
     if (type === 'CREATE_TRADE') {
       createTradePayloadSchema.parse(payload);
     }

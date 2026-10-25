@@ -23,7 +23,7 @@ export class EncryptionService {
     }
   }
 
-  async encrypt(plaintext: string, tradeId: string, keyVersion: string = DEFAULT_KEY_VERSION): Promise<string> {
+  async encrypt(plaintext: string, _tradeId: string, keyVersion: string = DEFAULT_KEY_VERSION): Promise<string> {
     this.assertSupportedKeyVersion(keyVersion);
     const salt = crypto.randomBytes(SALT_LENGTH);
     const key = await this.deriveKey(salt, keyVersion);
@@ -41,7 +41,7 @@ export class EncryptionService {
     ].join(":");
   }
 
-  async decrypt(ciphertext: string, tradeId: string): Promise<string> {
+  async decrypt(ciphertext: string, _tradeId: string): Promise<string> {
     const payload = this.parsePayload(ciphertext);
     this.assertSupportedKeyVersion(payload.keyVersion);
     const salt = Buffer.from(payload.saltHex, "hex");
@@ -66,7 +66,7 @@ export class EncryptionService {
     return this.encrypt(plaintext, tradeId, newVersion);
   }
 
-  private deriveKey(salt: Buffer, keyVersion: string): Promise<Buffer> {
+  private deriveKey(salt: Buffer, _keyVersion: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       crypto.pbkdf2(
         this.masterSecret,

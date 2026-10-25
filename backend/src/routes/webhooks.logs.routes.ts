@@ -42,7 +42,7 @@ export function createWebhookLogsRouter(prisma: PrismaClient = defaultPrisma) {
 
         const webhook = await prisma.webhookSubscription.findUnique({
           where: { id: webhookId },
-          select: { userAddress: true },
+          select: { user: { select: { walletAddress: true } } },
         });
 
         if (!webhook) {
@@ -50,7 +50,7 @@ export function createWebhookLogsRouter(prisma: PrismaClient = defaultPrisma) {
           return;
         }
 
-        if (webhook.userAddress !== walletAddress) {
+        if (webhook.user.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
           res.status(403).json({ error: "Forbidden: you do not own this webhook" });
           return;
         }
