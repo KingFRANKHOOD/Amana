@@ -36,34 +36,6 @@ function resolveInitialFeeBps(): number {
   return parsed;
 }
 
-export interface DisputePayout {
-  sellerRaw: bigint;
-  sellerNet: bigint;
-  buyerRefund: bigint;
-  fee: bigint;
-}
-
-/**
- * BigInt-exact mirror of the contract's resolve_dispute() payout math
- * (checked_loss_amount / checked_fee_amount in contracts/amana_escrow):
- *
- *   seller_loss  = total * (10_000 - seller_gets_bps) * seller_loss_bps / 10_000^2
- *   seller_raw   = total - seller_loss,  buyer_refund = seller_loss
- *   fee          = seller_raw * fee_bps / 10_000,  seller_net = seller_raw - fee
- */
-export function calculateDisputePayout(
-  total: bigint,
-  sellerGetsBps: bigint,
-  sellerLossBps: bigint,
-  feeBps: bigint,
-): DisputePayout {
-  const divisor = BigInt(BPS_DIVISOR);
-  const sellerLoss = (total * (divisor - sellerGetsBps) * sellerLossBps) / (divisor * divisor);
-  const sellerRaw = total - sellerLoss;
-  const fee = (sellerRaw * feeBps) / divisor;
-  return { sellerRaw, sellerNet: sellerRaw - fee, buyerRefund: sellerLoss, fee };
-}
-
 export interface FeeEventRecord {
   id: number;
   tradeId: string;
