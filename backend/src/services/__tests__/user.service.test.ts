@@ -1,6 +1,7 @@
 import { getSupabaseClient } from "../../lib/supabase";
 import { findOrCreateUser, updateUser, getPublicProfile } from "../user.service";
-import { AppError, ErrorCode } from "../../errors/errorCodes";
+import { ErrorCode } from '../../errors/errorCodes';
+import { AppError } from '../../errors/appError';
 import { Keypair } from "@stellar/stellar-sdk";
 
 const mockSafeParse = jest.fn();
@@ -8,6 +9,25 @@ const mockSafeParse = jest.fn();
 // Mock Supabase lib
 jest.mock("../../lib/supabase", () => ({
   getSupabaseClient: jest.fn(),
+}));
+
+// Mock Prisma for FK ensure (avoid real DB in unit tests)
+jest.mock("../../lib/db", () => ({
+  prisma: {
+    user: {
+      upsert: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+  },
+}));
+
+// Mock cache to avoid Redis timeouts
+jest.mock("../../lib/cache", () => ({
+  cacheService: {
+    getOrSet: jest.fn((key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+    invalidateOne: jest.fn().mockResolvedValue(undefined),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 // Mock the validators module — path relative to user.service.ts location

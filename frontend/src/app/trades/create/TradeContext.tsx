@@ -41,7 +41,7 @@ const defaults: TradeData = {
   notes: "",
 };
 
-const TradeDataSchema = z.object({
+export const TradeDataSchema = z.object({
   commodity: z.string(),
   quantity: z.string(),
   unit: z.string(),

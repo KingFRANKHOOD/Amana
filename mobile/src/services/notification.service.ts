@@ -4,6 +4,7 @@ import * as SecureStore from "expo-secure-store";
 
 const PUSH_TOKEN_KEY = "amana_push_token";
 const OPT_IN_PREFERENCE_KEY = "amana_notification_opt_in";
+const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000";
 
 export type NotificationOptInPreference = "granted" | "denied" | "unset";
 
@@ -158,7 +159,7 @@ export async function storePushTokenOnBackend(
 ): Promise<boolean> {
   try {
     const response = await fetch(
-      "https://api.amana.io/user/push-token",
+      `${API_URL}/user/push-token`,
       {
         method: "POST",
         headers: {

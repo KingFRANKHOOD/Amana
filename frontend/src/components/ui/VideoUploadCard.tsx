@@ -11,9 +11,10 @@ import { useTranslation } from "@/hooks/useTranslation";
 export interface VideoUploadCardProps {
   tradeId: string;
   onUpload?: (ipfsHash: string) => void;
+  onSubmit?: (ipfsHash: string) => void;
 }
 
-export function VideoUploadCard({ tradeId, onUpload }: VideoUploadCardProps) {
+export function VideoUploadCard({ tradeId, onUpload, onSubmit }: VideoUploadCardProps) {
   const { t } = useTranslation();
   const { token } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -22,6 +23,7 @@ export function VideoUploadCard({ tradeId, onUpload }: VideoUploadCardProps) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const handleFile = async (file: File) => {
     if (!file) return;
@@ -31,6 +33,7 @@ export function VideoUploadCard({ tradeId, onUpload }: VideoUploadCardProps) {
     }
     setPreview(URL.createObjectURL(file));
     setError(null);
+    setSubmitted(false);
     setUploading(true);
     setProgress(0);
 
@@ -80,6 +83,12 @@ export function VideoUploadCard({ tradeId, onUpload }: VideoUploadCardProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+  };
+
+  const handleSubmit = () => {
+    if (!ipfsHash || uploading) return;
+    setSubmitted(true);
+    onSubmit?.(ipfsHash);
   };
 
   return (
@@ -174,6 +183,8 @@ export function VideoUploadCard({ tradeId, onUpload }: VideoUploadCardProps) {
 
       {/* Submit button */}
       <button
+        type="button"
+        onClick={handleSubmit}
         disabled={!ipfsHash || uploading}
         className="
           mt-4 w-full py-2 rounded-xl text-sm font-semibold
@@ -183,7 +194,7 @@ export function VideoUploadCard({ tradeId, onUpload }: VideoUploadCardProps) {
           transition-colors duration-200
         "
       >
-        Submit Proof
+        {submitted ? "Proof Submitted" : "Submit Proof"}
       </button>
     </BentoCard>
   );

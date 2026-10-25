@@ -6,6 +6,8 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import { validateRequest } from "../middleware/validateRequest";
 import { AuthRequest } from "../services/auth.service";
+import { auditLogService } from "../services/auditLog.service";
+import { feeAccountingService } from "../services/feeAccounting.service";
 
 const tradeStatusUpdateSchema = z.object({
   tradeId: z.string().min(1, "tradeId is required"),
@@ -53,7 +55,7 @@ export function createAdminTradeBatchRouter(prisma: PrismaClient = defaultPrisma
                 { id: Number.isInteger(Number(tradeId)) ? Number(tradeId) : -1 },
               ],
             },
-            select: { tradeId: true, status: true, version: true },
+            select: { tradeId: true, status: true, version: true, amountUsdc: true },
           });
 
           if (!trade) {
@@ -69,12 +71,28 @@ export function createAdminTradeBatchRouter(prisma: PrismaClient = defaultPrisma
             continue;
           }
 
-          const result = await prisma.trade.updateMany({
-            where: { tradeId: trade.tradeId, version: trade.version },
-            data: { status: targetStatus, version: { increment: 1 } },
+          const updated = await prisma.$transaction(async (tx) => {
+            const result = await tx.trade.updateMany({
+              where: { tradeId: trade.tradeId, version: trade.version },
+              data: { status: targetStatus, version: { increment: 1 } },
+            });
+            if (result.count === 0) return false;
+
+            await auditLogService.record(tx, {
+              tradeId: trade.tradeId,
+              eventType: "AdminBatchStatusUpdate",
+              toStatus: targetStatus,
+              actor: req.user?.walletAddress,
+              metadata: { fromStatus: trade.status },
+            });
+
+            if (targetStatus === TradeStatus.COMPLETED) {
+              await feeAccountingService.recordFee(tx, trade.tradeId, trade.amountUsdc);
+            }
+            return true;
           });
 
-          if (result.count === 0) {
+          if (!updated) {
             failed.push({ tradeId, reason: "Concurrency conflict: trade was modified" });
           } else {
             succeeded.push(trade.tradeId);

@@ -1,7 +1,8 @@
 import { Response, NextFunction } from "express";
 import { AuthRequest } from "../services/auth.service";
 import { findOrCreateUser, updateUser, getPublicProfile } from "../services/user.service";
-import { AppError, ErrorCode } from "../errors/errorCodes";
+import { ErrorCode } from '../errors/errorCodes';
+import { AppError } from '../errors/appError';
 
 /**
  * Get current user profile.

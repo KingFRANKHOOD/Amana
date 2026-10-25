@@ -13,8 +13,8 @@ export const options = {
 };
 
 export default function () {
-  const response = http.get(`${baseUrl}/health`);
+  const response = http.get(`${baseUrl}/health/live`);
   check(response, {
-    'health endpoint returns 200': (result) => result.status === 200,
+    'health liveness endpoint returns 200': (result) => result.status === 200,
   });
 }

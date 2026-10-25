@@ -6,7 +6,7 @@
 /// Iteration count is controlled by AMANA_PROP_TESTS (default 64).
 extern crate std;
 
-use amana_escrow::{EscrowContract, EscrowContractClient};
+use amana_escrow::{EscrowContract, EscrowContractClient, MAX_FEE_BPS, MIN_FEE_BPS};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use soroban_sdk::{Address, Env, String as SStr, testutils::Address as _, token};
@@ -61,7 +61,7 @@ impl PropEnv {
             .address();
         let contract_id = env.register(EscrowContract, ());
         EscrowContractClient::new(&env, &contract_id)
-            .initialize(&admin, &usdc_id, &treasury, &fee_bps, &usdc_id);
+            .initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &fee_bps, &usdc_id);
         PropEnv {
             env,
             contract_id,
@@ -125,7 +125,7 @@ fn test_prop_fund_conservation_seeded() {
     let mut rng = StdRng::seed_from_u64(seed);
 
     for case in 0..iters {
-        let fee_bps = rng.gen_range(0u32..=1_000);
+        let fee_bps = rng.gen_range(MIN_FEE_BPS..=MAX_FEE_BPS);
         let amount = rng.gen_range(1i128..=1_000_000);
         let buyer_loss_bps = rng.gen_range(0u32..=10_000);
         let seller_loss_bps = 10_000 - buyer_loss_bps;
@@ -157,7 +157,7 @@ fn test_prop_non_negativity_seeded() {
     let mut rng = StdRng::seed_from_u64(seed);
 
     for case in 0..iters {
-        let fee_bps = rng.gen_range(0u32..=10_000);
+        let fee_bps = rng.gen_range(MIN_FEE_BPS..=MAX_FEE_BPS);
         let amount = rng.gen_range(1i128..=1_000_000);
         let buyer_loss_bps = rng.gen_range(0u32..=10_000);
         let seller_loss_bps = 10_000 - buyer_loss_bps;
@@ -187,7 +187,7 @@ fn test_prop_seller_monotonicity_seeded() {
     let mut rng = StdRng::seed_from_u64(seed);
 
     for case in 0..iters {
-        let fee_bps = rng.gen_range(0u32..=1_000);
+        let fee_bps = rng.gen_range(MIN_FEE_BPS..=MAX_FEE_BPS);
         let amount = rng.gen_range(100i128..=1_000_000);
         let buyer_loss_bps = rng.gen_range(0u32..=10_000);
         let seller_loss_bps = 10_000 - buyer_loss_bps;
@@ -233,7 +233,7 @@ fn test_prop_invalid_lifecycle_transitions_seeded() {
             .address();
         let contract_id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(&env, &contract_id);
-        client.initialize(&admin, &usdc_id, &treasury, &100u32, &usdc_id);
+        client.initialize(&soroban_sdk::Vec::from_array(&env, [admin.clone()]), &1_u32, &usdc_id, &treasury, &100u32, &usdc_id);
 
         let amount = rng.gen_range(1i128..=100_000);
         token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
@@ -253,7 +253,7 @@ fn test_prop_invalid_lifecycle_transitions_seeded() {
                 .address();
             let cid2 = env2.register(EscrowContract, ());
             let c2 = EscrowContractClient::new(&env2, &cid2);
-            c2.initialize(&admin2, &usdc2, &treasury2, &100u32, &usdc2);
+            c2.initialize(&soroban_sdk::Vec::from_array(&env, [admin2.clone()]), &1_u32, &usdc2, &treasury2, &100u32, &usdc2);
             let amt2 = 1_000i128;
             token::StellarAssetClient::new(&env2, &usdc2).mint(&buyer2, &(amt2 * 2));
             let tid2 = c2.create_trade(&buyer2, &seller2, &amt2, &5000u32, &5000u32, &None);

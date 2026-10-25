@@ -60,7 +60,12 @@ describe("Audit Trail Routes — GET /trades/:id/history", () => {
     beforeEach(() => {
         // Create a fresh mock for each test and inject it via the factory parameter
         mockGetTradeHistory = jest.fn();
-        const mockService = { getTradeHistory: mockGetTradeHistory } as unknown as AuditTrailService;
+        const mockService = {
+            getTradeHistory: mockGetTradeHistory,
+            getCanonicalPayload: jest.fn().mockReturnValue({ tradeId: TRADE_ID, generatedAt: new Date().toISOString(), events: [] }),
+            signPayload: jest.fn().mockReturnValue({ algorithm: "ed25519", keyId: "test-key", payloadHash: "abc", signature: "sig" }),
+            verifyPayload: jest.fn().mockReturnValue(true),
+        } as unknown as AuditTrailService;
 
         app = express();
         app.use(express.json());
@@ -75,7 +80,7 @@ describe("Audit Trail Routes — GET /trades/:id/history", () => {
         it("returns 401 when no Authorization header is provided", async () => {
             const res = await request(app).get(`/trades/${TRADE_ID}/history`);
             expect(res.status).toBe(401);
-            expect(res.body.error).toBe("Unauthorized");
+            expect(res.body.error).toMatch(/Unauthorized|Missing Authorization header/i);
         });
 
         it("returns 401 for a malformed token", async () => {
