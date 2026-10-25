@@ -3,6 +3,7 @@ import request from "supertest";
 import {
   createDisputeRouter,
   exportDisputesQuerySchema,
+  sanitizeCsvCell,
 } from "../controllers/dispute.controller";
 
 jest.mock("../middleware/auth.middleware", () => {
@@ -63,5 +64,16 @@ describe("GET /disputes/export date validation (issue #1399)", () => {
     expect(
       exportDisputesQuerySchema.safeParse({ from: "2024-02-01", to: "2024-01-01" }).success,
     ).toBe(false);
+  });
+});
+
+describe("sanitizeCsvCell formula injection (issue #1629)", () => {
+  it.each(["=1+1", "+1", "-1", "@SUM(A1)", "\t=1", "\r=1"])("neutralizes %j", (value) => {
+    expect(sanitizeCsvCell(value)).toBe(`'${value}`);
+  });
+
+  it("leaves safe text and non-strings untouched", () => {
+    expect(sanitizeCsvCell("Item never arrived")).toBe("Item never arrived");
+    expect(sanitizeCsvCell(null)).toBeNull();
   });
 });

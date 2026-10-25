@@ -51,7 +51,7 @@ jobs:
 
       - name: Setup pnpm
         if: ${{ !vars.K6_BASE_URL }}
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         if: ${{ !vars.K6_BASE_URL }}

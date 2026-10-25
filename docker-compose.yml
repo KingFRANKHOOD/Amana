@@ -229,11 +229,26 @@ services:
 
   loki:
     image: grafana/loki:3.0
+    command: -config.file=/etc/loki/config.yml
     ports: ["3100:3100"]
+    volumes:
+      - ./loki/config.yml:/etc/loki/config.yml:ro
+    profiles: [staging]
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - loki
     profiles: [staging]
 
   promtail:
     image: grafana/promtail:3.0
+    command: -config.file=/etc/promtail/config.yml
     volumes: ["/var/log:/var/log", "/var/lib/docker/
 
 /* … truncated 1100 chars — edit only what you need near the top … */

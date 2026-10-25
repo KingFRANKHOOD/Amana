@@ -66,6 +66,11 @@ function hasDestructiveDdl(sql: string): boolean {
   return DESTRUCTIVE_DDL_PATTERNS.some((pattern) => pattern.test(sql));
 }
 
+/** Remove `--` line comments and block comments from SQL. */
+function stripSqlComments(sql: string): string {
+  return sql.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 function parseTimestamp(dirName: string): number {
   const match = dirName.match(/^(\d{14})/);
   if (!match) return 0;
@@ -184,34 +189,21 @@ describe("Migration Rollback Integrity", () => {
       }
     });
 
-    it("should NOT flag safe-only migration SQL files as destructive", () => {
-      // Most migrations are safe CREATE/ALTER ADD operations
-      const safeMigrations = [
-        "20260324231720_init",
-        "20260327000001_add_loss_bps_to_trade",
-        "20260428000001_add_canonical_trade_timestamps",
-        "20260529000001_add_dispute_version",
-        "20260529000002_add_missing_indexes",
-        "20260830000000_add_audit_log",
-        "20260826000001_add_trade_participant_status_indexes",
-      ];
-
-      for (const name of safeMigrations) {
-        const sql = readMigrationSql(name);
-        if (sql) {
-          // These should NOT contain destructive patterns (except comments)
-          const hasDestructive = DESTRUCTIVE_DDL_PATTERNS.some(
-            (pattern) => pattern.test(sql) && !sql.match(/--.*DROP/)
-          );
-          // If it does have destructive, it's intentional (like init creating enums)
-          // but we document it
-          if (hasDestructive) {
-            console.log(
-              `  ℹ  ${name} has potentially destructive DDL — verify this is intentional`
-            );
-          }
-        }
-      }
+    it.each([
+      // Most migrations are safe CREATE / ALTER ... ADD operations.
+      "20260324231720_init",
+      "20260327000001_add_loss_bps_to_trade",
+      "20260428000001_add_canonical_trade_timestamps",
+      "20260529000001_add_dispute_version",
+      "20260529000002_add_missing_indexes",
+      "20260830000000_add_audit_log",
+      "20260826000001_add_trade_participant_status_indexes",
+    ])("should NOT flag safe-only migration %s as destructive", (name) => {
+      const sql = readMigrationSql(name);
+      // A renamed or deleted migration must fail here instead of being skipped.
+      expect(sql).not.toBe("");
+      // Comments may mention DROP etc. without executing it, so ignore them.
+      expect(hasDestructiveDdl(stripSqlComments(sql))).toBe(false);
     });
   });
 

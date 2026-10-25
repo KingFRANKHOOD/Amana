@@ -79,7 +79,7 @@ jobs:
 
       - name: Setup pnpm
         if: matrix.stack != 'contracts'
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
         if: matrix.stack != 'contracts'
@@ -146,7 +146,7 @@ jobs:
           files: frontend/coverage/lcov.info
           flags: frontend
           name: frontend
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Frontend visual regression tests
         if: matrix.stack == 'frontend'
@@ -170,7 +170,7 @@ jobs:
           files: backend/coverage/lcov.info
           flags: backend
           name: backend
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Mobile type check
         if: matrix.stack == 'mobile'
@@ -195,7 +195,7 @@ jobs:
           files: mobile/coverage/lcov.info
           flags: mobile
           name: mobile
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Mobile security audit
         if: matrix.stack == 'mobile'
@@ -238,7 +238,7 @@ jobs:
           files: contracts/coverage/lcov.info
           flags: contracts
           name: contracts
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Build WASM artifact
         if: matrix.stack == 'contracts'
@@ -314,7 +314,7 @@ jobs:
           files: routes-d/coverage/lcov.info
           flags: routes-d
           name: routes-d
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Upload routes-d artifact
         if: always()
@@ -338,7 +338,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -481,7 +481,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-${{ matrix.stack }}.sarif
           category: trivy-${{ matrix.stack }}
@@ -522,14 +522,14 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab (postgres)
         if: always()
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-postgres.sarif
           category: trivy-image-postgres
 
       - name: Upload SARIF to GitHub Security tab (redis)
         if: always()
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-redis.sarif
           category: trivy-image-redis
@@ -547,7 +547,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -610,7 +610,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

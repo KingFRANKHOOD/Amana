@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "fix/issue-1472-codecov-upload-steps-run-on-fork-pull-request",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "fix/issue-1472-codecov-upload-steps-run-on-fork-pull-request": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "fix/issue-1472-codecov-upload-steps-run-on-fork-pull-request",
+    "origin"
+  ]
+}

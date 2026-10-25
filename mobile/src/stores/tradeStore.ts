@@ -2,11 +2,14 @@ import { create } from 'zustand';
 import { tradeApi } from '../api/trade';
 import type { Trade, TradeListResult, TradeStatus } from '../types/trade';
 import { authorizeSensitiveAction } from '../services/biometric.service';
+import { signStellarTransaction } from '../services/stellar-wallet-connect.service';
+import { useAuthStore } from './authStore';
 
 interface TradeState {
   trades: Trade[];
   total: number;
   currentTrade: Trade | null;
+  lastTransactionSubmission: { hash: string; status: string } | null;
   isLoading: boolean;
   error: string | null;
   fetchTrades: (params?: { status?: TradeStatus; page?: number }) => Promise<void>;
@@ -19,18 +22,38 @@ interface TradeState {
     commodity?: string;
     quantity?: string;
     unit?: string;
+    deliveryDays?: number;
   }) => Promise<{ tradeId: string; unsignedXdr: string } | null>;
   confirmDelivery: (tradeId: string) => Promise<void>;
-  releaseFunds: (tradeId: string) => Promise<void>;
-  deposit: (tradeId: string) => Promise<void>;
+  releaseFunds: (tradeId: string, onPairingUri: (uri: string) => void) => Promise<void>;
+  deposit: (tradeId: string, onPairingUri: (uri: string) => void) => Promise<void>;
   initiateDispute: (tradeId: string, reason: string) => Promise<void>;
   clearError: () => void;
+  resetStore: () => void;
+}
+
+async function signAndSubmitTradeTransaction(
+  tradeId: string,
+  unsignedXdr: string,
+  onPairingUri: (uri: string) => void,
+) {
+  const walletAddress = useAuthStore.getState().walletAddress;
+  if (!walletAddress) {
+    throw new Error('Connect a Stellar wallet before submitting this transaction.');
+  }
+  const signedXdr = await signStellarTransaction(unsignedXdr, walletAddress, onPairingUri);
+  const submission = await tradeApi.submitSignedTransaction(tradeId, signedXdr);
+  if (submission.status !== 'PENDING' && submission.status !== 'DUPLICATE') {
+    throw new Error(`Stellar transaction was not accepted: ${submission.status}`);
+  }
+  return submission;
 }
 
 export const useTradeStore = create<TradeState>((set, get) => ({
   trades: [],
   total: 0,
   currentTrade: null,
+  lastTransactionSubmission: null,
   isLoading: false,
   error: null,
 
@@ -81,15 +104,17 @@ export const useTradeStore = create<TradeState>((set, get) => ({
     }
   },
 
-  releaseFunds: async (tradeId) => {
-    set({ isLoading: true, error: null });
+  releaseFunds: async (tradeId, onPairingUri) => {
+    set({ isLoading: true, error: null, lastTransactionSubmission: null });
     try {
       const authorized = await authorizeSensitiveAction('Authorize fund release');
       if (!authorized) {
         set({ error: 'Authentication cancelled', isLoading: false });
         return;
       }
-      await tradeApi.releaseFunds(tradeId);
+      const { unsignedXdr } = await tradeApi.releaseFunds(tradeId);
+      const submission = await signAndSubmitTradeTransaction(tradeId, unsignedXdr, onPairingUri);
+      set({ lastTransactionSubmission: submission });
       if (get().currentTrade) {
         await get().fetchTrade(tradeId);
       }
@@ -99,10 +124,12 @@ export const useTradeStore = create<TradeState>((set, get) => ({
     }
   },
 
-  deposit: async (tradeId) => {
-    set({ isLoading: true, error: null });
+  deposit: async (tradeId, onPairingUri) => {
+    set({ isLoading: true, error: null, lastTransactionSubmission: null });
     try {
-      await tradeApi.deposit(tradeId);
+      const { unsignedXdr } = await tradeApi.deposit(tradeId);
+      const submission = await signAndSubmitTradeTransaction(tradeId, unsignedXdr, onPairingUri);
+      set({ lastTransactionSubmission: submission });
       if (get().currentTrade) {
         await get().fetchTrade(tradeId);
       }
@@ -128,4 +155,14 @@ export const useTradeStore = create<TradeState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  resetStore: () =>
+    set({
+      trades: [],
+      total: 0,
+      currentTrade: null,
+      lastTransactionSubmission: null,
+      isLoading: false,
+      error: null,
+    }),
 }));

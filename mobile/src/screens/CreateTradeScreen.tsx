@@ -91,7 +91,8 @@ function Step1Details({
   const price = parseFloat(data.pricePerUnit);
   const totalValue = !isNaN(qty) && !isNaN(price) ? `NGN ${(qty * price).toLocaleString()}` : '—';
   const isAddressValid = data.sellerAddress.startsWith('G') && data.sellerAddress.length === 56;
-  const valid = data.commodity !== '' && qty > 0 && price > 0 && isAddressValid;
+  const amountCngn = computeTradeAmount(data.quantity, data.pricePerUnit);
+  const valid = data.commodity !== '' && amountCngn !== '0' && isAddressValid;
 
   return (
     <View style={stepStyles.container}>
@@ -189,6 +190,10 @@ function Step2Negotiation({
   onBack: () => void;
   onNext: () => void;
 }) {
+  // The delivery window is submitted with the trade, so an empty or
+  // non-positive value must not reach the review step.
+  const deliveryDaysValid = /^\d+$/.test(data.deliveryDays.trim()) && Number(data.deliveryDays) > 0;
+
   return (
     <View style={stepStyles.container}>
       <Text style={styles.sectionTitle}>Step 2: Negotiation</Text>
@@ -243,7 +248,11 @@ function Step2Negotiation({
         <TouchableOpacity style={stepStyles.btnSecondary} onPress={onBack}>
           <Text style={stepStyles.btnSecondaryText}>Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={stepStyles.btn} onPress={onNext}>
+        <TouchableOpacity
+          style={[stepStyles.btn, !deliveryDaysValid && stepStyles.btnDisabled]}
+          onPress={onNext}
+          disabled={!deliveryDaysValid}
+        >
           <Text style={stepStyles.btnText}>Review</Text>
         </TouchableOpacity>
       </View>
@@ -335,12 +344,14 @@ export default function CreateTradeScreen({ navigation }: Props) {
 
     return {
       sellerAddress: data.sellerAddress,
-      amountUsdc: amountCngn,
+      amountCngn: amountCngn,
       buyerLossBps: data.buyerRatio * 100,
       sellerLossBps: data.sellerRatio * 100,
       commodity: data.commodity,
       quantity: data.quantity,
       unit: data.unit,
+      // The review step shows this value, so it has to reach the API as well.
+      deliveryDays: Number(data.deliveryDays),
     };
   };
 
@@ -406,7 +417,7 @@ export default function CreateTradeScreen({ navigation }: Props) {
             data={data}
             onBack={() => setStep(1)}
             onSubmit={handleSubmit}
-            onSaveDraft={() => saveDraft()}
+            onSaveDraft={() => { void saveDraft().catch((err: unknown) => Alert.alert('Error', (err as Error)?.message ?? 'Failed to save draft')); }}
             submitting={submitting}
           />
         )}
